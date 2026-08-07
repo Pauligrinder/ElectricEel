@@ -91,17 +91,62 @@ func defaultConfig() Config {
 }
 
 type Helper struct {
-	mu  sync.Mutex
-	cfg Config
+	mu   sync.Mutex
+	cfg  Config
+	conn *dbus.Conn
 }
 
-func newHelper() *Helper {
-	h := &Helper{cfg: defaultConfig()}
+func newHelper(conn *dbus.Conn) *Helper {
+	h := &Helper{cfg: defaultConfig(), conn: conn}
 	h.loadConfig()
 	return h
 }
 
-func (h *Helper) configPath() string    { return filepath.Join(stateDir, "config.json") }
+// allowedCallers is the set of caller binary paths (resolved via
+// /proc/<pid>/exe, see authorize) permitted to invoke the privileged
+// methods below. This exists because the D-Bus system policy
+// (org.teslacontrol.Helper.conf) can only scope access to the
+// "defaultuser" Unix account - Sailfish's single-user model - not to a
+// specific application, so *any* process running as defaultuser could
+// otherwise call these methods directly, bypassing the Sailjail
+// permission that's meant to gate harbour-teslacontrol specifically.
+// This narrows that to processes whose own binary matches the allow-list;
+// it does NOT fully close the gap if Sailjail proxies the sandboxed app's
+// system-bus traffic through a shared process (unverified on real
+// hardware - see KNOWN_ISSUES.md).
+var allowedCallers = splitAndTrim(envOr("TESLACONTROLD_ALLOWED_CALLERS", "/usr/bin/harbour-teslacontrol"))
+
+func splitAndTrim(s string) []string {
+	var out []string
+	for _, p := range strings.Split(s, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// authorize resolves the D-Bus caller's PID and binary path and checks it
+// against allowedCallers, denying by default on any lookup failure.
+func (h *Helper) authorize(sender dbus.Sender) *dbus.Error {
+	var pid uint32
+	if err := h.conn.BusObject().Call("org.freedesktop.DBus.GetConnectionUnixProcessID", 0, string(sender)).Store(&pid); err != nil {
+		return dbus.NewError(ifaceName+".Forbidden", []interface{}{"cannot resolve caller pid"})
+	}
+	exe, err := os.Readlink(fmt.Sprintf("/proc/%d/exe", pid))
+	if err != nil {
+		return dbus.NewError(ifaceName+".Forbidden", []interface{}{"cannot resolve caller binary"})
+	}
+	for _, allowed := range allowedCallers {
+		if exe == allowed {
+			return nil
+		}
+	}
+	log.Printf("teslacontrold: rejected call from pid %d (%s): not in TESLACONTROLD_ALLOWED_CALLERS", pid, exe)
+	return dbus.NewError(ifaceName+".Forbidden", []interface{}{"caller not authorized: " + exe})
+}
+
+func (h *Helper) configPath() string     { return filepath.Join(stateDir, "config.json") }
 func (h *Helper) privateKeyPath() string { return filepath.Join(stateDir, "private_key.pem") }
 func (h *Helper) publicKeyPath() string  { return filepath.Join(stateDir, "public_key.pem") }
 
@@ -175,7 +220,10 @@ func (h *Helper) commonArgsLocked() ([]string, *dbus.Error) {
 // Run executes a single tesla-control subcommand. cmd must be one of the
 // known tesla-control subcommands; args are passed through verbatim as
 // positional arguments (never as additional flags).
-func (h *Helper) Run(cmd string, args []string) (bool, string, string, int32, *dbus.Error) {
+func (h *Helper) Run(cmd string, args []string, sender dbus.Sender) (bool, string, string, int32, *dbus.Error) {
+	if dErr := h.authorize(sender); dErr != nil {
+		return false, "", "", -1, dErr
+	}
 	if !commandCatalog[cmd] {
 		return false, "", "", -1, dbus.NewError(ifaceName+".UnknownCommand", []interface{}{cmd})
 	}
@@ -202,7 +250,10 @@ func (h *Helper) Run(cmd string, args []string) (bool, string, string, int32, *d
 
 // GenerateKey creates a new local private key (file-backed - there is no
 // Sailfish OS keyring backend) and returns its PEM-encoded public key.
-func (h *Helper) GenerateKey(force bool) (bool, string, string, *dbus.Error) {
+func (h *Helper) GenerateKey(force bool, sender dbus.Sender) (bool, string, string, *dbus.Error) {
+	if dErr := h.authorize(sender); dErr != nil {
+		return false, "", "", dErr
+	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
@@ -226,7 +277,10 @@ func (h *Helper) GenerateKey(force bool) (bool, string, string, *dbus.Error) {
 // Pair enrolls the current public key with the vehicle via BLE, requiring
 // physical NFC-card approval at the center console (matches the official
 // app's "add key" flow).
-func (h *Helper) Pair() (bool, string, string, *dbus.Error) {
+func (h *Helper) Pair(sender dbus.Sender) (bool, string, string, *dbus.Error) {
+	if dErr := h.authorize(sender); dErr != nil {
+		return false, "", "", dErr
+	}
 	h.mu.Lock()
 	common, dErr := h.commonArgsLocked()
 	pubkeyPath := h.publicKeyPath()
@@ -246,7 +300,10 @@ func (h *Helper) Pair() (bool, string, string, *dbus.Error) {
 	return true, stdout, "", nil
 }
 
-func (h *Helper) SetConfig(vin string, keyName string, connectTimeout int32, commandTimeout int32) (bool, string, *dbus.Error) {
+func (h *Helper) SetConfig(vin string, keyName string, connectTimeout int32, commandTimeout int32, sender dbus.Sender) (bool, string, *dbus.Error) {
+	if dErr := h.authorize(sender); dErr != nil {
+		return false, "", dErr
+	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if connectTimeout <= 0 || commandTimeout <= 0 {
@@ -262,7 +319,10 @@ func (h *Helper) SetConfig(vin string, keyName string, connectTimeout int32, com
 	return true, "", nil
 }
 
-func (h *Helper) GetConfig() (string, string, int32, int32, bool, string, *dbus.Error) {
+func (h *Helper) GetConfig(sender dbus.Sender) (string, string, int32, int32, bool, string, *dbus.Error) {
+	if dErr := h.authorize(sender); dErr != nil {
+		return "", "", 0, 0, false, "", dErr
+	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	hasKey := false
@@ -326,7 +386,7 @@ func main() {
 	}
 	defer conn.Close()
 
-	helper := newHelper()
+	helper := newHelper(conn)
 	if err := conn.Export(helper, objectPath, ifaceName); err != nil {
 		log.Fatalf("cannot export object: %v", err)
 	}
