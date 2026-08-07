@@ -8,3 +8,16 @@ e215e47baeb6: Pulling fs layer
 03921d58f220: Pulling fs layer
 4f4fb700ef54: Already exists
 2536f5f95bbc: Already exists
+e215e47baeb6: Download complete
+e215e47baeb6: Pull complete
+03921d58f220: Download complete
+10487d7c1f72: Download complete
+4f4fb700ef54: Pull complete
+03921d58f220: Pull complete
+10487d7c1f72: Pull complete
+2536f5f95bbc: Pull complete
+99d15c707f84: Download complete
+99d15c707f84: Pull complete
+Digest: sha256:e5f7596d14502746b308c3dde36f65fc25d7f76c45a01acaed56a1f55b76f592
+Status: Downloaded newer image for coderus/sailfishos-platform-sdk-aarch64:latest
+docker.io/coderus/sailfishos-platform-sdk-aarch64:latest

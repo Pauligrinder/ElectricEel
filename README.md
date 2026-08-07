@@ -103,34 +103,55 @@ docker run --rm -v "$PWD":/src -w /src golang:1.23 \
 
 ### 2. Build both RPMs with the Sailfish Platform SDK (Docker)
 
-Use a Dockerized `sfdk`/`mb2` build environment targeting
-`SailfishOS-5.2.0.16-aarch64` (community images: `sailfishos-open/docker-sailfishos-builder`,
-`vranki/sailfishdockersdk`, or Jolla's own SDK with the Docker build-engine
-backend). Broad strokes, since the exact image/tag you use will dictate the
-precise invocation:
+Verified working with the `coderus/sailfishos-platform-sdk-aarch64` image
+(~13GB, includes a ready `SailfishOS-5.2.0.15-aarch64` mb2/sb2 build
+target - one patch version behind the phone's 5.2.0.16, close enough).
+Host-container UID mismatch means bind-mounting the source tree directly
+doesn't work cleanly - `docker cp` in, build, `docker cp` out:
 
 ```sh
-# teslacontrold.rpm - no compilation, just packaging prebuilt binaries:
+docker pull coderus/sailfishos-platform-sdk-aarch64
+
+docker create --name teslacontrol-build coderus/sailfishos-platform-sdk-aarch64 sleep infinity
+docker start teslacontrol-build
+
+# --- harbour-teslacontrol.rpm - compiles the C++/QML app for real ---
+docker cp app teslacontrol-build:/home/mersdk/app
+docker exec -u root teslacontrol-build chown -R mersdk:mersdk /home/mersdk/app
+docker exec -w /home/mersdk/app teslacontrol-build \
+  mb2 --target SailfishOS-5.2.0.15-aarch64 build
+docker cp teslacontrol-build:/home/mersdk/app/RPMS/harbour-teslacontrol-0.1.0-1.aarch64.rpm app/RPMS/
+
+# --- teslacontrold.rpm - no compilation, just packaging prebuilt binaries,
+#     but still needs the aarch64 target's rpm/rpmlint config, via sb2 ---
 mkdir -p helper/rpmbuild/SOURCES
 cp helper/dist/teslacontrold spike/bin/tesla-control spike/bin/tesla-keygen \
    helper/systemd/teslacontrold.service \
    helper/dbus/org.teslacontrol.Helper.service helper/dbus/org.teslacontrol.Helper.conf \
    helper/sailjail/TeslaControlHelper.permission \
    helper/rpmbuild/SOURCES/
-rpmbuild --target aarch64 --define "_topdir $PWD/helper/rpmbuild" -bb helper/rpm/teslacontrold.spec
+docker cp helper teslacontrol-build:/home/mersdk/helper
+docker exec -u root teslacontrol-build chown -R mersdk:mersdk /home/mersdk/helper
+docker exec -w /home/mersdk/helper teslacontrol-build \
+  sb2 -t SailfishOS-5.2.0.15-aarch64 rpmbuild \
+    --define "_topdir /home/mersdk/helper/rpmbuild" -bb rpm/teslacontrold.spec
+docker cp teslacontrol-build:/home/mersdk/helper/rpmbuild/RPMS/aarch64/teslacontrold-0.1.0-1.aarch64.rpm helper/RPMS/
 
-# harbour-teslacontrol.rpm - via the Platform SDK (needs Qt5/Silica headers):
-tar cjf harbour-teslacontrol-0.1.0.tar.bz2 --transform 's,^app,harbour-teslacontrol-0.1.0,' app
-sfdk build --target SailfishOS-5.2.0.16-aarch64 app/rpm/harbour-teslacontrol.spec
+docker rm -f teslacontrol-build
 ```
 
-Both `rpmbuild` invocations above need to actually run inside the Platform
-SDK's aarch64 build target (for the right Qt5/glibc ABI), not your host's
-generic `rpmbuild` — `sfdk build` handles that for the app; for
-`teslacontrold` (no compiled C/C++, just prebuilt static-ish Go binaries +
-plain files) a host `rpmbuild --target aarch64` is normally fine since
-nothing needs linking against target libraries, but if package validation
-complains, run it through `sfdk` the same way.
+Two gotchas that cost time getting this working, already fixed in the specs
+committed here:
+- rpmlint's Sailfish config only accepts old Fedora short license names
+  (`ASL 2.0`, not `Apache-2.0`) and requires a `%changelog` section -
+  both specs use `ASL 2.0` now.
+- `teslacontrold`'s prebuilt Go binaries have no GNU build-id note, which
+  makes rpm's `find-debuginfo.sh --strict-build-id` hard-fail; its spec
+  sets `%global debug_package %{nil}` to skip debuginfo extraction.
+
+Prebuilt RPMs from this exact process are already checked into
+`app/RPMS/harbour-teslacontrol-0.1.0-1.aarch64.rpm` and
+`helper/RPMS/teslacontrold-0.1.0-1.aarch64.rpm`.
 
 ### 3. Install on the phone
 
@@ -154,6 +175,27 @@ systemctl status teslacontrold   # should be active
    install command; check `systemctl status teslacontrold` and
    `journalctl -u teslacontrold` on-device.
 
+## Build verification status
+
+Both RPMs have been built for real (not just written) using
+`coderus/sailfishos-platform-sdk-aarch64` with its bundled
+`SailfishOS-5.2.0.15-aarch64` target - one version patch behind the phone's
+5.2.0.16, close enough to compile/link against:
+
+- **`harbour-teslacontrol`**: `mb2 --target SailfishOS-5.2.0.15-aarch64 build`
+  compiled the C++, ran moc, linked against real Qt5/Silica/DBus, and
+  packaged the RPM cleanly (0 rpmlint errors after fixing the license tag
+  format and adding `%changelog` - see below). QML files aren't compiled,
+  only reviewed, so runtime QML errors are still possible.
+- **`teslacontrold`**: packaged with `rpmbuild` (via `sb2 -t
+  SailfishOS-5.2.0.15-aarch64`) after disabling debuginfo extraction
+  (`%global debug_package %{nil}`), since prebuilt Go binaries carry no
+  GNU build-id note and `find-debuginfo.sh --strict-build-id` errored on
+  them otherwise. Systemd scriptlet macros expanded correctly.
+
+Both `.rpm` files are checked into `app/RPMS/` and `helper/RPMS/` respectively.
+Neither has been installed on the phone yet or tested against a real vehicle.
+
 ## Known gaps / next steps
 
 - `CommandCatalog.js` argument bounds/enum values (STATE on/off, ROLE,
@@ -164,6 +206,7 @@ systemctl status teslacontrold   # should be active
   before any real distribution.
 - Fleet API / internet mode (`-proxy`, `get`/`post` Fleet API passthrough)
   is intentionally out of scope for v1 - BLE only.
-- The Silica app (`app/`) hasn't been compiled against real Qt5/Silica
-  headers yet - only syntax-reviewed. Do a `sfdk build` pass and fix
-  whatever the compiler flags before relying on it.
+- Compiled and packaged, but **not yet installed or run on-device** - the
+  `%pre`/`%post` scriptlets (user/group creation, `setcap`, systemd enable)
+  are only syntax-checked by rpmbuild, not execution-tested; same for the
+  actual D-Bus round-trip between the app and the helper.

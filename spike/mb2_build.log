@@ -1,0 +1,110 @@
+Building repository 'adaptation-common' cache [....done]
+Building repository 'apps' cache [....done]
+Building repository 'customer-jolla' cache [....done]
+Building repository 'hotfixes' cache [....done]
+Building repository 'jolla' cache [....done]
+Building repository 'sdk' cache [....done]
+Loading repository data...
+Reading installed packages...
+'pkgconfig(sailfishapp) >= 1.0.2' not found in package names. Trying capabilities.
+'libsailfishapp-devel' providing 'pkgconfig(sailfishapp) >= 1.0.2' is already installed.
+'pkgconfig(Qt5Core)' not found in package names. Trying capabilities.
+'qt5-qtcore-devel' providing 'pkgconfig(Qt5Core)' is already installed.
+'pkgconfig(Qt5DBus)' not found in package names. Trying capabilities.
+'qt5-qtdbus-devel' providing 'pkgconfig(Qt5DBus)' is already installed.
+'pkgconfig(Qt5Qml)' not found in package names. Trying capabilities.
+'qt5-qtdeclarative-devel' providing 'pkgconfig(Qt5Qml)' is already installed.
+'pkgconfig(Qt5Quick)' not found in package names. Trying capabilities.
+'qt5-qtdeclarative-qtquick-devel' providing 'pkgconfig(Qt5Quick)' is already installed.
+'desktop-file-utils' is already installed.
+No update candidate for 'desktop-file-utils-0.26+git4-1.7.7.jolla.aarch64'. The highest available version is already installed.
+Resolving package dependencies...
+Nothing to do.
+Building target platforms: aarch64-meego-linux-gnu
+Building for target aarch64-meego-linux-gnu
+Executing(%build): /bin/sh -e /var/tmp/rpm-tmp.zPkSWE
++ umask 022
++ cd /home/mersdk/app
++ LANG=C
++ export LANG
++ unset DISPLAY
++ CFLAGS='-O2 -g -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions -fstack-protector --param=ssp-buffer-size=4 -Wformat -Wformat-security -march=armv8-a'
++ export CFLAGS
++ CXXFLAGS='-O2 -g -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions -fstack-protector --param=ssp-buffer-size=4 -Wformat -Wformat-security -march=armv8-a'
++ export CXXFLAGS
++ FFLAGS='-O2 -g -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions -fstack-protector --param=ssp-buffer-size=4 -Wformat -Wformat-security -march=armv8-a -I/usr/lib64/gfortran/modules'
++ export FFLAGS
++ LD_AS_NEEDED=1
++ export LD_AS_NEEDED
++ export QT_SELECT=5
++ QT_SELECT=5
++ qmake -qt=5 -makefile 'QMAKE_CFLAGS_RELEASE=-O2 -g -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions -fstack-protector --param=ssp-buffer-size=4 -Wformat -Wformat-security -march=armv8-a' 'QMAKE_CFLAGS_DEBUG=-O2 -g -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions -fstack-protector --param=ssp-buffer-size=4 -Wformat -Wformat-security -march=armv8-a' 'QMAKE_CXXFLAGS_RELEASE=-O2 -g -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions -fstack-protector --param=ssp-buffer-size=4 -Wformat -Wformat-security -march=armv8-a' 'QMAKE_CXXFLAGS_DEBUG=-O2 -g -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions -fstack-protector --param=ssp-buffer-size=4 -Wformat -Wformat-security -march=armv8-a' QMAKE_STRIP=: PREFIX=/usr LIBDIR=/usr/lib64
++ make -j12
+g++ -c -pipe -O2 -g -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions -fstack-protector --param=ssp-buffer-size=4 -Wformat -Wformat-security -march=armv8-a -fPIC -fvisibility=hidden -fvisibility-inlines-hidden -Wall -W -D_REENTRANT -fPIC -DQT_NO_DEBUG -DQT_QUICK_LIB -DQT_GUI_LIB -DQT_DBUS_LIB -DQT_QML_LIB -DQT_NETWORK_LIB -DQT_CORE_LIB -I. -isystem /usr/include/sailfishapp -isystem /usr/include/mdeclarativecache5 -isystem /usr/include/qt5 -isystem /usr/include/qt5/QtQuick -isystem /usr/include/qt5/QtGui -isystem /usr/include/qt5/QtDBus -isystem /usr/include/qt5/QtQml -isystem /usr/include/qt5/QtNetwork -isystem /usr/include/qt5/QtCore -I. -I/usr/share/qt5/mkspecs/linux-g++ -o harbour-teslacontrol.o src/harbour-teslacontrol.cpp
+g++ -c -pipe -O2 -g -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions -fstack-protector --param=ssp-buffer-size=4 -Wformat -Wformat-security -march=armv8-a -fPIC -fvisibility=hidden -fvisibility-inlines-hidden -Wall -W -D_REENTRANT -fPIC -DQT_NO_DEBUG -DQT_QUICK_LIB -DQT_GUI_LIB -DQT_DBUS_LIB -DQT_QML_LIB -DQT_NETWORK_LIB -DQT_CORE_LIB -I. -isystem /usr/include/sailfishapp -isystem /usr/include/mdeclarativecache5 -isystem /usr/include/qt5 -isystem /usr/include/qt5/QtQuick -isystem /usr/include/qt5/QtGui -isystem /usr/include/qt5/QtDBus -isystem /usr/include/qt5/QtQml -isystem /usr/include/qt5/QtNetwork -isystem /usr/include/qt5/QtCore -I. -I/usr/share/qt5/mkspecs/linux-g++ -o teslaclient.o src/teslaclient.cpp
+/usr/lib64/qt5/bin/moc -DQT_NO_DEBUG -DQT_QUICK_LIB -DQT_GUI_LIB -DQT_DBUS_LIB -DQT_QML_LIB -DQT_NETWORK_LIB -DQT_CORE_LIB -I/usr/share/qt5/mkspecs/linux-g++ -I/home/mersdk/app -I/usr/include/sailfishapp -I/usr/include/mdeclarativecache5 -I/usr/include/qt5 -I/usr/include/qt5/QtQuick -I/usr/include/qt5/QtGui -I/usr/include/qt5/QtDBus -I/usr/include/qt5/QtQml -I/usr/include/qt5/QtNetwork -I/usr/include/qt5/QtCore -I/opt/cross/aarch64-meego-linux-gnu/include/c++/13.4.0 -I/opt/cross/aarch64-meego-linux-gnu/include/c++/13.4.0/aarch64-meego-linux-gnu -I/opt/cross/aarch64-meego-linux-gnu/include/c++/13.4.0/backward -I/opt/cross/lib/gcc/aarch64-meego-linux-gnu/13.4.0/include -I/usr/local/include -I/opt/cross/lib/gcc/aarch64-meego-linux-gnu/13.4.0/include-fixed -I/opt/cross/aarch64-meego-linux-gnu/include -I/usr/include src/teslaclient.h -o moc_teslaclient.cpp
+g++ -c -pipe -O2 -g -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions -fstack-protector --param=ssp-buffer-size=4 -Wformat -Wformat-security -march=armv8-a -fPIC -fvisibility=hidden -fvisibility-inlines-hidden -Wall -W -D_REENTRANT -fPIC -DQT_NO_DEBUG -DQT_QUICK_LIB -DQT_GUI_LIB -DQT_DBUS_LIB -DQT_QML_LIB -DQT_NETWORK_LIB -DQT_CORE_LIB -I. -isystem /usr/include/sailfishapp -isystem /usr/include/mdeclarativecache5 -isystem /usr/include/qt5 -isystem /usr/include/qt5/QtQuick -isystem /usr/include/qt5/QtGui -isystem /usr/include/qt5/QtDBus -isystem /usr/include/qt5/QtQml -isystem /usr/include/qt5/QtNetwork -isystem /usr/include/qt5/QtCore -I. -I/usr/share/qt5/mkspecs/linux-g++ -o moc_teslaclient.o moc_teslaclient.cpp
+g++ -Wl,-O1 -Wl,-rpath,/usr/share/harbour-teslacontrol/lib -o harbour-teslacontrol harbour-teslacontrol.o teslaclient.o moc_teslaclient.o   -lsailfishapp -pie -rdynamic -lmdeclarativecache5 -lQt5Quick -lQt5Gui -lQt5DBus -lQt5Qml -lQt5Network -lQt5Core -lGLESv2 -lpthread 
++ RPM_EC=0
+++ jobs -p
++ exit 0
+Executing(%install): /bin/sh -e /var/tmp/rpm-tmp.YgjdTq
++ umask 022
++ cd /home/mersdk/app
++ flock /home/mersdk/.mb2.lock.lock flock /home/mersdk/.mb2.lock ln -f /home/mersdk/.mb2.lock.z48 /home/mersdk/.mb2.lock
++ '[' /home/mersdk/app/installroot '!=' / ']'
++ rm -rf /home/mersdk/app/installroot
+++ dirname /home/mersdk/app/installroot
++ mkdir -p /home/mersdk/app
++ mkdir /home/mersdk/app/installroot
++ LANG=C
++ export LANG
++ unset DISPLAY
++ rm -rf /home/mersdk/app/installroot
++ export QT_SELECT=5
++ QT_SELECT=5
++ make install INSTALL_ROOT=/home/mersdk/app/installroot INSTALL_LIBDIR=/home/mersdk/app/installroot//usr/lib64
+install -m 644 -p /home/mersdk/app/icons/86x86/harbour-teslacontrol.png /home/mersdk/app/installroot/usr/share/icons/hicolor/86x86/apps/
+install -m 644 -p /home/mersdk/app/icons/108x108/harbour-teslacontrol.png /home/mersdk/app/installroot/usr/share/icons/hicolor/108x108/apps/
+install -m 644 -p /home/mersdk/app/icons/128x128/harbour-teslacontrol.png /home/mersdk/app/installroot/usr/share/icons/hicolor/128x128/apps/
+install -m 644 -p /home/mersdk/app/icons/172x172/harbour-teslacontrol.png /home/mersdk/app/installroot/usr/share/icons/hicolor/172x172/apps/
+cp -f -R /home/mersdk/app/qml /home/mersdk/app/installroot/usr/share/harbour-teslacontrol/
+install -m 755 -p harbour-teslacontrol /home/mersdk/app/installroot/usr/bin/harbour-teslacontrol
+: /home/mersdk/app/installroot/usr/bin/harbour-teslacontrol
+install -m 644 -p /home/mersdk/app/harbour-teslacontrol.desktop /home/mersdk/app/installroot/usr/share/applications/
++ desktop-file-install --delete-original --dir /home/mersdk/app/installroot/usr/share/applications /home/mersdk/app/installroot/usr/share/applications/harbour-teslacontrol.desktop
++ /usr/lib/rpm/check-buildroot
++ /usr/lib/rpm/meego/brp-compress
++ /usr/lib/rpm/meego/brp-strip /usr/bin/strip
++ /usr/lib/rpm/meego/brp-strip-static-archive /usr/bin/strip
++ /usr/lib/rpm/meego/brp-strip-comment-note /usr/bin/strip /usr/bin/objdump
++ /usr/lib/rpm/meego/brp-python-bytecompile /usr/bin/python3
++ /usr/lib/rpm/meego/brp-python-hardlink
++ /usr/lib/rpm/meego/find-docs.sh /home/mersdk/app/installroot
++ /usr/lib/rpm/meego/brp-java-repack-jars
++ /usr/lib/rpm/brp-remove-la-files
+Processing files: harbour-teslacontrol-0.1.0-1.aarch64
+Provides: application() application(harbour-teslacontrol.desktop) harbour-teslacontrol = 0.1.0-1 harbour-teslacontrol(aarch-64) = 0.1.0-1
+Requires(rpmlib): rpmlib(CompressedFileNames) <= 3.0.4-1 rpmlib(FileDigests) <= 4.6.0-1 rpmlib(PayloadFilesHavePrefix) <= 4.0-1
+Requires: ld-linux-aarch64.so.1()(64bit) ld-linux-aarch64.so.1(GLIBC_2.17)(64bit) libQt5Core.so.5()(64bit) libQt5Core.so.5(Qt_5)(64bit) libQt5DBus.so.5()(64bit) libQt5DBus.so.5(Qt_5)(64bit) libQt5Gui.so.5()(64bit) libQt5Gui.so.5(Qt_5)(64bit) libQt5Qml.so.5()(64bit) libQt5Qml.so.5(Qt_5)(64bit) libQt5Quick.so.5()(64bit) libQt5Quick.so.5(Qt_5)(64bit) libc.so.6()(64bit) libc.so.6(GLIBC_2.17)(64bit) libc.so.6(GLIBC_2.34)(64bit) libgcc_s.so.1()(64bit) libgcc_s.so.1(GCC_3.0)(64bit) libsailfishapp.so.1()(64bit) libstdc++.so.6()(64bit) libstdc++.so.6(CXXABI_1.3)(64bit) libstdc++.so.6(CXXABI_1.3.9)(64bit) libstdc++.so.6(GLIBCXX_3.4)(64bit)
+Checking for unpackaged file(s): /usr/lib/rpm/check-files /home/mersdk/app/installroot
+Wrote: /home/mersdk/app/RPMS/harbour-teslacontrol-0.1.0-1.aarch64.rpm
+Executing(%clean): /bin/sh -e /var/tmp/rpm-tmp.7TzecM
++ umask 022
++ cd /home/mersdk/app
++ /bin/rm -rf /home/mersdk/app/installroot
++ RPM_EC=0
+++ jobs -p
++ exit 0
+============================ rpmlint session starts ============================
+rpmlint: 2.0.0
+configuration:
+    /srv/mer/toolings/SailfishOS-5.2.0.15/usr/lib/python3.11/site-packages/rpmlint/configdefaults.toml
+    /etc/xdg/rpmlint/sailfish.toml
+checks: 25, packages: 1
+
+harbour-teslacontrol.aarch64: W: unstripped-binary-or-object /usr/bin/harbour-teslacontrol
+harbour-teslacontrol.aarch64: E: no-changelogname-tag
+harbour-teslacontrol.aarch64: W: invalid-license Apache-2.0
+===== 1 packages and 0 specfiles checked; 1 errors, 2 warnings, 1 badness ======
+=== TreatErrorsAsWarnings set in options so returning success instead of 64 ====

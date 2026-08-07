@@ -7,7 +7,7 @@ Name:       teslacontrold
 Summary:    Privileged BLE helper service for harbour-teslacontrol
 Version:    0.1.0
 Release:    1
-License:    Apache-2.0 and BSD
+License:    ASL 2.0 and BSD
 URL:        https://github.com/marconapetti/ElectricEel
 Group:      Applications/System
 Source0:    %{name}-%{version}.tar.gz
@@ -24,6 +24,11 @@ Source13:   TeslaControlHelper.permission
 
 BuildArch:  aarch64
 ExclusiveArch: aarch64
+# Prebuilt Go binaries carry no GNU build-id note, which trips up rpm's
+# automatic debuginfo/find-debuginfo.sh extraction (it errors out looking
+# for one) - there's no debug info to extract from them anyway.
+%global debug_package %{nil}
+%global _missing_build_ids_terminate_build 0
 Requires:   systemd
 Requires:   dbus
 Requires(pre):  shadow-utils
