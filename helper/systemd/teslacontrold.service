@@ -1,0 +1,23 @@
+[Unit]
+Description=Tesla vehicle control helper (privileged BLE access for harbour-teslacontrol)
+After=bluetooth.service dbus.service
+Wants=bluetooth.service
+
+[Service]
+Type=dbus
+BusName=org.teslacontrol.Helper
+ExecStart=/opt/teslacontrold/bin/teslacontrold
+User=teslacontrol
+Group=teslacontrol
+StateDirectory=teslacontrold
+StateDirectoryMode=0700
+Environment=TESLACONTROLD_BIN_DIR=/opt/teslacontrold/bin
+Environment=TESLACONTROLD_STATE_DIR=/var/lib/teslacontrold
+# Must stay false: PR_SET_NO_NEW_PRIVS would prevent the setcap'd
+# tesla-control child binary from actually gaining CAP_NET_ADMIN on exec.
+NoNewPrivileges=false
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

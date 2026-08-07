@@ -1,0 +1,10 @@
+Using default tag: latest
+latest: Pulling from coderus/sailfishos-platform-sdk-aarch64
+99d15c707f84: Pulling fs layer
+4f4fb700ef54: Pulling fs layer
+10487d7c1f72: Pulling fs layer
+e215e47baeb6: Pulling fs layer
+2536f5f95bbc: Pulling fs layer
+03921d58f220: Pulling fs layer
+4f4fb700ef54: Already exists
+2536f5f95bbc: Already exists

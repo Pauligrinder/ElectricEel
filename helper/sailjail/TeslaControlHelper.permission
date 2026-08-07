@@ -1,0 +1,15 @@
+# -*- mode: sh -*-
+#
+# Installed by the teslacontrold companion package (not by harbour-teslacontrol
+# itself - Harbour packages can't add their own sailjail permissions). Grants
+# the sandboxed app D-Bus access to the privileged teslacontrold system
+# service, which is where the actual CAP_NET_ADMIN-requiring BLE work happens
+# (Sailjail's Base.permission drops all capabilities from every sandboxed
+# app unconditionally, so the sandboxed app can never do this itself).
+
+# x-sailjail-description = Tesla Vehicle Control
+# x-sailjail-long-description = Control your Tesla vehicle over Bluetooth via the teslacontrold helper service
+
+dbus-system.talk      org.teslacontrol.Helper
+dbus-system.call      org.teslacontrol.Helper=org.teslacontrol.Helper1.*@/org/teslacontrol/Helper
+dbus-system.broadcast org.teslacontrol.Helper=org.teslacontrol.Helper1.*@/org/teslacontrol/Helper
