@@ -6,10 +6,8 @@ License:    ASL 2.0
 URL:        https://github.com/marconapetti/ElectricEel
 Source0:    %{name}-%{version}.tar.bz2
 Requires:   sailfishsilica-qt5 >= 0.10.9
-Requires:   Qt5Core
-Requires:   Qt5Qml
-Requires:   Qt5Quick
-Requires:   Qt5DBus
+Requires:   qt5-qtcore
+Requires:   qt5-qtdeclarative
 BuildRequires:  pkgconfig(sailfishapp) >= 1.0.2
 BuildRequires:  pkgconfig(Qt5Core)
 BuildRequires:  pkgconfig(Qt5Qml)

@@ -164,6 +164,28 @@ devel-su pkcon install-local ~/harbour-teslacontrol-*.rpm
 systemctl status teslacontrold   # should be active
 ```
 
+## Releasing (GitHub CI)
+
+`.github/workflows/release.yml` builds both RPMs and publishes them. Push a
+tag to trigger it:
+
+```sh
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+- The RPM version is taken from the tag (leading `v` stripped); the spec
+  files are stamped with it at build time.
+- `tesla-control`/`tesla-keygen` are cross-compiled from a **pinned**
+  `teslamotors/vehicle-command` release (`v0.4.1` in the workflow) - bump
+  that `--branch` deliberately after validating a newer upstream release.
+- On a tag push the RPMs are attached to the GitHub release for that tag; on
+  a manual `workflow_dispatch` run they are uploaded as workflow artifacts
+  instead (optional `version` input, else it fails).
+- The build pulls the ~13GB `coderus/sailfishos-platform-sdk-aarch64` image,
+  so the job is slow (~30+ min) and needs the preinstalled Android/.NET/etc.
+  removed first to fit on the runner disk (the workflow does this).
+
 ## Testing runbook
 
 1. Launch Tesla Control → pull down → **Settings** → enter VIN → Save.

@@ -1,0 +1,154 @@
+name: Build & publish RPMs
+
+# Builds both RPMs (harbour-teslacontrol + teslacontrold) exactly as
+# documented in README.md and publishes them:
+#   - on a `v*` tag push  -> attached to the GitHub release for that tag
+#   - on workflow_dispatch -> uploaded as workflow artifacts (no release)
+#
+# The upstream tesla-control/tesla-keygen binaries are cross-compiled from a
+# PINNED vehicle-command release (v0.4.1), never from an unpinned checkout -
+# see KNOWN_ISSUES.md ("prebuilt binaries ... build fresh from a pinned
+# upstream commit"). Bump the clone --branch below deliberately when a new
+# upstream release is validated.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'RPM version to build (e.g. 0.1.0). Leave empty to use the pushed tag.'
+        required: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rpm-release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build RPMs
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Free disk space for the Sailfish SDK image
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/powershell
+          sudo apt-get clean
+          df -h
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Compute RPM version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.version }}" ]; then
+            VER="${{ github.event.inputs.version }}"
+          else
+            VER="${GITHUB_REF_NAME#v}"
+          fi
+          if ! echo "$VER" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "invalid version '$VER' (expected semver like 0.2.0)" >&2
+            exit 1
+          fi
+          echo "version=${VER}" >> "$GITHUB_OUTPUT"
+
+      - name: Cross-compile tesla-control / tesla-keygen (pinned upstream v0.4.1)
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/spike/bin"
+          git clone --depth 1 --branch v0.4.1 https://github.com/teslamotors/vehicle-command.git /tmp/vehicle-command
+          cd /tmp/vehicle-command
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o "${GITHUB_WORKSPACE}/spike/bin/tesla-control" ./cmd/tesla-control
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o "${GITHUB_WORKSPACE}/spike/bin/tesla-keygen" ./cmd/tesla-keygen
+          file "${GITHUB_WORKSPACE}/spike/bin/"*
+
+      - name: Cross-compile teslacontrold
+        run: |
+          cd "${GITHUB_WORKSPACE}/helper"
+          mkdir -p dist
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o dist/teslacontrold .
+          file dist/teslacontrold
+
+      - name: Stamp RPM version into the spec files
+        run: |
+          sed -i "s/^Version:.*/Version:       ${{ steps.version.outputs.version }}/" app/rpm/harbour-teslacontrol.spec
+          sed -i "s/^Version:.*/Version:       ${{ steps.version.outputs.version }}/" helper/rpm/teslacontrold.spec
+          grep '^Version:' app/rpm/harbour-teslacontrol.spec helper/rpm/teslacontrold.spec
+
+      - name: Pull Sailfish Platform SDK
+        run: docker pull coderus/sailfishos-platform-sdk-aarch64
+
+      - name: Build RPMs in the Sailfish SDK container
+        run: |
+          set -euxo pipefail
+          docker create --name teslacontrol-build coderus/sailfishos-platform-sdk-aarch64 sleep infinity
+          docker start teslacontrol-build
+          trap 'docker rm -f teslacontrol-build >/dev/null 2>&1 || true' EXIT
+
+          # harbour-teslacontrol.aarch64.rpm
+          docker cp app teslacontrol-build:/home/mersdk/app
+          docker exec -u root teslacontrol-build chown -R mersdk:mersdk /home/mersdk/app
+          docker exec -w /home/mersdk/app teslacontrol-build \
+            mb2 --target SailfishOS-5.2.0.15-aarch64 build
+          mkdir -p app/RPMS
+          docker cp teslacontrol-build:/home/mersdk/app/RPMS/. app/RPMS/
+
+          # teslacontrold.aarch64.rpm (packages the prebuilt binaries)
+          mkdir -p helper/rpmbuild/SOURCES
+          cp helper/dist/teslacontrold spike/bin/tesla-control spike/bin/tesla-keygen \
+             helper/systemd/teslacontrold.service \
+             helper/dbus/org.teslacontrol.Helper.service helper/dbus/org.teslacontrol.Helper.conf \
+             helper/sailjail/TeslaControlHelper.permission \
+             helper/rpmbuild/SOURCES/
+          docker cp helper teslacontrol-build:/home/mersdk/helper
+          docker exec -u root teslacontrol-build chown -R mersdk:mersdk /home/mersdk/helper
+          docker exec -w /home/mersdk/helper teslacontrol-build \
+            sb2 -t SailfishOS-5.2.0.15-aarch64 rpmbuild \
+              --define "_topdir /home/mersdk/helper/rpmbuild" -bb rpm/teslacontrold.spec
+          mkdir -p helper/RPMS
+          docker cp teslacontrol-build:/home/mersdk/helper/rpmbuild/RPMS/aarch64/. helper/RPMS/
+
+      - name: Sanity-check the built RPMs
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq rpm >/dev/null
+          expected="${{ steps.version.outputs.version }}"
+          found=0
+          for f in app/RPMS/*.rpm helper/RPMS/*.rpm; do
+            [ -e "$f" ] || continue
+            found=1
+            echo "== $f =="
+            rpm -qip "$f"
+            ver="$(rpm -qp --qf '%{VERSION}' "$f")"
+            arch="$(rpm -qp --qf '%{ARCH}' "$f")"
+            [ "$arch" = "aarch64" ] || { echo "wrong arch '$arch' for $f (expected aarch64)"; exit 1; }
+            [ "$ver" = "$expected" ] || { echo "version '$ver' != expected '$expected' for $f"; exit 1; }
+          done
+          [ "$found" -eq 1 ] || { echo "no RPMs produced"; exit 1; }
+
+      - name: Publish RPMs to the tag release
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            app/RPMS/*.rpm
+            helper/RPMS/*.rpm
+          generate_release_notes: true
+          make_latest: true
+
+      - name: Upload RPMs as workflow artifacts
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: rpms-${{ steps.version.outputs.version }}
+          path: |
+            app/RPMS/*.rpm
+            helper/RPMS/*.rpm
