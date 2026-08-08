@@ -10,6 +10,31 @@ Dialog {
 
     property var commandDef
     property var values: []
+    property bool formValid: false
+
+    // Recompute formValid. Called from each field's value handlers and from
+    // Component.onCompleted. It cannot be a plain binding expression because
+    // QML does not track plain JS object properties (argSpec.__value), so a
+    // canAccept binding would be evaluated once and never again, leaving the
+    // Run button permanently disabled.
+    function revalidate() {
+        if (!commandDef) {
+            formValid = false
+            return
+        }
+        for (var i = 0; i < commandDef.args.length; i++) {
+            var a = commandDef.args[i]
+            if (!a.optional && (!a.__value || a.__value.length === 0)) {
+                formValid = false
+                return
+            }
+        }
+        formValid = true
+    }
+
+    canAccept: dialog.formValid
+
+    Component.onCompleted: dialog.revalidate()
 
     DialogHeader {
         title: commandDef ? commandDef.label : ""
@@ -58,8 +83,14 @@ Dialog {
                     MenuItem { text: modelData }
                 }
             }
-            onCurrentIndexChanged: if (argSpec && argSpec.values) argSpec.__value = argSpec.values[currentIndex]
-            Component.onCompleted: if (argSpec && argSpec.values && argSpec.values.length) argSpec.__value = argSpec.values[0]
+            onCurrentIndexChanged: {
+                if (argSpec && argSpec.values) argSpec.__value = argSpec.values[currentIndex]
+                dialog.revalidate()
+            }
+            Component.onCompleted: {
+                if (argSpec && argSpec.values && argSpec.values.length) argSpec.__value = argSpec.values[0]
+                dialog.revalidate()
+            }
         }
     }
 
@@ -70,7 +101,10 @@ Dialog {
             label: argSpec ? argSpec.name : ""
             echoMode: TextInput.Password
             inputMethodHints: Qt.ImhDigitsOnly
-            onTextChanged: if (argSpec) argSpec.__value = text
+            onTextChanged: {
+                if (argSpec) argSpec.__value = text
+                dialog.revalidate()
+            }
         }
     }
 
@@ -84,8 +118,14 @@ Dialog {
             stepSize: argSpec && argSpec.step ? argSpec.step : 1
             value: argSpec && argSpec.def !== undefined ? argSpec.def : minimumValue
             valueText: value.toFixed(argSpec && argSpec.step && argSpec.step < 1 ? 1 : 0)
-            onValueChanged: if (argSpec) argSpec.__value = value.toString()
-            Component.onCompleted: if (argSpec) argSpec.__value = value.toString()
+            onValueChanged: {
+                if (argSpec) argSpec.__value = value.toString()
+                dialog.revalidate()
+            }
+            Component.onCompleted: {
+                if (argSpec) argSpec.__value = value.toString()
+                dialog.revalidate()
+            }
         }
     }
 
@@ -96,8 +136,14 @@ Dialog {
             label: argSpec ? (argSpec.name + (argSpec.optional ? " (optional)" : "")) : ""
             placeholderText: argSpec && argSpec.placeholder ? argSpec.placeholder : ""
             text: argSpec && argSpec.def !== undefined ? String(argSpec.def) : ""
-            onTextChanged: if (argSpec) argSpec.__value = text
-            Component.onCompleted: if (argSpec) argSpec.__value = text
+            onTextChanged: {
+                if (argSpec) argSpec.__value = text
+                dialog.revalidate()
+            }
+            Component.onCompleted: {
+                if (argSpec) argSpec.__value = text
+                dialog.revalidate()
+            }
         }
     }
 

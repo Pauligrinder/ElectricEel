@@ -16,6 +16,27 @@ Environment=TESLACONTROLD_STATE_DIR=/var/lib/teslacontrold
 # Must stay false: PR_SET_NO_NEW_PRIVS would prevent the setcap'd
 # tesla-control child binary from actually gaining CAP_NET_ADMIN on exec.
 NoNewPrivileges=false
+# authorize() in main.go reads /proc/<caller_pid>/exe to identify D-Bus
+# callers. The caller (Sailjail's xdg-dbus-proxy, or a direct caller) runs
+# as a different UID (defaultuser) than this service (teslacontrol), and
+# reading another UID's /proc/<pid>/exe symlink is denied by the kernel
+# without CAP_SYS_PTRACE, regardless of Yama ptrace_scope. Deliberately
+# not restricting CapabilityBoundingSet here - it must stay unset (full
+# default set) so the setcap'd tesla-control child can still pick up
+# CAP_NET_ADMIN on exec; the kernel intersects a child's file capabilities
+# with the parent's bounding set, so narrowing it would silently break BLE.
+AmbientCapabilities=CAP_SYS_PTRACE
+# Sandbox: the daemon only needs to exec binaries from /opt/teslacontrold/bin,
+# write state to /var/lib/teslacontrold, and talk to D-Bus / Bluetooth.
+ProtectSystem=strict
+ReadWritePaths=/var/lib/teslacontrold
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
 Restart=on-failure
 RestartSec=2
 

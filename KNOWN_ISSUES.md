@@ -5,23 +5,196 @@ were either fixed, or documented here because closing them needs
 something this environment doesn't have: a real Sailfish device, the
 Platform SDK, or a car to pair against.
 
+## Fixed 2026-08-10 - on-device: "helper service not found" despite teslacontrold running
+
+First real end-to-end test on a Jolla Phone 2026 (Sailfish 5.2.0.16):
+`teslacontrold` was active with no errors in `systemctl status`, but the
+app still showed the "helper service not found" banner, and no error
+logs were visible. Root-caused over SSH:
+
+- Directly reproduced with `dbus-send --system ... GetConfig`:
+  `Error org.teslacontrol.Helper1.Forbidden: cannot resolve caller binary`.
+  `authorize()` in `helper/main.go` was rejecting *every* caller, not just
+  unauthorized ones.
+- Cause: `authorize()` resolves the caller's binary via
+  `os.Readlink("/proc/<pid>/exe")`. `teslacontrold` runs unprivileged as
+  its own `teslacontrol` user with no `CAP_SYS_PTRACE`. Reading another
+  UID's `/proc/<pid>/exe` symlink requires ptrace access, which the
+  kernel denies cross-UID without that capability - confirmed
+  `/proc/sys/kernel/yama/ptrace_scope` was `1` on-device, and the
+  `teslacontrold.service` unit granted no capabilities at all. So the
+  read failed for 100% of callers, always. This is also the one
+  rejection branch in `authorize()` that had no `log.Printf` call -
+  not a logging oversight, just the one silent path, and the one
+  actually being hit, which is why nothing showed up in the journal.
+- While fixing this, verified the *other* open question below (Sailjail
+  proxy PID) is also real, not just theoretical: `firejail --debug`
+  showed the `xdg-dbus-proxy` filter generated from
+  `TeslaControlHelper.permission` correctly includes
+  `--talk=org.teslacontrol.Helper` (sandbox routing itself is fine), but
+  `busctl list --system` showed the app's live system-bus connections
+  owned by PID = `/usr/bin/xdg-dbus-proxy`, never `harbour-teslacontrol`'s
+  own PID. So even with `CAP_SYS_PTRACE` granted, matching against
+  `/usr/bin/harbour-teslacontrol` alone would never succeed for a real
+  sandboxed call.
+- Also checked the SMACK-label fallback this file previously suggested as
+  the alternative: not viable on this device - `/sys/fs/smackfs` doesn't
+  exist, and every process (app, proxy, firejail) reported the same
+  generic SELinux-style context (`u:r:kernel:s0`), so there's no per-app
+  label to check via `GetConnectionCredentials`'s `LinuxSecurityLabel`.
+
+**Fix applied:**
+- `helper/systemd/teslacontrold.service`: added
+  `AmbientCapabilities=CAP_SYS_PTRACE` so `authorize()` can actually read
+  a cross-UID caller's `/proc/<pid>/exe`. `CapabilityBoundingSet` is
+  deliberately left unset (full default) - restricting it would also
+  narrow what capabilities the setcap'd `tesla-control` child can pick up
+  on exec (the kernel intersects a child's file capabilities with the
+  parent's bounding set), breaking BLE.
+- `helper/main.go`: `TESLACONTROLD_ALLOWED_CALLERS` default changed from
+  `/usr/bin/harbour-teslacontrol` to
+  `/usr/bin/harbour-teslacontrol,/usr/bin/xdg-dbus-proxy`, since the
+  proxy's own exe - not the app's - is what a real sandboxed call
+  resolves to. The practical per-app boundary is Sailjail's own
+  permission-scoped proxy filter (only an app declaring the
+  `TeslaControlHelper` permission gets this bus name into its proxy's
+  filter at all); this allow-list's remaining job is blocking a rogue
+  *unsandboxed* process connecting directly as `defaultuser`, which it
+  still does since such a process's own exe matches neither entry.
+- `helper/main.go`: the previously-silent `/proc/<pid>/exe` readlink
+  failure branch in `authorize()` now logs, so a regression here (e.g.
+  the capability grant getting dropped) shows up in
+  `journalctl -u teslacontrold` instead of manifesting only as a client-
+  side "not found" banner with nothing on the daemon side.
+
+Not yet re-verified end-to-end after this fix (rebuild + reinstall +
+retest against the running app was not repeated in this pass) - do that
+before relying on it.
+
+## Fixed 2026-08-10 (continued) - banner still stuck after the daemon-side fix
+
+After redeploying the `teslacontrold` fix above, `teslacontrold`'s own
+journal proved the D-Bus call was reaching it and being authorized
+(`authorized call from pid ... (/usr/bin/xdg-dbus-proxy)`), yet the app's
+"helper service not found" banner still didn't clear, and pulling down
+"Refresh" produced no new daemon-side log line at all. Root-caused via
+the *app's* own journal output (`journalctl -t harbour-teslacontrol`):
+
+```
+TypeError: Cannot call method 'refreshHelperAvailable' of undefined
+```
+
+at `FirstPage.qml:13`, inside `refresh()`. Cause: a QML scoping
+gotcha in `app/qml/harbour-teslacontrol.qml`:
+
+```qml
+TeslaClient {
+    id: teslaClient
+}
+initialPage: Component {
+    FirstPage {
+        teslaClient: teslaClient
+    }
+}
+```
+
+`FirstPage.qml` declares its own `property var teslaClient`. Inside an
+*inline declarative object literal* like `FirstPage { teslaClient:
+teslaClient }`, QML resolves the right-hand `teslaClient` against the
+newly-constructed FirstPage instance's own scope first - and since that
+instance already has a property of that exact name, the outer `id:
+teslaClient` gets shadowed. The binding becomes a no-op self-assignment
+(`this.teslaClient = this.teslaClient`, both `undefined`), so
+`FirstPage.teslaClient` was never actually set. This also explains the
+one log line that *did* appear: it came from `TeslaClient`'s own C++
+constructor calling `refreshHelperAvailable()` on itself directly,
+which doesn't go through this broken QML property at all - so it always
+"worked" once, in isolation, while `FirstPage`'s own `refresh()` (from
+`Component.onCompleted` or the pull-down "Refresh" menu item) silently
+threw and never made a D-Bus call. The banner's own
+`visible: !teslaClient.helperAvailable` binding throws for the same
+reason and falls back to the Rectangle's default `visible: true`, so it
+was never actually reactive to the helper's real state.
+
+Checked every other `{ teslaClient: teslaClient }` occurrence in
+`app/qml/`: all the others are JS object literals passed as the second
+argument to `pageStack.push(url, { teslaClient: teslaClient })`, called
+from *within* a page's own method/handler - there `teslaClient`
+unambiguously resolves to that page's own property (`page.teslaClient`),
+which is a different, safe evaluation context from a declarative inline
+child-object binding. Only the one occurrence in
+`harbour-teslacontrol.qml` was affected.
+
+Also surfaced along the way: `harbour-teslacontrol.desktop`'s launcher
+uses `--single-instance` (visible via `ps`: `invoker --type=silica-qt5
+--id=harbour-teslacontrol --single-instance harbour-teslacontrol`), so
+backgrounding the app via the multitasking view and relaunching from the
+app grid resumes the existing process rather than starting a fresh one -
+`Component.onCompleted` won't re-fire and QML edits won't take effect
+until the process is actually killed (`pkill -f harbour-teslacontrol`)
+first. Worth remembering for any future on-device QML debugging.
+
+**Fix applied:** renamed the outer id in `harbour-teslacontrol.qml` from
+`teslaClient` to `teslaClientInstance` so it no longer collides with
+`FirstPage`'s property name of the same name.
+
+Not yet re-verified on-device after this fix either - confirm the banner
+actually clears after redeploying before considering this closed.
+
 ## Fixed in this pass
 
 - **D-Bus caller authorization** (`helper/main.go`): `Run`, `GenerateKey`,
   `Pair`, `SetConfig`, and `GetConfig` now resolve the calling process's
-  PID via `org.freedesktop.DBus.GetConnectionUnixProcessID` and check
-  `/proc/<pid>/exe` against an allow-list (`TESLACONTROLD_ALLOWED_CALLERS`,
-  default `/usr/bin/harbour-teslacontrol`), denying by default on any
-  lookup failure. Previously the D-Bus system policy
-  (`org.teslacontrol.Helper.conf`) only scoped access to the `defaultuser`
-  Unix account - Sailfish being single-user, that meant *any* process
-  running as `defaultuser` could call these methods directly (unlock,
-  honk, open trunk, valet mode...), not just `harbour-teslacontrol`,
-  since the Sailjail `.permission` file only filters D-Bus for apps
-  launched *through* the sandbox, not arbitrary unsandboxed processes.
-  **This closes the gap for unsandboxed rogue processes/scripts running
-  as `defaultuser`.** See the unresolved caveat below - it does not
-  necessarily close it for other *sandboxed* apps.
+  PID **and UID** atomically via `org.freedesktop.DBus.GetConnectionCredentials`
+  and check `/proc/<pid>/exe` against an allow-list
+  (`TESLACONTROLD_ALLOWED_CALLERS`, default
+  `/usr/bin/harbour-teslacontrol,/usr/bin/xdg-dbus-proxy` - see the
+  2026-08-10 entry above for why the proxy binary is in there too),
+  denying by default on any lookup failure. The PID's current UID read from
+  `/proc/<pid>/status` is cross-checked against the credentials reply, which
+  closes the PID-reuse/TOCTOU race (a recycled PID whose UID no longer matches
+  the connection's recorded UID is rejected). Previously the D-Bus system
+  policy (`org.teslacontrol.Helper.conf`) only scoped access to the
+  `defaultuser` Unix account - Sailfish being single-user, that meant *any*
+  process running as `defaultuser` could call these methods directly (unlock,
+  honk, open trunk, valet mode...), not just `harbour-teslacontrol`, since the
+  Sailjail `.permission` file only filters D-Bus for apps launched *through*
+  the sandbox, not arbitrary unsandboxed processes. **This closes the gap for
+  unsandboxed rogue processes/scripts running as `defaultuser`**; per-sandboxed-
+  app distinction beyond that isn't achievable on this device (see 2026-08-10
+  entry above) and is instead delegated to Sailjail's own permission-scoped
+  proxy filter.
+- **Timeout hardening** (`helper/main.go`): `SetConfig` now rejects non-positive
+  timeouts *and* timeouts above 300s, and the per-command deadline is computed
+  in `int64` so an overflowing `int32` sum can no longer turn into a negative
+  (already-cancelled) context deadline.
+- **Concurrency limit on BLE** (`helper/main.go`): `Run` and `Pair` now
+  serialize through a capacity-1 semaphore; a second simultaneous BLE command
+  is rejected with a `org.teslacontrol.Helper1.Busy` error instead of spawning
+  a second `tesla-control` that fights for the HCI adapter.
+- **Audit logging + secret redaction** (`helper/main.go`): every `Run`/`Pair`/
+  `GenerateKey`/`SetConfig` is now logged. Subcommands that take a PIN
+  (`valet-mode-on`, `parental-controls-on/off`, `parental-controls-clear-pin-admin`)
+  log a redacted `[N redacted args]` instead of writing the PIN to the system
+  journal in cleartext.
+- **Atomic config writes** (`helper/main.go`): `config.json` is now written to
+  a `.tmp` sibling and `os.Rename`d into place, so a crash mid-write can no
+  longer truncate/zero the file and silently reset the VIN/key/timeouts to
+  defaults; an unparseable config is now logged rather than silently ignored.
+- **VIN validation** (`helper/main.go`): `SetConfig` rejects VINs that aren't
+  17 `[A-HJ-NPR-Z0-9]` chars (allowed empty, to clear).
+- **Argument dialog validation** (`app/qml/pages/ArgumentDialog.qml`): the Run
+  button is now disabled until all *required* fields are filled, via an
+  explicit `formValid` property recomputed by `revalidate()` on every field
+  change (a plain `canAccept` binding can't track the catalog's JS-object
+  `__value` fields and would leave the button permanently disabled).
+- **systemd sandboxing** (`helper/systemd/teslacontrold.service`): the service
+  now runs with `ProtectSystem=strict` + `ReadWritePaths=/var/lib/teslacontrold`,
+  `ProtectHome=true`, `PrivateTmp=true`, `ProtectKernelTunables=true`,
+  `ProtectControlGroups=true`, `RestrictNamespaces=true`, and
+  `SystemCallFilter=@system-service`. These are **not yet verified on a real
+  device** - if `teslacontrol` fails to bring up the HCI adapter after install,
+  these directives are the first thing to relax (see the unresolved section).
 - Repo hygiene: prebuilt binaries, built RPMs, rpmbuild staging output,
   and build logs are no longer tracked in git (`.gitignore` added); they
   remain on disk locally where useful (`spike/bin/`, `helper/dist/`,
@@ -29,25 +202,13 @@ Platform SDK, or a car to pair against.
 
 ## Unresolved - needs on-device verification
 
-- **Whether the new caller check actually distinguishes sandboxed apps.**
-  Sailjail sandboxes apps with firejail, and depending on the exact
-  Sailfish OS version, sandboxed apps' system-bus traffic may be routed
-  through a shared `xdg-dbus-proxy` process rather than connecting to the
-  system bus directly. If that's the case here, `GetConnectionUnixProcessID`
-  would resolve to the proxy's PID/exe (the same for every sandboxed app),
-  not `harbour-teslacontrol`'s own PID - which would mean the allow-list
-  check either needs to include the proxy's path (weakening the check
-  back to "any sandboxed app", not just this one) or a different
-  mechanism entirely (e.g. checking the SMACK security label via
-  `org.freedesktop.DBus.GetConnectionCredentials`'s `LinuxSecurityLabel`
-  field, which Sailfish's `dbus-daemon` is known to support and which
-  *is* per-app). I could not verify which applies without a real device.
-  **Action before relying on this**: install both packages, run
-  `journalctl -u teslacontrold`, and trigger a command from the app. If
-  you see a `"rejected call from pid ... not in
-  TESLACONTROLD_ALLOWED_CALLERS"` log line even for legitimate in-app
-  taps, capture the logged exe path and either add it to
-  `TESLACONTROLD_ALLOWED_CALLERS` or switch to a SMACK-label check.
+- **The systemd sandbox directives added in the hardening pass
+  (`ProtectSystem=strict`, `SystemCallFilter=@system-service`, etc.) are
+  unverified on-device.** go-ble/ble drives the HCI adapter through raw
+  sockets and ioctls, which are covered by `@system-service`, but if the
+  service logs a BLE init failure after install, comment out the
+  `ProtectSystem`/`SystemCallFilter`/`RestrictNamespaces` lines, retest, and
+  re-add the least restrictive set that still boots cleanly before shipping.
 - **Cross-page D-Bus reply collisions in the UI** (`app/qml/pages/`):
   `CategoryPage.qml`'s "keys" category and `PairingPage.qml` both issue
   `runCommand("list-keys", "list-keys", [])` - i.e. the same `requestId`.

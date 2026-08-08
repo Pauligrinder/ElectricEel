@@ -2,6 +2,7 @@
 
 #include <QDBusConnection>
 #include <QDBusConnectionInterface>
+#include <QDBusError>
 #include <QDBusPendingCall>
 #include <QDBusPendingCallWatcher>
 #include <QDBusPendingReply>
@@ -35,8 +36,29 @@ void TeslaClient::setHelperAvailable(bool available)
 
 void TeslaClient::refreshHelperAvailable()
 {
-    QDBusConnectionInterface *bus = QDBusConnection::systemBus().interface();
-    setHelperAvailable(bus && bus->isServiceRegistered(kServiceName));
+    if (!QDBusConnection::systemBus().isConnected()) {
+        setHelperAvailable(false);
+        return;
+    }
+    // A name-registration query (isServiceRegistered) is blocked by the
+    // Sailjail sandbox proxy, so probe with a real call instead. A reply -
+    // even an error - proves the service is there; only "no such service"
+    // means it isn't.
+    QDBusPendingCall pcall = m_iface->asyncCall(QStringLiteral("GetConfig"));
+    auto *watcher = new QDBusPendingCallWatcher(pcall, this);
+    connect(watcher, &QDBusPendingCallWatcher::finished, this, [this](QDBusPendingCallWatcher *w) {
+        QDBusPendingReply<QString, QString, int, int, bool, QString> reply = *w;
+        if (reply.isError()) {
+            const QDBusError &err = reply.error();
+            const bool serviceMissing =
+                    err.type() == QDBusError::ServiceUnknown
+                    || err.name() == QLatin1String("org.freedesktop.DBus.Error.ServiceDoesNotExist");
+            setHelperAvailable(!serviceMissing);
+        } else {
+            setHelperAvailable(true);
+        }
+        w->deleteLater();
+    });
 }
 
 void TeslaClient::runCommand(const QString &requestId, const QString &cmd, const QVariantList &args)

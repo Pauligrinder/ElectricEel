@@ -173,7 +173,16 @@ systemctl status teslacontrold   # should be active
    Keys) before actuation commands (Lock/Unlock, Climate, Trunk).
 4. If `teslacontrold` isn't reachable, `FirstPage` shows a banner with the
    install command; check `systemctl status teslacontrold` and
-   `journalctl -u teslacontrold` on-device.
+   `journalctl -u teslacontrold` on-device. If the daemon's journal shows
+   calls being authorized but the banner still won't clear, check the
+   app's own log too (`journalctl -t harbour-teslacontrol`) for a QML
+   error - see [KNOWN_ISSUES.md](KNOWN_ISSUES.md) for one already found
+   and fixed this way.
+5. The launcher runs the app with `--single-instance`: backgrounding it
+   via the multitasking view and relaunching from the app grid resumes
+   the existing process rather than starting fresh, so `Component.onCompleted`
+   won't re-run and any newly-deployed QML won't take effect. Kill it
+   explicitly when iterating: `devel-su pkill -f harbour-teslacontrol`.
 
 ## Build verification status
 
@@ -199,14 +208,31 @@ Neither has been installed on the phone yet or tested against a real vehicle.
 ## Security notes
 
 `teslacontrold`'s D-Bus methods (`Run`, `GenerateKey`, `Pair`, `SetConfig`,
-`GetConfig`) check the calling process's `/proc/<pid>/exe` against an
-allow-list (`TESLACONTROLD_ALLOWED_CALLERS`, default
-`/usr/bin/harbour-teslacontrol`) before doing anything, since the D-Bus
-system policy alone can only scope access to the `defaultuser` account,
-not to a specific app. **This has not been verified on real hardware** -
-see [KNOWN_ISSUES.md](KNOWN_ISSUES.md) for what to check if the app can't
-reach the helper after installing, and for the rest of a later review
-pass's findings.
+`GetConfig`) check the calling process's PID/UID via
+`org.freedesktop.DBus.GetConnectionCredentials` and `/proc/<pid>/exe` against
+an allow-list (`TESLACONTROLD_ALLOWED_CALLERS`, default
+`/usr/bin/harbour-teslacontrol,/usr/bin/xdg-dbus-proxy`) before doing
+anything, since the D-Bus system policy alone can only scope access to the
+`defaultuser` account, not to a specific app.
+
+**Verified on real hardware (Jolla Phone 2026, Sailfish 5.2.0.16):** Sailjail
+routes a sandboxed app's entire system-bus traffic through a dedicated
+per-app `xdg-dbus-proxy` process, so the caller PID/exe that
+`teslacontrold` resolves for a legitimate call is the proxy's
+(`/usr/bin/xdg-dbus-proxy`), not `harbour-teslacontrol`'s own - hence
+that binary being in the allow-list default. The actual per-app gate is
+Sailjail itself: only an app whose `.desktop` file declares the
+`TeslaControlHelper` permission gets `org.teslacontrol.Helper` added to
+its own proxy's filter at all. `teslacontrold`'s allow-list still blocks a
+rogue *unsandboxed* process calling directly as `defaultuser`, since such
+a process's own exe matches neither allow-list entry. Resolving the
+proxy's exe cross-UID also requires `CAP_SYS_PTRACE`, granted via
+`AmbientCapabilities` in `teslacontrold.service` - without it, every
+caller is silently rejected (`Forbidden: cannot resolve caller binary`),
+which is what "helper service not found" turned out to mean the first
+time this was tested end-to-end. See [KNOWN_ISSUES.md](KNOWN_ISSUES.md)
+for the full investigation and why the previously-proposed SMACK-label
+fallback doesn't apply on this device.
 
 ## Known gaps / next steps
 
