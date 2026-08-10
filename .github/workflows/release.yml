@@ -18,7 +18,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'RPM version to build (e.g. 0.1.0). Leave empty to use the pushed tag.'
+        description: 'RPM version to build (e.g. 0.1.1). Leave empty to use the pushed tag.'
         required: false
 
 permissions:
@@ -71,11 +71,13 @@ jobs:
           CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o "${GITHUB_WORKSPACE}/spike/bin/tesla-keygen" ./cmd/tesla-keygen
           file "${GITHUB_WORKSPACE}/spike/bin/"*
 
-      - name: Cross-compile teslacontrold
+      - name: Cross-compile teslacontrold (Rust, aarch64-unknown-linux-musl)
         run: |
           cd "${GITHUB_WORKSPACE}/helper"
+          docker run --rm -v "$PWD":/home/rust/src messense/rust-musl-cross:aarch64-musl \
+            cargo build --release
           mkdir -p dist
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o dist/teslacontrold .
+          cp target/aarch64-unknown-linux-musl/release/teslacontrold dist/teslacontrold
           file dist/teslacontrold
 
       - name: Stamp RPM version into the spec files

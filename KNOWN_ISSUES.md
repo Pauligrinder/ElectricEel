@@ -5,6 +5,74 @@ were either fixed, or documented here because closing them needs
 something this environment doesn't have: a real Sailfish device, the
 Platform SDK, or a car to pair against.
 
+## Rewritten 2026-08-10 - teslacontrold ported from Go to Rust
+
+`teslacontrold` (`helper/`) was rewritten from Go to Rust (zbus, blocking
+API), at the maintainer's request, for maintainability - not in response
+to a bug. `tesla-control`/`tesla-keygen` are unaffected: they're still
+cross-compiled straight from upstream `teslamotors/vehicle-command` (Go)
+and exec'd as subprocesses, never linked in.
+
+Everything outside `helper/` needed zero changes: the D-Bus bus name,
+object path, interface name, and every method's wire signature are
+byte-for-byte identical, so `app/src/teslaclient.cpp` didn't change. The
+RPM spec, systemd unit, D-Bus policy/service files, and Sailjail
+permission file also needed no changes.
+
+Behavior deliberately preserved during the port (see `helper/src/`'s
+module doc comments for the "why" behind each):
+- The `i64`-before-summing timeout arithmetic fix (avoids an `i32`
+  overflow producing a negative/already-cancelled deadline).
+- The exact D-Bus error names (`org.teslacontrol.Helper1.Forbidden` etc.)
+  via a `#[derive(zbus::DBusError)]` enum.
+- All `authorize()` log points, including the fix earlier in this file
+  (the `/proc/<pid>/exe` readlink failure branch that used to fail
+  silently) - it logs now in the Rust version too.
+- The PID-reuse TOCTOU UID cross-check.
+- Atomic config writes (`.tmp` + rename).
+- Two asymmetries in the original Go code that look like bugs but were
+  preserved as-is rather than silently "fixed" during a rewrite that
+  wasn't supposed to change behavior: `Run()`'s BLE-busy condition is a
+  hard D-Bus error (`.Busy`), while `Pair()`'s identical condition
+  returns a normal `ok=false` reply instead; and `GenerateKey()` holds
+  the config mutex for its whole subprocess call even though it never
+  reads the config (kept anyway, since it still serializes concurrent
+  key generation against writing the same key files).
+
+One correctness detail that doesn't map 1:1 from Go and needed actual
+thought rather than direct translation: zbus's own docs warn against
+using its blocking API for an outbound proxy call (`GetConnectionCredentials`,
+needed by `authorize()`) from *within* an interface method that's being
+dispatched by that *same* connection - a reentrancy hazard zbus calls the
+"async sandwich" footgun, since the blocking call there would need to
+`block_on` on the very connection whose event loop is what's currently
+calling it. `Helper` sidesteps this by opening a second, independent
+`zbus::blocking::Connection` used only for that one outbound call -
+distinct from the connection the `ObjectServer` uses to serve the object.
+This has no equivalent concern in the original Go version, since
+goroutines make this kind of concurrent I/O implicit rather than
+something the type system forces you to reason about.
+
+Verified before considering this done: `cargo build`/`clippy`/`test`
+clean; cross-compiled to `aarch64-unknown-linux-musl` (3.5MB static
+binary, actually smaller than the 4.1MB Go one); smoke-tested against a
+real, separate D-Bus daemon acting as a stand-in system bus (not just
+unit tests) - `GetConfig`, `SetConfig` (both valid and validation-rejected
+input), `Run` (unknown command, `-`-prefixed arg, and a real subprocess
+exec via fake `tesla-control`/`tesla-keygen` stand-ins), `GenerateKey`,
+`Pair`, the `Forbidden` rejection path with the exact expected error
+message and log line, and the timeout-and-kill path (confirmed no leaked
+child process and the daemon stayed healthy and responsive for later
+calls afterward). Also confirmed on the actual phone: deployed via the
+same hot-patch route established in the entries below, checksum-verified
+against the local build, and re-ran the same `dbus-send`/`journalctl`
+checks - identical `Forbidden`/rejection behavior to the Go version, plus
+idle RSS dropped from ~2MB to ~244KB. The app itself (unchanged,
+`teslaclient.cpp` doesn't know or care what the daemon is written in)
+was closed and reopened against the new daemon and looked identical.
+Not yet packaged as an RPM - see "Build verification status" in
+README.md.
+
 ## Fixed 2026-08-10 - on-device: "helper service not found" despite teslacontrold running
 
 First real end-to-end test on a Jolla Phone 2026 (Sailfish 5.2.0.16):

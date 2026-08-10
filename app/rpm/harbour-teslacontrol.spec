@@ -1,6 +1,6 @@
 Name:       harbour-teslacontrol
 Summary:    Control your Tesla over Bluetooth
-Version:    0.1.0
+Version:    0.1.1
 Release:    1
 License:    ASL 2.0
 URL:        https://github.com/marconapetti/ElectricEel
@@ -46,5 +46,7 @@ desktop-file-install --delete-original \
 %{_datadir}/icons/hicolor/*/apps/%{name}.png
 
 %changelog
+* Tue Aug 11 2026 Marco Napetti <marco.napetti@proton.me> - 0.1.1-1
+- Rewrite helper in Rust
 * Fri Aug 07 2026 Marco Napetti <marco.napetti@firma.ai> - 0.1.0-1
 - Initial packaging.

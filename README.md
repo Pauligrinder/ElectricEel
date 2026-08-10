@@ -56,8 +56,13 @@ Tested directly against a Jolla Phone 2026 over SSH before building the GUI:
 ## Layout
 
 ```
-helper/                          Go daemon, cross-compiled for aarch64
-  main.go                        D-Bus service: Run/GenerateKey/Pair/SetConfig/GetConfig
+helper/                          Rust (zbus) daemon, cross-compiled for aarch64
+  src/main.rs                    wires up the D-Bus connection, serves the object
+  src/helper.rs                  D-Bus interface impl: Run/GenerateKey/Pair/SetConfig/GetConfig
+  src/authorize.rs               caller-authorization logic (see its module doc comment)
+  src/config.rs                  Config persistence + validation
+  src/commands.rs                tesla-control subcommand catalog
+  src/error.rs                   custom D-Bus error type
   systemd/teslacontrold.service
   dbus/org.teslacontrol.Helper.{service,conf}
   sailjail/TeslaControlHelper.permission
@@ -80,10 +85,10 @@ spike/bin/                        Phase 0 cross-compiled tesla-control/tesla-key
 
 ## Build
 
-### 1. Cross-compile the Go binaries (helper + bundled CLI tools)
+### 1. Cross-compile the CLI tools and the helper daemon
 
-No Sailfish SDK needed for this part - pure Go, cross-compiles from any
-Linux host with Docker:
+`tesla-control`/`tesla-keygen` are pure Go (upstream, unmodified) and
+cross-compile from any Linux host with Docker - no Sailfish SDK needed:
 
 ```sh
 # tesla-control / tesla-keygen (already done once, in spike/bin/):
@@ -93,12 +98,19 @@ docker run --rm -v "$PWD/spike/bin:/out" golang:1.23 bash -c '
   CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o /out/tesla-control ./cmd/tesla-control
   CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o /out/tesla-keygen ./cmd/tesla-keygen
 '
+```
 
-# teslacontrold:
+`teslacontrold` itself is Rust ([zbus](https://docs.rs/zbus), blocking API -
+see its module doc comments for why). It cross-compiles to
+`aarch64-unknown-linux-musl` - fully static, same as the Go binaries above,
+so there's no glibc version to match against the phone:
+
+```sh
 cd helper
-docker run --rm -v "$PWD":/src -w /src golang:1.23 \
-  env CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
-  go build -trimpath -ldflags="-s -w" -o dist/teslacontrold .
+docker run --rm -v "$PWD":/home/rust/src messense/rust-musl-cross:aarch64-musl \
+  cargo build --release
+mkdir -p dist
+cp target/aarch64-unknown-linux-musl/release/teslacontrold dist/teslacontrold
 ```
 
 ### 2. Build both RPMs with the Sailfish Platform SDK (Docker)
@@ -120,7 +132,7 @@ docker cp app teslacontrol-build:/home/mersdk/app
 docker exec -u root teslacontrol-build chown -R mersdk:mersdk /home/mersdk/app
 docker exec -w /home/mersdk/app teslacontrol-build \
   mb2 --target SailfishOS-5.2.0.15-aarch64 build
-docker cp teslacontrol-build:/home/mersdk/app/RPMS/harbour-teslacontrol-0.1.0-1.aarch64.rpm app/RPMS/
+docker cp teslacontrol-build:/home/mersdk/app/RPMS/harbour-teslacontrol-0.1.1-1.aarch64.rpm app/RPMS/
 
 # --- teslacontrold.rpm - no compilation, just packaging prebuilt binaries,
 #     but still needs the aarch64 target's rpm/rpmlint config, via sb2 ---
@@ -135,7 +147,7 @@ docker exec -u root teslacontrol-build chown -R mersdk:mersdk /home/mersdk/helpe
 docker exec -w /home/mersdk/helper teslacontrol-build \
   sb2 -t SailfishOS-5.2.0.15-aarch64 rpmbuild \
     --define "_topdir /home/mersdk/helper/rpmbuild" -bb rpm/teslacontrold.spec
-docker cp teslacontrol-build:/home/mersdk/helper/rpmbuild/RPMS/aarch64/teslacontrold-0.1.0-1.aarch64.rpm helper/RPMS/
+docker cp teslacontrol-build:/home/mersdk/helper/rpmbuild/RPMS/aarch64/teslacontrold-0.1.1-1.aarch64.rpm helper/RPMS/
 
 docker rm -f teslacontrol-build
 ```
@@ -145,19 +157,21 @@ committed here:
 - rpmlint's Sailfish config only accepts old Fedora short license names
   (`ASL 2.0`, not `Apache-2.0`) and requires a `%changelog` section -
   both specs use `ASL 2.0` now.
-- `teslacontrold`'s prebuilt Go binaries have no GNU build-id note, which
-  makes rpm's `find-debuginfo.sh --strict-build-id` hard-fail; its spec
-  sets `%global debug_package %{nil}` to skip debuginfo extraction.
+- The prebuilt `tesla-control`/`tesla-keygen`/`teslacontrold` binaries carry
+  no GNU build-id note (true of the Rust musl build too - checked with
+  `readelf -n`), which makes rpm's `find-debuginfo.sh --strict-build-id`
+  hard-fail; `teslacontrold.spec` sets `%global debug_package %{nil}` to
+  skip debuginfo extraction.
 
 Prebuilt RPMs from this exact process are already checked into
-`app/RPMS/harbour-teslacontrol-0.1.0-1.aarch64.rpm` and
-`helper/RPMS/teslacontrold-0.1.0-1.aarch64.rpm`.
+`app/RPMS/harbour-teslacontrol-0.1.1-1.aarch64.rpm` and
+`helper/RPMS/teslacontrold-0.1.1-1.aarch64.rpm`.
 
 ### 3. Install on the phone
 
 ```sh
 scp helper/rpmbuild/RPMS/aarch64/teslacontrold-*.rpm defaultuser@<phone-ip>:~/
-scp harbour-teslacontrol-0.1.0-1.aarch64.rpm defaultuser@<phone-ip>:~/
+scp harbour-teslacontrol-0.1.1-1.aarch64.rpm defaultuser@<phone-ip>:~/
 ssh defaultuser@<phone-ip>
 devel-su pkcon install-local ~/teslacontrold-*.rpm
 devel-su pkcon install-local ~/harbour-teslacontrol-*.rpm
@@ -220,9 +234,17 @@ Both RPMs have been built for real (not just written) using
   only reviewed, so runtime QML errors are still possible.
 - **`teslacontrold`**: packaged with `rpmbuild` (via `sb2 -t
   SailfishOS-5.2.0.15-aarch64`) after disabling debuginfo extraction
-  (`%global debug_package %{nil}`), since prebuilt Go binaries carry no
-  GNU build-id note and `find-debuginfo.sh --strict-build-id` errored on
-  them otherwise. Systemd scriptlet macros expanded correctly.
+  (`%global debug_package %{nil}`), since prebuilt binaries carry no GNU
+  build-id note and `find-debuginfo.sh --strict-build-id` errored on them
+  otherwise. Systemd scriptlet macros expanded correctly. This was
+  verified against the Go build; after the Rust rewrite, the daemon was
+  cross-compiled, smoke-tested locally against a private D-Bus bus, and
+  hot-deployed straight to `/opt/teslacontrold/bin/teslacontrold` on the
+  phone (bypassing RPM) for the on-device verification pass - the
+  `rpmbuild`/`sb2` packaging step itself hasn't been re-run against the
+  Rust binary yet. `readelf -n` confirms it still has no build-id note, so
+  `%global debug_package %{nil}` should still apply unchanged, but do a
+  real RPM build before shipping.
 
 Both `.rpm` files are checked into `app/RPMS/` and `helper/RPMS/` respectively.
 Neither has been installed on the phone yet or tested against a real vehicle.
