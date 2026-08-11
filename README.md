@@ -63,6 +63,13 @@ helper/                          Rust (zbus) daemon, cross-compiled for aarch64
   src/config.rs                  Config persistence + validation
   src/commands.rs                tesla-control subcommand catalog
   src/error.rs                   custom D-Bus error type
+  src/session_client.rs          talks to tesla-session (see below); Run() falls back to a
+                                  one-shot tesla-control exec on any session-layer error
+  session/                       optional persistent-BLE-session companion (Go), off by
+                                  default - TESLACONTROLD_PERSISTENT_SESSION, see KNOWN_ISSUES.md
+    commands_vendor.go           byte-for-byte copy of upstream's cmd/tesla-control/commands.go
+    main.go                      the actual new part: keeps one *vehicle.Vehicle session alive
+                                  across commands instead of reconnecting every time
   systemd/teslacontrold.service
   dbus/org.teslacontrol.Helper.{service,conf}
   sailjail/TeslaControlHelper.permission
@@ -98,6 +105,16 @@ docker run --rm -v "$PWD/spike/bin:/out" golang:1.23 bash -c '
   CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o /out/tesla-control ./cmd/tesla-control
   CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o /out/tesla-keygen ./cmd/tesla-keygen
 '
+```
+
+`tesla-session` (the optional persistent-BLE-session companion, see
+KNOWN_ISSUES.md - off by default, `TESLACONTROLD_PERSISTENT_SESSION`) is
+its own small Go module at `helper/session/` and cross-compiles the same
+way, no Docker required since it's pure Go with no cgo:
+
+```sh
+cd helper/session
+CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o ../dist/tesla-session .
 ```
 
 `teslacontrold` itself is Rust ([zbus](https://docs.rs/zbus), blocking API -
@@ -138,6 +155,7 @@ docker cp teslacontrol-build:/home/mersdk/app/RPMS/harbour-teslacontrol-0.1.0-1.
 #     but still needs the aarch64 target's rpm/rpmlint config, via sb2 ---
 mkdir -p helper/rpmbuild/SOURCES
 cp helper/dist/teslacontrold spike/bin/tesla-control spike/bin/tesla-keygen \
+   helper/dist/tesla-session \
    helper/systemd/teslacontrold.service \
    helper/dbus/org.teslacontrol.Helper.service helper/dbus/org.teslacontrol.Helper.conf \
    helper/sailjail/TeslaControlHelper.permission \

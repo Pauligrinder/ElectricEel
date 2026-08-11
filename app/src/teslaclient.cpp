@@ -3,6 +3,7 @@
 #include <QDBusConnection>
 #include <QDBusConnectionInterface>
 #include <QDBusError>
+#include <QDBusMessage>
 #include <QDBusPendingCall>
 #include <QDBusPendingCallWatcher>
 #include <QDBusPendingReply>
@@ -11,6 +12,21 @@ namespace {
 const char *kServiceName = "org.teslacontrol.Helper";
 const char *kObjectPath = "/org/teslacontrol/Helper";
 const char *kInterfaceName = "org.teslacontrol.Helper1";
+
+// QDBusInterface::asyncCall has no per-call timeout of its own - it (and
+// the Qt/libdbus default, ~25s) is fine for GetConfig/SetConfig/GenerateKey,
+// which never touch BLE, but Run and Pair can legitimately take far longer:
+// helper/src/helper.rs sizes its own subprocess deadline as
+// connect_timeout_sec + command_timeout_sec + 10 (Run) or that plus a 30s
+// NFC-tap allowance (Pair), and connect/command timeouts are configurable
+// up to config::MAX_TIMEOUT_SEC (300s) each. Sized to the larger of the
+// two (Pair's) worst case - 300+300+10+30=640s - with a little slack, so
+// the client-side timeout is never shorter than what the server could
+// legitimately still be doing. Built as a raw QDBusMessage + a dedicated
+// asyncCall(..., timeout) instead of raising m_iface's interface-wide
+// timeout, so the fast calls above keep failing fast if the service itself
+// is down.
+const int kLongCallTimeoutMs = 650000;
 }
 
 TeslaClient::TeslaClient(QObject *parent)
@@ -67,7 +83,9 @@ void TeslaClient::runCommand(const QString &requestId, const QString &cmd, const
     for (const QVariant &v : args)
         argList << v.toString();
 
-    QDBusPendingCall pcall = m_iface->asyncCall(QStringLiteral("Run"), cmd, argList);
+    QDBusMessage msg = QDBusMessage::createMethodCall(kServiceName, kObjectPath, kInterfaceName, QStringLiteral("Run"));
+    msg << cmd << QVariant::fromValue(argList);
+    QDBusPendingCall pcall = QDBusConnection::systemBus().asyncCall(msg, kLongCallTimeoutMs);
     auto *watcher = new QDBusPendingCallWatcher(pcall, this);
     connect(watcher, &QDBusPendingCallWatcher::finished, this, [this, requestId](QDBusPendingCallWatcher *w) {
         QDBusPendingReply<bool, QString, QString, int> reply = *w;
@@ -100,7 +118,8 @@ void TeslaClient::generateKey(bool force)
 
 void TeslaClient::pair()
 {
-    QDBusPendingCall pcall = m_iface->asyncCall(QStringLiteral("Pair"));
+    QDBusMessage msg = QDBusMessage::createMethodCall(kServiceName, kObjectPath, kInterfaceName, QStringLiteral("Pair"));
+    QDBusPendingCall pcall = QDBusConnection::systemBus().asyncCall(msg, kLongCallTimeoutMs);
     auto *watcher = new QDBusPendingCallWatcher(pcall, this);
     connect(watcher, &QDBusPendingCallWatcher::finished, this, [this](QDBusPendingCallWatcher *w) {
         QDBusPendingReply<bool, QString, QString> reply = *w;

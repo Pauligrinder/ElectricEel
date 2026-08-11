@@ -657,7 +657,7 @@ dependencies = [
 
 [[package]]
 name = "teslacontrold"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "procfs",
  "regex",

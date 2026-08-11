@@ -90,12 +90,29 @@ function mergeClimateState(status, jsonText) {
     return s
 }
 
+// ChargingState is a proto oneof-of-empty-messages (vehicle.proto's
+// "oneof type { Void Charging = 5; ... }" pattern used for several
+// enum-like fields in this schema), not a plain string enum - protojson
+// serializes the active variant as an object keyed by the variant's exact
+// field name, e.g. {"Charging": {}}, not the string "Charging" or
+// "CHARGING". Confirmed empirically (not guessed) by constructing a
+// ChargeState_ChargingState_Charging via the v0.4.1 generated Go code and
+// running it through protojson.Format directly. This is why a plain
+// `obj.chargingState` read used to be compared against a string in
+// FirstPage.qml and could never match - not a casing bug, a type one.
+function oneofVariantName(oneofObj) {
+    if (!oneofObj)
+        return ""
+    var keys = Object.keys(oneofObj)
+    return keys.length ? keys[0] : ""
+}
+
 function mergeChargeState(status, jsonText) {
     var s = clone(status)
     try {
         var obj = JSON.parse(jsonText).chargeState || {}
         s.batteryLevel = obj.batteryLevel !== undefined ? obj.batteryLevel : null
-        s.chargingState = obj.chargingState || ""
+        s.chargingState = oneofVariantName(obj.chargingState)
         s.minutesToFullCharge = obj.minutesToFullCharge || 0
         s.updatedAt = Date.now()
     } catch (e) {

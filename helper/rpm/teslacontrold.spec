@@ -5,7 +5,7 @@
 #   devel-su pkcon install-local teslacontrold-*.rpm
 Name:       teslacontrold
 Summary:    Privileged BLE helper service for harbour-teslacontrol
-Version:    0.1.3
+Version:    0.1.4
 Release:    1
 License:    ASL 2.0 and BSD
 URL:        https://github.com/marconapetti/ElectricEel
@@ -17,6 +17,12 @@ Source0:    %{name}-%{version}.tar.gz
 Source1:    teslacontrold
 Source2:    tesla-control
 Source3:    tesla-keygen
+# Optional persistent-BLE-session companion (helper/session/) - only
+# spawned when TESLACONTROLD_PERSISTENT_SESSION is set; see
+# KNOWN_ISSUES.md. Bundled unconditionally like the other two so enabling
+# the env var doesn't require a reinstall, but inert (never executed) with
+# it unset.
+Source4:    tesla-session
 Source10:   teslacontrold.service
 Source11:   org.teslacontrol.Helper.service
 Source12:   org.teslacontrol.Helper.conf
@@ -53,6 +59,7 @@ install -d %{buildroot}/opt/teslacontrold/bin
 install -m 0755 %{SOURCE1} %{buildroot}/opt/teslacontrold/bin/teslacontrold
 install -m 0755 %{SOURCE2} %{buildroot}/opt/teslacontrold/bin/tesla-control
 install -m 0755 %{SOURCE3} %{buildroot}/opt/teslacontrold/bin/tesla-keygen
+install -m 0755 %{SOURCE4} %{buildroot}/opt/teslacontrold/bin/tesla-session
 
 install -d %{buildroot}%{_unitdir}
 install -m 0644 %{SOURCE10} %{buildroot}%{_unitdir}/teslacontrold.service
@@ -78,7 +85,11 @@ exit 0
 %post
 # CAP_NET_ADMIN lets go-ble/ble bring the HCI adapter up/down without root;
 # see the raw-HCI feasibility notes in README.md for why this is needed.
+# tesla-session needs the same grant as tesla-control: with
+# TESLACONTROLD_PERSISTENT_SESSION set, it's the one holding the BLE
+# session, not tesla-control.
 setcap 'cap_net_admin=eip' /opt/teslacontrold/bin/tesla-control
+setcap 'cap_net_admin=eip' /opt/teslacontrold/bin/tesla-session
 chown -R teslacontrol:teslacontrol /var/lib/teslacontrold
 %systemd_post teslacontrold.service
 systemctl daemon-reload >/dev/null 2>&1 || :
@@ -94,6 +105,7 @@ systemctl enable --now teslacontrold.service >/dev/null 2>&1 || :
 %attr(0755,root,root) /opt/teslacontrold/bin/teslacontrold
 %attr(0755,root,root) /opt/teslacontrold/bin/tesla-control
 %attr(0755,root,root) /opt/teslacontrold/bin/tesla-keygen
+%attr(0755,root,root) /opt/teslacontrold/bin/tesla-session
 %{_unitdir}/teslacontrold.service
 %{_datadir}/dbus-1/system-services/org.teslacontrol.Helper.service
 %{_sysconfdir}/dbus-1/system.d/org.teslacontrol.Helper.conf
@@ -101,6 +113,10 @@ systemctl enable --now teslacontrold.service >/dev/null 2>&1 || :
 %dir %attr(0700,teslacontrol,teslacontrol) %{_localstatedir}/lib/teslacontrold
 
 %changelog
+* Tue Aug 11 2026 Marco Napetti <marco.napetti@proton.me> - 0.1.4-1
+- Add tesla-session, an optional persistent-BLE-session companion binary
+  (off by default, TESLACONTROLD_PERSISTENT_SESSION) - not yet verified
+  on-device, see KNOWN_ISSUES.md.
 * Tue Aug 11 2026 Marco Napetti <marco.napetti@proton.me> - 0.1.3-1
 - Bump version
 * Tue Aug 11 2026 Marco Napetti <marco.napetti@proton.me> - 0.1.2-1

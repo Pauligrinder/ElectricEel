@@ -10,15 +10,24 @@ use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
 
 pub const MAX_TIMEOUT_SEC: i32 = 300;
+pub const MAX_KEY_NAME_LEN: usize = 64;
 
 static VIN_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-HJ-NPR-Z0-9]{17}$").unwrap());
+// key_name is functionally near-inert (tesla-control only consults it for
+// an OS-keyring-backed key, and this app always passes -keyring-type file,
+// which loads by -key-file and never reaches the keyring lookup) - this
+// isn't guarding against it doing anything dangerous, just against an
+// unbounded/control-character string sitting in config.json and getting
+// echoed into SetConfig's journal log line on every call.
+static KEY_NAME_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Za-z0-9 ._-]*$").unwrap());
 
-/// Validation failure for a SetConfig payload.
+/// Validation failure for a `SetConfig` payload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConfigError {
     PositiveTimeout,
     MaxTimeout,
     InvalidVin,
+    InvalidKeyName,
 }
 
 impl fmt::Display for ConfigError {
@@ -29,6 +38,10 @@ impl fmt::Display for ConfigError {
             ConfigError::InvalidVin => {
                 write!(f, "invalid VIN format (17 alphanumeric chars, no I/O/Q)")
             }
+            ConfigError::InvalidKeyName => write!(
+                f,
+                "key name must be <= {MAX_KEY_NAME_LEN} chars (letters, digits, spaces, . _ -)"
+            ),
         }
     }
 }
@@ -62,16 +75,55 @@ impl Config {
             Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Config::default()),
             Err(e) => return Err(e),
         };
-        match serde_json::from_slice(&data) {
-            Ok(cfg) => Ok(cfg),
+        let mut cfg: Config = match serde_json::from_slice(&data) {
+            Ok(cfg) => cfg,
             Err(e) => {
                 eprintln!(
                     "teslacontrold: ignoring unparseable config {}: {}",
                     path.display(),
                     e
                 );
-                Ok(Config::default())
+                return Ok(Config::default());
             }
+        };
+        cfg.sanitize();
+        Ok(cfg)
+    }
+
+    /// Defense-in-depth against a hand-edited or otherwise corrupted
+    /// config.json - the write path (`SetConfig` -> `validate_config`)
+    /// already rejects all of this, so the only way a bad value gets here
+    /// is editing the file directly. That's not a real attack surface
+    /// (0600, owned by the service's own account - see the RPM spec), but
+    /// an out-of-range Duration or a stray control character still
+    /// shouldn't flow straight into a subprocess argv unexamined. Resets
+    /// only the offending field(s) to their defaults rather than
+    /// discarding the whole config, so one bad field doesn't also cost
+    /// the VIN.
+    fn sanitize(&mut self) {
+        let default = Config::default();
+        if self.connect_timeout_sec <= 0 || self.connect_timeout_sec > MAX_TIMEOUT_SEC {
+            eprintln!(
+                "teslacontrold: config.json connect_timeout_sec={} out of range, resetting to default",
+                self.connect_timeout_sec
+            );
+            self.connect_timeout_sec = default.connect_timeout_sec;
+        }
+        if self.command_timeout_sec <= 0 || self.command_timeout_sec > MAX_TIMEOUT_SEC {
+            eprintln!(
+                "teslacontrold: config.json command_timeout_sec={} out of range, resetting to default",
+                self.command_timeout_sec
+            );
+            self.command_timeout_sec = default.command_timeout_sec;
+        }
+        if !self.vin.trim().is_empty() && !VIN_RE.is_match(self.vin.trim()) {
+            eprintln!("teslacontrold: config.json vin fails validation, clearing");
+            self.vin = String::new();
+        }
+        let key_name = self.key_name.trim();
+        if key_name.len() > MAX_KEY_NAME_LEN || !KEY_NAME_RE.is_match(key_name) {
+            eprintln!("teslacontrold: config.json key_name fails validation, resetting to default");
+            self.key_name = default.key_name;
         }
     }
 
@@ -94,10 +146,11 @@ impl Config {
 }
 
 /// Returns `Ok(())` if the inputs are acceptable, else a human-readable error.
-/// Shared by SetConfig and unit tests so the bounds can be verified without a
+/// Shared by `SetConfig` and unit tests so the bounds can be verified without a
 /// live D-Bus connection.
 pub fn validate_config(
     vin: &str,
+    key_name: &str,
     connect_timeout: i32,
     command_timeout: i32,
 ) -> Result<(), ConfigError> {
@@ -111,6 +164,10 @@ pub fn validate_config(
     if !vin.is_empty() && !VIN_RE.is_match(vin) {
         return Err(ConfigError::InvalidVin);
     }
+    let key_name = key_name.trim();
+    if key_name.len() > MAX_KEY_NAME_LEN || !KEY_NAME_RE.is_match(key_name) {
+        return Err(ConfigError::InvalidKeyName);
+    }
     Ok(())
 }
 
@@ -118,14 +175,23 @@ pub fn validate_config(
 mod tests {
     use super::*;
 
+    // (name, vin, key_name, connect_timeout, command_timeout, want)
+    type ValidateConfigCase<'a> = (&'a str, &'a str, &'a str, i32, i32, Option<ConfigError>);
+
     #[test]
+    // One long, flat table of cases reads more clearly here than splitting
+    // into several shorter test functions that would each re-establish the
+    // same "all valid except one field" setup.
+    #[allow(clippy::too_many_lines)]
     fn test_validate_config() {
         let valid_vin = "5YJ3E1EA0PF000000";
-        let cases: &[(&str, &str, i32, i32, Option<ConfigError>)] = &[
-            ("all valid", valid_vin, 20, 5, None),
+        let default_key_name = "harbour-teslacontrol";
+        let cases: &[ValidateConfigCase] = &[
+            ("all valid", valid_vin, default_key_name, 20, 5, None),
             (
                 "zero connect timeout",
                 valid_vin,
+                default_key_name,
                 0,
                 5,
                 Some(ConfigError::PositiveTimeout),
@@ -133,6 +199,7 @@ mod tests {
             (
                 "negative command timeout",
                 valid_vin,
+                default_key_name,
                 20,
                 -1,
                 Some(ConfigError::PositiveTimeout),
@@ -140,6 +207,7 @@ mod tests {
             (
                 "connect timeout too large",
                 valid_vin,
+                default_key_name,
                 MAX_TIMEOUT_SEC + 1,
                 5,
                 Some(ConfigError::MaxTimeout),
@@ -147,6 +215,7 @@ mod tests {
             (
                 "command timeout too large",
                 valid_vin,
+                default_key_name,
                 20,
                 MAX_TIMEOUT_SEC + 1,
                 Some(ConfigError::MaxTimeout),
@@ -154,15 +223,24 @@ mod tests {
             (
                 "exactly at max allowed",
                 valid_vin,
+                default_key_name,
                 MAX_TIMEOUT_SEC,
                 MAX_TIMEOUT_SEC,
                 None,
             ),
-            ("empty VIN clears config", "", 20, 5, None),
-            (" 5YJ3E1EA0PF000000 ", " 5YJ3E1EA0PF000000 ", 20, 5, None),
+            ("empty VIN clears config", "", default_key_name, 20, 5, None),
+            (
+                " 5YJ3E1EA0PF000000 ",
+                " 5YJ3E1EA0PF000000 ",
+                default_key_name,
+                20,
+                5,
+                None,
+            ),
             (
                 "VIN too short",
                 "5YJ3E1EA0PF00000",
+                default_key_name,
                 20,
                 5,
                 Some(ConfigError::InvalidVin),
@@ -170,6 +248,7 @@ mod tests {
             (
                 "VIN with letter I",
                 "5YJ3E1EA0PI000000",
+                default_key_name,
                 20,
                 5,
                 Some(ConfigError::InvalidVin),
@@ -177,6 +256,7 @@ mod tests {
             (
                 "VIN with letter O",
                 "5YJ3E1EA0PO000000",
+                default_key_name,
                 20,
                 5,
                 Some(ConfigError::InvalidVin),
@@ -184,14 +264,56 @@ mod tests {
             (
                 "VIN with lowercase",
                 "5yj3e1ea0pf000000",
+                default_key_name,
                 20,
                 5,
                 Some(ConfigError::InvalidVin),
             ),
+            ("empty key name clears it", valid_vin, "", 20, 5, None),
+            (
+                "key name at max length",
+                valid_vin,
+                &"a".repeat(MAX_KEY_NAME_LEN),
+                20,
+                5,
+                None,
+            ),
+            (
+                "key name too long",
+                valid_vin,
+                &"a".repeat(MAX_KEY_NAME_LEN + 1),
+                20,
+                5,
+                Some(ConfigError::InvalidKeyName),
+            ),
+            (
+                "key name with disallowed characters",
+                valid_vin,
+                "phone; rm -rf /",
+                20,
+                5,
+                Some(ConfigError::InvalidKeyName),
+            ),
+            (
+                "key name with newline",
+                valid_vin,
+                "phone\nkey",
+                20,
+                5,
+                Some(ConfigError::InvalidKeyName),
+            ),
+            (
+                "key name with spaces/dots/dashes/underscores",
+                valid_vin,
+                "My Phone_v2.0-test",
+                20,
+                5,
+                None,
+            ),
         ];
-        for (name, vin, connect_timeout, command_timeout, want) in cases {
-            let got = validate_config(vin, *connect_timeout, *command_timeout).err();
-            assert_eq!(got, *want, "{name}: validate_config({vin:?})");
+        for (name, vin, key_name, connect_timeout, command_timeout, want) in cases {
+            let got = validate_config(vin, key_name, *connect_timeout, *command_timeout).err();
+            assert_eq!(got, *want, "{name}: validate_config({vin:?}, {key_name:?})");
         }
     }
 
@@ -225,6 +347,31 @@ mod tests {
         let reloaded = Config::load(&path).expect("reload");
         assert_eq!(reloaded.vin, cfg.vin);
         assert_eq!(reloaded.connect_timeout_sec, cfg.connect_timeout_sec);
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_load_sanitizes_out_of_range_fields() {
+        let dir = std::env::temp_dir().join(format!("teslacontrold-test-sanitize-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("config.json");
+
+        // Simulates a hand-edited config.json - validate_config would
+        // reject all four of these fields via SetConfig, but load() must
+        // not simply trust a file that bypassed that path.
+        fs::write(
+            &path,
+            r#"{"vin":"not-a-real-vin","key_name":"phone\nname","connect_timeout_sec":-5,"command_timeout_sec":99999}"#,
+        )
+        .unwrap();
+
+        let cfg = Config::load(&path).expect("load");
+        let default = Config::default();
+        assert_eq!(cfg.vin, "", "invalid vin should be cleared, not smuggled through");
+        assert_eq!(cfg.key_name, default.key_name, "invalid key_name should reset to default");
+        assert_eq!(cfg.connect_timeout_sec, default.connect_timeout_sec);
+        assert_eq!(cfg.command_timeout_sec, default.command_timeout_sec);
 
         fs::remove_dir_all(&dir).ok();
     }

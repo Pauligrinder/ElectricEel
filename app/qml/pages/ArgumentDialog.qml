@@ -61,8 +61,15 @@ Dialog {
                     sourceComponent: {
                         if (modelData.type === "enum") return enumField
                         if (modelData.type === "pin") return pinField
+                        // Sliders always have *some* value under the thumb,
+                        // so an optional numeric field can't use one - it
+                        // would always send a value, never really skip it
+                        // (see textField's onAccepted skip-when-empty logic,
+                        // which a slider can never trigger). Fall back to
+                        // free text, which starts empty unless a def is set.
                         if ((modelData.type === "int" || modelData.type === "float")
-                                && modelData.min !== undefined && modelData.max !== undefined)
+                                && modelData.min !== undefined && modelData.max !== undefined
+                                && !modelData.optional)
                             return sliderField
                         return textField
                     }
@@ -76,19 +83,25 @@ Dialog {
         id: enumField
         ComboBox {
             property var argSpec
+            // Optional enums get a real "not set" choice at index 0, whose
+            // __value is "" so onAccepted's skip-when-empty-and-optional
+            // logic actually fires - without this, an optional enum always
+            // has *some* selected value (menus have no "nothing selected"
+            // state) and so was never actually skippable.
+            property var choices: argSpec ? (argSpec.optional ? [""].concat(argSpec.values) : argSpec.values) : []
             label: argSpec ? (argSpec.name + (argSpec.optional ? " (optional)" : "")) : ""
             menu: ContextMenu {
                 Repeater {
-                    model: argSpec ? argSpec.values : []
-                    MenuItem { text: modelData }
+                    model: choices
+                    MenuItem { text: modelData === "" ? "(not set)" : modelData }
                 }
             }
             onCurrentIndexChanged: {
-                if (argSpec && argSpec.values) argSpec.__value = argSpec.values[currentIndex]
+                if (argSpec && choices.length) argSpec.__value = choices[currentIndex]
                 dialog.revalidate()
             }
             Component.onCompleted: {
-                if (argSpec && argSpec.values && argSpec.values.length) argSpec.__value = argSpec.values[0]
+                if (argSpec && choices.length) argSpec.__value = choices[0]
                 dialog.revalidate()
             }
         }
@@ -118,12 +131,16 @@ Dialog {
             stepSize: argSpec && argSpec.step ? argSpec.step : 1
             value: argSpec && argSpec.def !== undefined ? argSpec.def : minimumValue
             valueText: value.toFixed(argSpec && argSpec.step && argSpec.step < 1 ? 1 : 0)
+            // sendSuffix is for values tesla-control wants glued directly to
+            // the number with no space (e.g. "21C", "600s") - distinct from
+            // `unit`, which is display-only text shown in the label (e.g.
+            // "°C") and would be invalid if sent as-is.
             onValueChanged: {
-                if (argSpec) argSpec.__value = value.toString()
+                if (argSpec) argSpec.__value = value.toString() + (argSpec.sendSuffix || "")
                 dialog.revalidate()
             }
             Component.onCompleted: {
-                if (argSpec) argSpec.__value = value.toString()
+                if (argSpec) argSpec.__value = value.toString() + (argSpec.sendSuffix || "")
                 dialog.revalidate()
             }
         }

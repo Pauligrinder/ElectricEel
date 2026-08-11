@@ -5,6 +5,175 @@ were either fixed, or documented here because closing them needs
 something this environment doesn't have: a real Sailfish device, the
 Platform SDK, or a car to pair against.
 
+## Fixed 2026-08-11 - full-codebase review: 11 findings, mostly commands that always errored
+
+An independent review (Rust helper, Go session companion, C++/QML app,
+systemd/D-Bus/RPM packaging, CI - build/clippy/tests verified, not
+read-only) found that most of `CommandCatalog.js`'s arguments for
+less-common commands were wrong in ways that made the command fail
+every single time it was tapped from the UI, plus a few smaller
+security/robustness gaps. Every finding was checked against the actual
+pinned `v0.4.1` source (`helper/session/commands_vendor.go`, and for one
+finding, empirically via `protojson.Format` on real generated Go types -
+see below) before fixing, not taken on faith.
+
+**Commands that always failed, now fixed** (`app/qml/js/CommandCatalog.js`
+unless noted):
+- Seat Heater: `SEAT` used underscores (`front_left`); upstream wants
+  hyphens (`front-left`, `2nd-row-left`, ...). `LEVEL` was a 0-3 slider;
+  upstream wants `off|low|medium|high`.
+- Set Temperature: sent a bare number; upstream needs the unit glued on
+  (`21C`). Fixed via a new `sendSuffix` arg option
+  (`app/qml/pages/ArgumentDialog.qml`) distinct from the display-only
+  `unit` label.
+- Start Software Update: `DELAY` sent bare seconds; upstream parses it
+  with Go's `time.ParseDuration`, which requires a unit (`600s`) - only
+  `DELAY=0` ever worked, since that's the one value `ParseDuration`
+  accepts unitless. Same `sendSuffix` fix.
+- Add Charge Schedule: `TIME` placeholder implied a single time
+  (`07:30`); upstream wants a `START-END` range (`22:00-06:00`).
+  Preconditioning's `TIME` is genuinely a single time - the two used to
+  share one arg-builder function despite having different formats; split
+  into `chargeScheduleAddArgs()`/`preconditionScheduleAddArgs()`.
+- Add/Remove schedule `TYPE`: was `home|work|favorite`; upstream is
+  `home|work|other|id` (`favorite` was never a real value).
+- Session Info `DOMAIN`: was `vehicle_security`; upstream is `vcsec`.
+- Add Key `FORM_FACTOR`: was `phone_key`; upstream enum is
+  `nfc_card|ios_device|android_device|cloud_key` (this app's own key
+  enrolls as `cloud_key`).
+- Auto Seat & Climate `POSITIONS`: was a free-text placeholder
+  (`front_left,front_right`); upstream wants literal `L`, `R`, or `LR`.
+- `parental-controls-*` (5 commands, `CommandCatalog.js` +
+  `helper/src/commands.rs`'s `COMMAND_CATALOG`/`PIN_COMMANDS`): don't
+  exist upstream at all - "parental-controls" is only a `state` CATEGORY
+  name (a read-only status query), never a family of action commands.
+  Removed entirely rather than left as buttons guaranteed to error.
+- `rename-key`/`product-info`: `requiresFleetAPI: true` upstream, so
+  they always fail with "command requires a FleetAPI OAuth token" in
+  this BLE-only app. Removed from the UI catalog (left in the Rust
+  allow-list - they're real, well-formed commands, just not useful to
+  offer as buttons; no security reason to also drop them there).
+- Also found while verifying the above (not in the original review): the
+  `DAYS` placeholder text said `Mon,Tue,Wed`, but upstream's day-name
+  parser only recognizes `Tues`/`Thurs`, not `Tue`/`Thu`.
+
+**The actual bug behind "optional" schedule fields never being optional**
+(`app/qml/pages/ArgumentDialog.qml`): enum and slider fields set
+`argSpec.__value` in `Component.onCompleted` unconditionally, including
+for fields marked `optional: true` - a `ComboBox`/`Slider` has no "nothing
+selected" state to represent "leave this unset," so a schedule add
+always sent `REPEAT=once` (overriding the weekly default) and `ID=0`.
+Fixed two ways: optional enum fields now get a synthetic "(not set)"
+choice at index 0 whose value is `""` (so the existing skip-if-empty
+logic in `onAccepted` actually fires); optional int/float fields fall
+back to a plain text field instead of a slider (a slider can never be
+"empty," a text field naturally is unless a default is given).
+
+**Charging-state dashboard comparison** (`app/qml/js/VehicleState.js`,
+`app/qml/pages/FirstPage.qml`): the review guessed this was a
+`"Charging"` vs `"CHARGING"` casing bug. Checked empirically instead of
+guessing further - `ChargingState` is a protobuf `oneof` of empty
+messages (`oneof type { Void Charging = 5; ... }`), not a plain enum, so
+`protojson` serializes the active variant as a *nested object* keyed by
+the exact field name (`{"Charging": {}}`), not a string at all. Verified
+by writing a throwaway Go program against the real `v0.4.1` generated
+types and calling `protojson.Format` directly, rather than trusting
+protobuf's JSON-naming rules from memory. So the bug was a type mismatch
+(object compared to string, always false), not a casing one - and the
+string value `"Charging"` FirstPage.qml already compared against was
+correct all along. Also verified the other fields this dashboard reads
+(`locked`, door/window bools, temps, `isClimateOn`) do *not* share this
+trap - they use proto3's single-field-oneof "explicit optional scalar"
+idiom, which `protojson` flattens to a plain value, confirmed the same
+way.
+
+**Smaller fixes:**
+- `SetConfig` didn't validate `key_name` at all (`helper/src/config.rs`):
+  added a length cap (64 chars) and charset restriction, mirroring the
+  existing VIN validation. `key_name` is functionally near-inert in this
+  app (always `-keyring-type file`, so tesla-control never reaches the
+  keyring-lookup code path that would use it) - this is about not
+  logging/storing an unbounded or control-character string, not a
+  functional risk.
+- `Config::load` didn't re-validate on load, only `SetConfig`'s write
+  path did. Added `Config::sanitize()`, called after every load: resets
+  only the specific out-of-range field(s) to their defaults (not the
+  whole config) rather than trusting a hand-edited `config.json`
+  unconditionally. Low real risk (the file is 0600, owned by the
+  service's own account - see the RPM spec) but cheap defense-in-depth.
+- `run_binary`'s spawn-failure path (`helper/src/helper.rs`) silently
+  returned empty output with no log line - the hardest failure mode to
+  reproduce got zero diagnostics. Now logged via `eprintln!`.
+- `Pair()` had a hardcoded 60s timeout independent of the configured
+  `connect_timeout_sec` (up to 300s) baked into the same argv - could
+  cut off a connect attempt still legitimately in progress. Now uses the
+  same `connect + command + 10s` envelope `Run()` does, plus a flat 30s
+  allowance for the physical NFC-card tap it waits for.
+- `app/src/teslaclient.cpp`'s D-Bus calls relied on Qt/libdbus's default
+  reply timeout (~25s) for everything, including `Run`/`Pair`, which can
+  legitimately take up to that same `connect+command+10s`/`+30s`
+  envelope (up to 640s at max configured timeouts) - a real command
+  could get killed client-side well before the server gave up on it.
+  Fixed by building a raw `QDBusMessage` and calling
+  `QDBusConnection::asyncCall(msg, timeoutMs)` with an explicit long
+  timeout for just those two calls, rather than raising
+  `QDBusInterface`'s interface-wide timeout (which would also make
+  `GetConfig`/`SetConfig`/`GenerateKey` wait just as long if the service
+  itself were down). Verified with a syntax-only `g++` compile against
+  real Qt6 D-Bus headers (confirms the API calls are correct; doesn't
+  confirm behavior against the Sailfish SDK's actual Qt5 - not
+  buildable in this environment, see the pre-existing note below).
+- `let _ = &conn;` before `thread::park()` in `helper/src/main.rs` was a
+  cryptic no-op to silence an unused-variable warning. Renamed the
+  binding to `_conn` instead - idiomatic, same effect, self-explanatory.
+
+**Drift-prevention test added** (`helper/src/commands.rs`): the root
+cause behind most of the above is that `CommandCatalog.js`,
+`COMMAND_CATALOG`, and `commands_vendor.go` are three independently
+hand-maintained lists with no automatic cross-check. Added
+`KNOWN_UPSTREAM_COMMANDS` (a snapshot of every command name that
+actually exists in the pinned `v0.4.1` tag) plus two tests -
+`test_command_catalog_matches_upstream` and
+`test_qml_catalog_matches_upstream` (the latter `include_str!`s
+`CommandCatalog.js` directly and regex-extracts its `cmd(...)` calls,
+no Node/build-step dependency) - asserting both catalogs are subsets.
+Verified these tests actually catch regressions, not just pass
+vacuously: temporarily reintroduced a bogus command into each catalog,
+confirmed the test failed with a clear message naming it, then reverted.
+
+**Deliberately not changed**, per the review's own framing:
+- The D-Bus allow-list security model (any app declaring
+  `Permissions=TeslaControlHelper` gets full car control, no per-app
+  authorization beyond the allow-list) - already documented as the
+  security model's known weakest point elsewhere in this file; a
+  pairing-time shared secret would close it but is a real feature, not a
+  fix.
+- `Run()` returning `Busy` as a D-Bus error while `Pair()` returns
+  `ok=false` for the same condition - already an intentional, commented
+  parity choice (matches the original implementation), not an oversight.
+- `PUBLIC_KEY` args accepting arbitrary file paths - real given finding
+  1 above, but restricting the pattern risks breaking legitimate
+  multi-key scenarios (enrolling a passenger's key); a genuine
+  design tradeoff, not a one-line fix.
+- Go's `captureOutput` swapping the process-global `os.Stdout`/`os.Stderr`
+  (`helper/session/main.go`) - already documented as safe only because
+  `dispatch()` is never called concurrently with itself; there's no
+  `io.Writer`-injection point in upstream's `execute()`/`Handler` to
+  avoid the swap without hand-editing the vendored file, so left as-is.
+- `session_client.rs`'s `run()` holding its mutex for the full BLE op,
+  which means a concurrent `invalidate()` (from `SetConfig`/
+  `GenerateKey`) blocks for that whole duration, not just until idle -
+  added a doc comment on `invalidate()` explaining this; inert since the
+  feature is off by default and unverified on hardware.
+
+**Still not verified on-device** - none of this was tested against a
+real vehicle (same standing limitation as every other entry in this
+file). Verified instead: `cargo build`/`test`/`clippy --all-targets -D
+warnings` clean and cross-compiles for `aarch64-unknown-linux-musl`;
+QML/JS syntax checked (`node --check`, brace balance) for every touched
+file; `teslaclient.cpp` syntax-only compiles against real Qt6 D-Bus
+headers.
+
 ## Added 2026-08-11 - live vehicle-status dashboard on FirstPage
 
 Compared this app against `harbour-tcarint`, a different Sailfish Tesla
@@ -81,22 +250,104 @@ the vendored, older `harbour-tcarint` copy used above), two bugs stacked:
 Fixed `CommandCatalog.js`'s CATEGORY enum, `FirstPage.qml`'s three
 `runCommand(..., "state", [category])` calls, and `VehicleState.js`'s
 `merge*` functions (now read `JSON.parse(jsonText).closuresState` etc.).
-Also worth knowing per `pkg/vehicle/state.go`'s doc comment: every `state`
-category, including `closures`, goes through the Infotainment domain -
-same as `climate`/`charge` - unlike `lock`/`unlock` and
-`body-controller-state`, which use VCSEC and work even while the car's
-infotainment computer is asleep. So the dashboard can legitimately fail
-to refresh (all three legs) while lock/unlock keep working fine, if the
-vehicle is asleep; `FirstPage.qml` now surfaces the last error and a hint
-to try "Wake Vehicle" instead of leaving the status card at "?" with no
-explanation.
 
-**Still not verified on-device** - same caveat as above, now with two
-fewer guesses. Confirm the corrected category names and the
-`closuresState`/`climateState`/`chargeState` unwrap against a real
-`tesla-control state <category>` reply, and confirm whether `closures`
-really does require the vehicle awake in practice (the doc comment says
-so; hasn't been observed against a real car).
+**Correction to this entry (2026-08-11, later the same session):** the
+paragraph originally here claimed lock/unlock use VCSEC exclusively and
+so work even while the car's infotainment is asleep, unlike `state`
+categories. That was an over-generalization from `GetState`'s doc comment
+and turned out to be wrong once checked against the actual pinned source
+(`cmd/tesla-control/commands.go` at the `v0.4.1` tag): only
+`body-controller-state` sets `domain: protocol.DomainVCSEC` explicitly
+(confirmed by grepping the whole file - exactly one match). Every other
+command, lock/unlock included, leaves `Command.domain` unset, so
+`car.StartSession(ctx, nil)` establishes **all** domains (VCSEC +
+Infotainment) by default - `StartSession`'s own doc comment: "If domains
+is nil, then the client will establish connections with all supported
+vehicle subsystems." So lock/unlock pay the same dual-domain handshake
+cost as everything else; the earlier "unlike lock/unlock" claim should be
+read as "unlike body-controller-state" instead. Practical effect: this
+makes the persistent-session work below more valuable than originally
+scoped (every authenticated command reconnects fully today, not just
+`state` ones), and means "vehicle asleep" isn't actually a confirmed
+explanation for the dashboard failing to refresh - it's still plausible
+(Infotainment being asleep can still affect any dual-domain handshake),
+just not verified, and not the VCSEC-vs-Infotainment story originally
+written here.
+
+**Still not verified on-device** - confirm the corrected category names
+and the `closuresState`/`climateState`/`chargeState` unwrap against a
+real `tesla-control state <category>` reply.
+
+## Added 2026-08-11 - optional persistent BLE session (tesla-session), off by default
+
+Scoped and implemented per the design discussion in this session: every
+authenticated command today pays a full BLE connect + dual-domain
+`StartSession` handshake, because `Run()` execs a fresh `tesla-control`
+subprocess per command (see the correction above - this turned out to
+apply to lock/unlock too, not just `state`/`climate`/`charge`). Added
+`helper/session/`, a small persistent Go companion (`tesla-session`) that
+keeps one `*vehicle.Vehicle` connection alive across many commands
+instead of reconnecting every time, torn down after 90s of inactivity so
+the vehicle and phone radio aren't held awake indefinitely by an idle
+app.
+
+Design choices, and why:
+- **Reuses upstream's own command dispatch, not a third hand-copy of it.**
+  `helper/session/commands_vendor.go` is a byte-for-byte copy of
+  `cmd/tesla-control/commands.go` at the pinned `v0.4.1` tag (sha256 in
+  the file's header comment) - `execute()` and the `commands` map are used
+  as-is. Only `main.go` is new: upstream's own `main.go` connects once and
+  exits after one command; this one holds the session across many and
+  adds the idle-timeout/reconnect logic, which has no upstream
+  equivalent to reuse.
+- **`teslacontrold` falls back to today's one-shot exec on any
+  session-layer failure** (`helper/src/session_client.rs`) - spawn
+  failure, broken pipe, timeout, a response whose `id` doesn't match the
+  request. A bug in the new component degrades to current behavior, not
+  to a broken app. This fallback is permanent, not just for rollout.
+- **Off by default** - `TESLACONTROLD_PERSISTENT_SESSION` unset means
+  `Helper.session` is `None` and `Run()`'s code path is byte-identical to
+  before this feature existed.
+- **Not a Settings toggle** - ships as an invisible optimization (decided
+  with the maintainer: simpler than exposing a third connection state to
+  explain, and the fallback already bounds the downside).
+- `SetConfig`/`GenerateKey` call `session.invalidate()`, since a live
+  session has the old VIN/timeouts baked into its `argv` and the old
+  private key loaded into memory - both would otherwise go stale
+  silently instead of erroring.
+
+Verified in this environment (no phone/car available, see below):
+`helper/session` builds and cross-compiles cleanly
+(`CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build`, pure Go, no Docker
+needed) and its tests pass - readiness-check behavior via the vendored
+`execute()`/`commands` map directly (unknown command, missing VIN,
+FleetAPI-only command with no account), stdout/stderr capture/isolation,
+and a missing-private-key connect failure surfacing as a clean error
+response rather than a panic or hang. `helper/` (Rust) builds, its full
+test suite passes, `cargo clippy --all-targets -- -D warnings` is clean,
+and it cross-compiles for the real target
+(`aarch64-unknown-linux-musl`, via the same `messense/rust-musl-cross`
+Docker image the existing build already uses).
+
+**Not verified on-device, and the flag is intentionally off until it
+is:**
+- Idle-teardown actually happening after 90s (timer logic reviewed, not
+  observed).
+- Reconnect-after-idle-teardown working transparently.
+- `ble_sem`'s single-BLE-op-at-a-time guarantee holding up with the
+  session path in the mix (should be untouched - `ble_sem` still wraps
+  the same call site - but "should be" isn't "observed").
+- The actual latency win (`lock` then `climate-on` back-to-back,
+  before/after) - the whole point of this feature and the one thing that
+  can't be checked without real hardware.
+- Whether `tesla-session`'s own stderr (inherited into `teslacontrold`'s,
+  so it should reach `journalctl -u teslacontrold`) actually shows up
+  there as intended.
+
+To try it: `TESLACONTROLD_PERSISTENT_SESSION=1` in
+`teslacontrold.service`'s environment (or `systemctl edit --runtime` for
+a throwaway test), reinstall/restart, then watch behavior against a real
+vehicle before flipping any default.
 
 ## Fixed 2026-08-11 - "Pairing failed: ... can't init hci: ... operation not permitted" despite correct setcap
 

@@ -35,6 +35,11 @@ ui_*.h
 /helper/target/
 /helper/teslacontrold
 
+# Go build output (tesla-session) - `go build .` with no -o names the
+# binary after the module (teslacontrol-session)
+/helper/session/teslacontrol-session
+/helper/session/tesla-session
+
 # Editor / OS cruft
 .vscode/
 .idea/

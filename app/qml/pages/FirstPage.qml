@@ -201,6 +201,11 @@ Page {
                                 anchors.centerIn: parent
                                 font.pixelSize: Theme.fontSizeSmall
                                 color: Theme.primaryColor
+                                // "Charging" (PascalCase) is correct here - it's the
+                                // oneof variant name VehicleState.js's oneofVariantName()
+                                // extracts, verified against real protojson output, not a
+                                // guess. See VehicleState.js's comment for why this isn't
+                                // "CHARGING" or a plain enum string.
                                 text: page.status.batteryLevel === null ? "Battery: ?" : (page.status.batteryLevel + "%" +
                                       (page.status.chargingState === "Charging" ? " (charging)" : ""))
                             }

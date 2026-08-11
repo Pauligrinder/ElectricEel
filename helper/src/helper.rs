@@ -12,6 +12,7 @@ use crate::authorize::authorize;
 use crate::commands::{is_known_command, is_pin_command};
 use crate::config::Config;
 use crate::error::HelperError;
+use crate::session_client::SessionClient;
 
 pub const IFACE_NAME: &str = "org.teslacontrol.Helper1";
 
@@ -32,14 +33,19 @@ pub struct Helper {
     bin_dir: String,
     state_dir: String,
     allowed_callers: Vec<String>,
-    /// A connection dedicated to outbound proxy calls (GetConnectionCredentials
-    /// in authorize()), deliberately separate from the connection the
-    /// ObjectServer uses to dispatch these very method calls. zbus's own
+    /// A connection dedicated to outbound proxy calls (`GetConnectionCredentials`
+    /// in `authorize()`), deliberately separate from the connection the
+    /// `ObjectServer` uses to dispatch these very method calls. zbus's own
     /// docs warn against blocking-API calls from within an interface method
     /// on the *same* connection that's driving that method's dispatch (the
     /// "async sandwich" footgun) - a second, independent connection/socket
     /// avoids that reentrancy hazard entirely.
     credentials_conn: zbus::blocking::Connection,
+    /// `Some()` only when `TESLACONTROLD_PERSISTENT_SESSION` is set (see
+    /// main.rs) - None means `Run()` behaves exactly as before this feature
+    /// existed, not "session client that always fails over". Not yet
+    /// verified on real hardware; see `KNOWN_ISSUES.md` before enabling it.
+    session: Option<SessionClient>,
 }
 
 impl Helper {
@@ -48,12 +54,13 @@ impl Helper {
         state_dir: String,
         allowed_callers: Vec<String>,
         credentials_conn: zbus::blocking::Connection,
+        session: Option<SessionClient>,
     ) -> Helper {
         let config_path = Path::new(&state_dir).join("config.json");
         let cfg = match Config::load(&config_path) {
             Ok(cfg) => cfg,
             Err(e) => {
-                eprintln!("teslacontrold: cannot read config {config_path:?}: {e}");
+                eprintln!("teslacontrold: cannot read config {}: {e}", config_path.display());
                 std::process::exit(1);
             }
         };
@@ -64,6 +71,7 @@ impl Helper {
             state_dir,
             allowed_callers,
             credentials_conn,
+            session,
         }
     }
 
@@ -118,6 +126,16 @@ impl Helper {
     }
 }
 
+// clippy::needless_pass_by_value is a false positive for every method
+// below: #[zbus(header)] header is constructed and passed in by value by
+// the zbus::interface macro itself (verified empirically - `&Header<'_>`
+// is a type mismatch against the macro-generated call site, not a style
+// choice), and D-Bus "in" parameters like run()'s `args: Vec<String>`
+// can't become `&[String]` because zvariant has no owner to borrow a
+// `Vec<String>` from while deserializing the message body (unlike a bare
+// `&str`, which zvariant *can* deserialize zero-copy - see set_config's
+// vin/key_name, which clippy correctly flagged and are fixed below).
+#[allow(clippy::needless_pass_by_value)]
 #[zbus::interface(name = "org.teslacontrol.Helper1")]
 impl Helper {
     /// Executes a single tesla-control subcommand. cmd must be one of the
@@ -142,14 +160,20 @@ impl Helper {
             }
         }
 
-        let (common, timeout) = {
+        let (common, timeout, vin, connect_timeout_sec, command_timeout_sec) = {
             let cfg = self.cfg.lock().unwrap();
             let common = self.common_args_locked(&cfg)?;
             // i64 before the sum, not i32: an overflowing i32 sum here used
             // to be able to turn into a negative (already-cancelled)
             // deadline - a previously-fixed bug, preserved here.
-            let secs = cfg.connect_timeout_sec as i64 + cfg.command_timeout_sec as i64 + 10;
-            (common, Duration::from_secs(secs as u64))
+            let secs = i64::from(cfg.connect_timeout_sec) + i64::from(cfg.command_timeout_sec) + 10;
+            (
+                common,
+                Duration::from_secs(secs.cast_unsigned()),
+                cfg.vin.clone(),
+                cfg.connect_timeout_sec,
+                cfg.command_timeout_sec,
+            )
         };
 
         let _permit = self
@@ -157,16 +181,45 @@ impl Helper {
             .try_lock()
             .map_err(|_| HelperError::Busy("another BLE command is in progress".to_string()))?;
 
-        let mut argv = common;
-        argv.push(cmd.clone());
-        argv.extend(args.iter().cloned());
+        let mut command_argv = common;
+        command_argv.push(cmd.clone());
+        command_argv.extend(args.iter().cloned());
 
         if is_pin_command(&cmd) {
             eprintln!("teslacontrold: Run({cmd}, [{} redacted args])", args.len());
         } else {
             eprintln!("teslacontrold: Run({cmd}, {args:?})");
         }
-        let outcome = run_binary(&self.bin_dir, "tesla-control", &argv, timeout);
+
+        let outcome = match &self.session {
+            Some(session) => {
+                let key_path = self.private_key_path().to_string_lossy().into_owned();
+                match session.run(
+                    &cmd,
+                    &args,
+                    &vin,
+                    &key_path,
+                    connect_timeout_sec,
+                    command_timeout_sec,
+                    timeout,
+                ) {
+                    Ok(o) => RunOutcome {
+                        ok: o.ok,
+                        stdout: o.stdout,
+                        stderr: o.stderr,
+                        exit_code: o.exit_code,
+                    },
+                    Err(e) => {
+                        eprintln!(
+                            "teslacontrold: persistent session unavailable ({e}); falling back to one-shot tesla-control for {cmd}"
+                        );
+                        run_binary(&self.bin_dir, "tesla-control", &command_argv, timeout)
+                    }
+                }
+            }
+            None => run_binary(&self.bin_dir, "tesla-control", &command_argv, timeout),
+        };
+
         Ok((
             outcome.ok,
             outcome.stdout,
@@ -211,6 +264,12 @@ impl Helper {
         if !outcome.ok {
             return Ok((false, String::new(), outcome.stderr.trim().to_string()));
         }
+        // A live persistent session (if any) loaded the private key into
+        // memory at connect time - the file on disk just changed under it,
+        // so it must reconnect rather than keep signing with a stale key.
+        if let Some(session) = &self.session {
+            session.invalidate();
+        }
         match std::fs::read_to_string(self.public_key_path()) {
             Ok(pub_key) => Ok((true, pub_key, String::new())),
             Err(e) => Ok((false, String::new(), e.to_string())),
@@ -226,9 +285,19 @@ impl Helper {
     ) -> Result<(bool, String, String), HelperError> {
         self.authorize_sender(&header)?;
 
-        let common = {
+        let (common, timeout) = {
             let cfg = self.cfg.lock().unwrap();
-            self.common_args_locked(&cfg)?
+            let common = self.common_args_locked(&cfg)?;
+            // Same envelope as Run() (connect + command + 10s), plus a
+            // flat 30s allowance for the physical NFC-card tap at the
+            // center console this command waits for. Previously a
+            // hardcoded 60s independent of the configured connect
+            // timeout - fine at the 20s default (60s > 20+5+10=35s), but
+            // could cut off a connect attempt that was still legitimately
+            // in progress once connect_timeout_sec was raised anywhere
+            // near its 300s max.
+            let secs = i64::from(cfg.connect_timeout_sec) + i64::from(cfg.command_timeout_sec) + 10 + 30;
+            (common, Duration::from_secs(secs.cast_unsigned()))
         };
         let pubkey_path = self.public_key_path();
         if std::fs::metadata(&pubkey_path).is_err() {
@@ -253,22 +322,14 @@ impl Helper {
         eprintln!("teslacontrold: Pair()");
         // Unlike Run()'s Busy case, this is intentionally a normal (non-error)
         // reply, matching the original implementation.
-        let _permit = match self.ble_sem.try_lock() {
-            Ok(permit) => permit,
-            Err(_) => {
-                return Ok((
-                    false,
-                    String::new(),
-                    "another BLE command is in progress".to_string(),
-                ))
-            }
+        let Ok(_permit) = self.ble_sem.try_lock() else {
+            return Ok((
+                false,
+                String::new(),
+                "another BLE command is in progress".to_string(),
+            ));
         };
-        let outcome = run_binary(
-            &self.bin_dir,
-            "tesla-control",
-            &argv,
-            Duration::from_secs(60),
-        );
+        let outcome = run_binary(&self.bin_dir, "tesla-control", &argv, timeout);
         if !outcome.ok {
             return Ok((false, outcome.stdout, outcome.stderr.trim().to_string()));
         }
@@ -277,8 +338,8 @@ impl Helper {
 
     fn set_config(
         &self,
-        vin: String,
-        key_name: String,
+        vin: &str,
+        key_name: &str,
         connect_timeout_sec: i32,
         command_timeout_sec: i32,
         #[zbus(header)] header: Header<'_>,
@@ -286,7 +347,12 @@ impl Helper {
         self.authorize_sender(&header)?;
 
         let msg =
-            match crate::config::validate_config(&vin, connect_timeout_sec, command_timeout_sec) {
+            match crate::config::validate_config(
+                vin,
+                key_name,
+                connect_timeout_sec,
+                command_timeout_sec,
+            ) {
                 Ok(()) => None,
                 Err(e) => Some(e.to_string()),
             };
@@ -306,6 +372,13 @@ impl Helper {
             "teslacontrold: SetConfig(vin={}, keyName={:?}, connectTimeout={}s, commandTimeout={}s)",
             cfg.vin, cfg.key_name, connect_timeout_sec, command_timeout_sec
         );
+        // A live persistent session (if any) was spawned with the old
+        // VIN/timeouts baked into its argv - drop it so the next Run()
+        // spawns a fresh one with the new config instead of silently
+        // continuing to talk to the previous vehicle/timeout settings.
+        if let Some(session) = &self.session {
+            session.invalidate();
+        }
         Ok((true, String::new()))
     }
 
@@ -335,23 +408,19 @@ impl Helper {
 /// status. Never invoked with attacker-controlled binary names.
 fn run_binary(bin_dir: &str, name: &str, args: &[String], timeout: Duration) -> RunOutcome {
     let path = Path::new(bin_dir).join(name);
-    let mut child = match Command::new(&path)
+    let Ok(mut child) = Command::new(&path)
         .args(args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-    {
-        Ok(c) => c,
-        // The original silently drops the spawn error here too - preserved
-        // for parity rather than "improved" without being asked.
-        Err(_) => {
-            return RunOutcome {
-                ok: false,
-                stdout: String::new(),
-                stderr: String::new(),
-                exit_code: -1,
-            }
-        }
+        .inspect_err(|e| eprintln!("teslacontrold: failed to spawn {}: {e}", path.display()))
+    else {
+        return RunOutcome {
+            ok: false,
+            stdout: String::new(),
+            stderr: String::new(),
+            exit_code: -1,
+        };
     };
 
     // Drain stdout/stderr on their own threads *before* waiting, so a child

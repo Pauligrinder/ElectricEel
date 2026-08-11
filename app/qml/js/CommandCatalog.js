@@ -35,21 +35,30 @@ var CATEGORIES = [
     commands: [
       cmd("climate-on", "Climate On"),
       cmd("climate-off", "Climate Off"),
+      // sendSuffix "C": tesla-control's climate-set-temp expects the unit
+      // glued directly onto the number (22C or 72F) - a bare number always
+      // failed to parse. See ArgumentDialog.qml's sliderField.
       cmd("climate-set-temp", "Set Temperature", [
-        arg("TEMP", "float", { min: 15, max: 28, step: 0.5, unit: "°C", def: 21 })
+        arg("TEMP", "float", { min: 15, max: 28, step: 0.5, unit: "°C", sendSuffix: "C", def: 21 })
       ]),
+      // SEAT/LEVEL values are commands_vendor.go's own seats/levels map
+      // keys verbatim - hyphenated positions, off|low|medium|high levels
+      // (not the Fleet-API-flavored underscore names or a numeric level
+      // this previously guessed).
       cmd("seat-heater", "Seat Heater", [
-        arg("SEAT", "enum", { values: ["front_left","front_right","rear_left","rear_center","rear_right","third_row_left","third_row_right"] }),
-        arg("LEVEL", "int", { min: 0, max: 3, def: 0 })
+        arg("SEAT", "enum", { values: ["front-left","front-right","2nd-row-left","2nd-row-center","2nd-row-right","3rd-row-left","3rd-row-right"] }),
+        arg("LEVEL", "enum", { values: ["off","low","medium","high"] })
       ]),
       cmd("steering-wheel-heater", "Steering Wheel Heater", [
         arg("STATE", "enum", { values: ["on","off"] })
       ]),
+      // POSITIONS is 'L', 'R', or 'LR' verbatim (commands_vendor.go checks
+      // strings.Contains for each letter) - not a comma-separated seat list.
       cmd("auto-seat-and-climate", "Auto Seat & Climate", [
-        arg("POSITIONS", "string", { placeholder: "front_left,front_right" }),
+        arg("POSITIONS", "enum", { values: ["L","R","LR"] }),
         arg("STATE", "enum", { values: ["on","off"], optional: true })
       ]),
-      cmd("precondition-schedule-add", "Add Preconditioning Schedule", scheduleAddArgs()),
+      cmd("precondition-schedule-add", "Add Preconditioning Schedule", preconditionScheduleAddArgs()),
       cmd("precondition-schedule-remove", "Remove Preconditioning Schedule", scheduleRemoveArgs()),
     ]
   },
@@ -69,7 +78,7 @@ var CATEGORIES = [
         arg("MINS", "int", { min: 0, max: 1439, unit: "min after midnight", def: 0 })
       ]),
       cmd("charging-schedule-cancel", "Cancel Scheduled Charging"),
-      cmd("charging-schedule-add", "Add Charge Schedule", scheduleAddArgs()),
+      cmd("charging-schedule-add", "Add Charge Schedule", chargeScheduleAddArgs()),
       cmd("charging-schedule-remove", "Remove Charge Schedule", scheduleRemoveArgs()),
     ]
   },
@@ -86,16 +95,11 @@ var CATEGORIES = [
       cmd("guest-mode-off", "Guest Mode Off"),
       cmd("erase-guest-data", "Erase Guest Data"),
       cmd("autosecure-modelx", "Auto-Secure (Model X)"),
-      cmd("parental-controls-on", "Parental Controls On", [ arg("PIN", "pin", {}) ]),
-      cmd("parental-controls-off", "Parental Controls Off", [ arg("PIN", "pin", {}) ]),
-      cmd("parental-controls-set-speed-limit", "Set Speed Limit", [
-        arg("MPH", "int", { min: 50, max: 90, unit: "mph", def: 70 })
-      ]),
-      cmd("parental-controls-enable-setting", "Toggle Parental Setting", [
-        arg("SETTING", "string", { placeholder: "speed_limit" }),
-        arg("STATE", "enum", { values: ["on","off"] })
-      ]),
-      cmd("parental-controls-clear-pin-admin", "Clear Parental PIN"),
+      // parental-controls-* commands used to be listed here, but they don't
+      // exist in cmd/tesla-control/commands.go at the pinned v0.4.1 tag -
+      // "parental-controls" is only a `state` CATEGORY name (read-only
+      // status query), not a family of action commands. Every one of these
+      // would fail with "unrecognized command" before ever reaching BLE.
     ]
   },
   {
@@ -133,8 +137,12 @@ var CATEGORIES = [
     id: "software",
     title: "Software",
     commands: [
+      // sendSuffix "s": upstream parses DELAY with Go's time.ParseDuration,
+      // which requires a unit (10m, 2h, ...) - a bare integer only ever
+      // worked by accident at DELAY=0, the one value ParseDuration accepts
+      // unitless.
       cmd("software-update-start", "Start Software Update", [
-        arg("DELAY", "int", { min: 0, max: 3600, unit: "s", def: 0 })
+        arg("DELAY", "int", { min: 0, max: 3600, unit: "s", sendSuffix: "s", def: 0 })
       ]),
       cmd("software-update-cancel", "Cancel Software Update"),
     ]
@@ -144,21 +152,24 @@ var CATEGORIES = [
     title: "Keys",
     commands: [
       cmd("list-keys", "List Enrolled Keys"),
+      // FORM_FACTOR is vcsec.KeyFormFactor's own value names (minus the
+      // KEY_FORM_FACTOR_ prefix, case-insensitive) - "phone_key" isn't one
+      // of them; this app's own key is enrolled as a cloud_key.
       cmd("add-key", "Add Key", [
         arg("PUBLIC_KEY", "string", { placeholder: "path to public_key.pem" }),
         arg("ROLE", "enum", { values: ["owner","driver"] }),
-        arg("FORM_FACTOR", "enum", { values: ["phone_key","cloud_key","nfc_card"] }),
+        arg("FORM_FACTOR", "enum", { values: ["nfc_card","ios_device","android_device","cloud_key"] }),
       ]),
       cmd("remove-key", "Remove Key", [
         arg("PUBLIC_KEY", "string", { placeholder: "path to public_key.pem" }),
       ]),
-      cmd("rename-key", "Rename Key", [
-        arg("PUBLIC_KEY", "string", { placeholder: "path to public_key.pem" }),
-        arg("NAME", "string", { placeholder: "My Phone" }),
-      ]),
+      // rename-key omitted: requiresFleetAPI is true
+      // (commands_vendor.go:438) and this app is BLE-only, so it always
+      // fails with "command requires a FleetAPI OAuth token" - no point
+      // offering a button guaranteed to error.
       cmd("session-info", "Session Info", [
         arg("PUBLIC_KEY", "string", { placeholder: "path to public_key.pem" }),
-        arg("DOMAIN", "enum", { values: ["vehicle_security","infotainment"] }),
+        arg("DOMAIN", "enum", { values: ["vcsec","infotainment"] }),
       ]),
     ]
   },
@@ -178,7 +189,9 @@ var CATEGORIES = [
         arg("CATEGORY", "enum", { values: ["charge","climate","drive","location","closures","charge-schedule","precondition-schedule","tire-pressure","media","media-detail","software-update","parental-controls"] })
       ]),
       cmd("body-controller-state", "Body Controller State"),
-      cmd("product-info", "Product Info"),
+      // product-info omitted: requiresFleetAPI is true
+      // (commands_vendor.go:963), always fails the same way rename-key
+      // does in this BLE-only app.
       cmd("keep-accessory-power", "Keep Accessory Power", [ arg("STATE", "enum", { values: ["on","off"] }) ]),
       cmd("low-power-mode", "Low Power Mode", [ arg("STATE", "enum", { values: ["on","off"] }) ]),
     ]
@@ -196,22 +209,46 @@ function arg(name, type, opts) {
   return opts
 }
 
-function scheduleAddArgs() {
+// DAYS is GetDays()'s own dayNamesBitMask keys (case-insensitive): Sun,
+// Mon, Tues, Wed, Thurs, Fri, Sat, or all/weekdays - note "Tues"/"Thurs",
+// not "Tue"/"Thu".
+// REPEAT/ID/ENABLED are genuinely optional upstream (a schedule repeats
+// weekly and gets an auto-generated ID unless told otherwise) - marked
+// optional here relies on ArgumentDialog.qml's "not set" choice actually
+// omitting the arg, not just defaulting to the first enum value / 0.
+function chargeScheduleAddArgs() {
   return [
-    arg("DAYS", "string", { placeholder: "Mon,Tue,Wed" }),
-    arg("TIME", "string", { placeholder: "07:30" }),
+    arg("DAYS", "string", { placeholder: "Mon,Tues,Wed" }),
+    arg("TIME", "string", { placeholder: "22:00-06:00 (start or end may be blank)" }),
     arg("LATITUDE", "float", { min: -90, max: 90, step: 0.000001, def: 0 }),
     arg("LONGITUDE", "float", { min: -180, max: 180, step: 0.000001, def: 0 }),
-    arg("REPEAT", "enum", { values: ["once","daily"], optional: true }),
-    arg("ID", "int", { min: 0, max: 999, optional: true }),
+    arg("REPEAT", "enum", { values: ["once"], optional: true }),
+    arg("ID", "int", { placeholder: "leave blank for a new schedule", optional: true }),
+    arg("ENABLED", "enum", { values: ["true","false"], optional: true }),
+  ]
+}
+
+// Same shape as chargeScheduleAddArgs() except TIME: preconditioning has a
+// single trigger time, not a start-end range.
+function preconditionScheduleAddArgs() {
+  return [
+    arg("DAYS", "string", { placeholder: "Mon,Tues,Wed" }),
+    arg("TIME", "string", { placeholder: "22:00" }),
+    arg("LATITUDE", "float", { min: -90, max: 90, step: 0.000001, def: 0 }),
+    arg("LONGITUDE", "float", { min: -180, max: 180, step: 0.000001, def: 0 }),
+    arg("REPEAT", "enum", { values: ["once"], optional: true }),
+    arg("ID", "int", { placeholder: "leave blank for a new schedule", optional: true }),
     arg("ENABLED", "enum", { values: ["true","false"], optional: true }),
   ]
 }
 
 function scheduleRemoveArgs() {
   return [
-    arg("TYPE", "enum", { values: ["home","work","favorite"] }),
-    arg("ID", "int", { min: 0, max: 999, optional: true }),
+    // home|work|other remove by category; "id" removes one schedule by
+    // its numeric ID (see list-keys-style ID from the *-add commands'
+    // output). "favorite" was never a real TYPE value.
+    arg("TYPE", "enum", { values: ["home","work","other","id"] }),
+    arg("ID", "int", { placeholder: "required when TYPE is id", optional: true }),
   ]
 }
 
