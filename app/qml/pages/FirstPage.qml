@@ -18,6 +18,12 @@ Page {
     // UI can show a single busy indicator and refuse to stack requests.
     property var status: VState.emptyStatus()
     property string statusStage: ""
+    // Set from stdErr when a status leg fails. All three legs go through
+    // the Infotainment domain (unlike lock/unlock and body-controller-state,
+    // which use VCSEC and work even while the car sleeps - see
+    // VehicleState.js), so a sleeping vehicle is the expected way for this
+    // to fail even with everything else configured correctly.
+    property string statusError: ""
 
     function refresh() {
         teslaClient.refreshHelperAvailable()
@@ -27,8 +33,9 @@ Page {
     function refreshStatus() {
         if (!teslaClient.helperAvailable || !page.hasKey || page.vin.length === 0 || page.statusStage.length > 0)
             return
+        page.statusError = ""
         page.statusStage = "closures"
-        teslaClient.runCommand("status:closures_state", "state", ["closures_state"])
+        teslaClient.runCommand("status:closures", "state", ["closures"])
     }
 
     function toggleLock() {
@@ -57,19 +64,25 @@ Page {
     Connections {
         target: teslaClient
         onCommandFinished: {
-            if (requestId === "status:closures_state") {
+            if (requestId === "status:closures") {
                 if (ok)
                     page.status = VState.mergeClosuresState(page.status, stdOut)
+                else
+                    page.statusError = stdErr.length ? stdErr : ("exit code " + exitCode)
                 page.statusStage = "climate"
-                teslaClient.runCommand("status:climate_state", "state", ["climate_state"])
-            } else if (requestId === "status:climate_state") {
+                teslaClient.runCommand("status:climate", "state", ["climate"])
+            } else if (requestId === "status:climate") {
                 if (ok)
                     page.status = VState.mergeClimateState(page.status, stdOut)
+                else if (page.statusError.length === 0)
+                    page.statusError = stdErr.length ? stdErr : ("exit code " + exitCode)
                 page.statusStage = "charge"
-                teslaClient.runCommand("status:charge_state", "state", ["charge_state"])
-            } else if (requestId === "status:charge_state") {
+                teslaClient.runCommand("status:charge", "state", ["charge"])
+            } else if (requestId === "status:charge") {
                 if (ok)
                     page.status = VState.mergeChargeState(page.status, stdOut)
+                else if (page.statusError.length === 0)
+                    page.statusError = stdErr.length ? stdErr : ("exit code " + exitCode)
                 page.statusStage = ""
             } else if (requestId === "status:toggle") {
                 // Whether the lock/climate toggle succeeded or not, re-fetch
@@ -82,8 +95,11 @@ Page {
             }
         }
         onCommandError: {
-            if (requestId.indexOf("status:") === 0)
+            if (requestId.indexOf("status:") === 0) {
                 page.statusStage = ""
+                if (page.statusError.length === 0)
+                    page.statusError = message
+            }
         }
     }
 
@@ -214,12 +230,22 @@ Page {
                             visible: running
                         }
                         Label {
+                            width: statusColumn.width
+                            horizontalAlignment: Text.AlignHCenter
+                            wrapMode: Text.Wrap
                             font.pixelSize: Theme.fontSizeTiny
-                            color: Theme.secondaryColor
-                            text: page.statusStage.length > 0 ? "Updating..." :
-                                  (VState.minutesAgo(page.status.updatedAt) < 0 ? "Tap a status to refresh" :
-                                   (VState.minutesAgo(page.status.updatedAt) === 0 ? "Updated just now" :
-                                    "Updated " + VState.minutesAgo(page.status.updatedAt) + "m ago"))
+                            color: page.statusError.length > 0 && page.statusStage.length === 0 ? Theme.highlightColor : Theme.secondaryColor
+                            text: {
+                                if (page.statusStage.length > 0)
+                                    return "Updating..."
+                                if (page.statusError.length > 0 && VState.minutesAgo(page.status.updatedAt) < 0)
+                                    return "Status unavailable (" + page.statusError + "). Vehicle may be asleep - try Wake Vehicle, then Refresh Status."
+                                if (VState.minutesAgo(page.status.updatedAt) < 0)
+                                    return "Tap a status to refresh"
+                                if (VState.minutesAgo(page.status.updatedAt) === 0)
+                                    return "Updated just now"
+                                return "Updated " + VState.minutesAgo(page.status.updatedAt) + "m ago"
+                            }
                         }
                     }
                 }

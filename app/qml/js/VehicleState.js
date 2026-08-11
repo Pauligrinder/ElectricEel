@@ -4,6 +4,29 @@
 // refreshStatus() for why they're chained sequentially rather than fired in
 // parallel.
 //
+// Two things that are easy to get wrong here, both confirmed against the
+// v0.4.1 tag this project pins (cmd/tesla-control/commands.go,
+// pkg/vehicle/state.go, pkg/protocol/protobuf/vehicle.proto) after the
+// first version of this file got both wrong at once:
+//
+// 1. CATEGORY argument values are tesla-control's own short names ("charge",
+//    "climate", "closures", ...), not the Fleet API's "_state"-suffixed
+//    vehicle_data JSON section names. GetCategory() fails fast on an unknown
+//    name (before any BLE I/O), so passing the wrong name looks like the
+//    command silently does nothing rather than an obvious error.
+// 2. `car.GetState()` returns a `VehicleData` wrapper message, so the
+//    parsed JSON is `{"closuresState": {...fields...}}`, not the fields
+//    directly at the top level - each merge* function below unwraps its
+//    category's field first.
+//
+// Also, per vehicle.proto: every state category is served over the
+// Infotainment domain (car.GetState's own doc comment), same as
+// climate/charge commands - unlike lock/unlock and body-controller-state,
+// which go through VCSEC and work even while infotainment is asleep. So all
+// three legs of the dashboard refresh can fail while lock/unlock keep
+// working fine, if the vehicle is asleep. FirstPage.qml surfaces that as a
+// hint to wake the vehicle rather than a bare "?".
+//
 // protojson.Format (used by tesla-control, see cmd/tesla-control/state.go)
 // omits any field still at its zero value (false/0/"") instead of emitting
 // it - so a missing key means "false"/"0", not "unknown". That's indistin-
@@ -39,7 +62,7 @@ function clone(status) {
 function mergeClosuresState(status, jsonText) {
     var s = clone(status)
     try {
-        var obj = JSON.parse(jsonText)
+        var obj = JSON.parse(jsonText).closuresState || {}
         s.locked = !!obj.locked
         s.doorsOpen = !!(obj.doorOpenDriverFront || obj.doorOpenDriverRear ||
                           obj.doorOpenPassengerFront || obj.doorOpenPassengerRear ||
@@ -48,7 +71,7 @@ function mergeClosuresState(status, jsonText) {
                             obj.windowOpenDriverRear || obj.windowOpenPassengerRear)
         s.updatedAt = Date.now()
     } catch (e) {
-        console.log("VehicleState: closures_state parse failed:", e, jsonText)
+        console.log("VehicleState: closures parse failed:", e, jsonText)
     }
     return s
 }
@@ -56,13 +79,13 @@ function mergeClosuresState(status, jsonText) {
 function mergeClimateState(status, jsonText) {
     var s = clone(status)
     try {
-        var obj = JSON.parse(jsonText)
+        var obj = JSON.parse(jsonText).climateState || {}
         s.insideTemp = obj.insideTempCelsius !== undefined ? obj.insideTempCelsius : null
         s.outsideTemp = obj.outsideTempCelsius !== undefined ? obj.outsideTempCelsius : null
         s.isClimateOn = !!obj.isClimateOn
         s.updatedAt = Date.now()
     } catch (e) {
-        console.log("VehicleState: climate_state parse failed:", e, jsonText)
+        console.log("VehicleState: climate parse failed:", e, jsonText)
     }
     return s
 }
@@ -70,13 +93,13 @@ function mergeClimateState(status, jsonText) {
 function mergeChargeState(status, jsonText) {
     var s = clone(status)
     try {
-        var obj = JSON.parse(jsonText)
+        var obj = JSON.parse(jsonText).chargeState || {}
         s.batteryLevel = obj.batteryLevel !== undefined ? obj.batteryLevel : null
         s.chargingState = obj.chargingState || ""
         s.minutesToFullCharge = obj.minutesToFullCharge || 0
         s.updatedAt = Date.now()
     } catch (e) {
-        console.log("VehicleState: charge_state parse failed:", e, jsonText)
+        console.log("VehicleState: charge parse failed:", e, jsonText)
     }
     return s
 }

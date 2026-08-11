@@ -52,6 +52,52 @@ pinned `v0.4.1` tag) haven't been confirmed against a real
 `tesla-control state` reply. Verify field names and the toggle-then-
 refetch flow against a real vehicle before relying on this.
 
+### Fixed 2026-08-11 - dashboard status never loaded (wrong CATEGORY names + unparsed VehicleData wrapper)
+
+First real-device test of the above: lock/unlock worked, the status card
+never populated. Root-caused against the actual v0.4.1 source (not just
+the vendored, older `harbour-tcarint` copy used above), two bugs stacked:
+
+1. `CATEGORY` values were guessed as the Fleet API's `vehicle_data` JSON
+   section names (`closures_state`, `climate_state`, `charge_state`, plus
+   `vehicle_state`/`gui_settings`/`vehicle_config` which don't exist as
+   `state` categories at all). `cmd/tesla-control/commands.go`'s
+   `GetCategory`/`categoriesByName` actually uses short, hyphenated names
+   with no `_state` suffix: `charge`, `climate`, `drive`, `location`,
+   `closures`, `charge-schedule`, `precondition-schedule`, `tire-pressure`,
+   `media`, `media-detail`, `software-update`, `parental-controls`.
+   `GetCategory` rejects an unrecognized name *before touching BLE*, so
+   this failed fast and deterministically - which is why it looked like
+   "never loads" rather than "slow like everything else over BLE." This
+   bug predated the dashboard: `CommandCatalog.js`'s existing "Get Vehicle
+   State" diagnostics command had the same wrong enum values and was
+   presumably never actually exercised before.
+2. Even with the right name, `car.GetState()` (`pkg/vehicle/state.go`)
+   returns a `VehicleData` wrapper message
+   (`pkg/protocol/protobuf/vehicle.proto`), so the JSON is
+   `{"closuresState": {...fields...}}`, not the fields directly at the top
+   level - `VehicleState.js`'s merge functions weren't unwrapping that.
+
+Fixed `CommandCatalog.js`'s CATEGORY enum, `FirstPage.qml`'s three
+`runCommand(..., "state", [category])` calls, and `VehicleState.js`'s
+`merge*` functions (now read `JSON.parse(jsonText).closuresState` etc.).
+Also worth knowing per `pkg/vehicle/state.go`'s doc comment: every `state`
+category, including `closures`, goes through the Infotainment domain -
+same as `climate`/`charge` - unlike `lock`/`unlock` and
+`body-controller-state`, which use VCSEC and work even while the car's
+infotainment computer is asleep. So the dashboard can legitimately fail
+to refresh (all three legs) while lock/unlock keep working fine, if the
+vehicle is asleep; `FirstPage.qml` now surfaces the last error and a hint
+to try "Wake Vehicle" instead of leaving the status card at "?" with no
+explanation.
+
+**Still not verified on-device** - same caveat as above, now with two
+fewer guesses. Confirm the corrected category names and the
+`closuresState`/`climateState`/`chargeState` unwrap against a real
+`tesla-control state <category>` reply, and confirm whether `closures`
+really does require the vehicle awake in practice (the doc comment says
+so; hasn't been observed against a real car).
+
 ## Fixed 2026-08-11 - "Pairing failed: ... can't init hci: ... operation not permitted" despite correct setcap
 
 First real pairing attempt on the phone (post Rust rewrite) failed with

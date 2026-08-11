@@ -167,8 +167,15 @@ var CATEGORIES = [
     title: "Diagnostics",
     commands: [
       cmd("ping", "Ping Vehicle"),
+      // CATEGORY values are cmd/tesla-control's own categoriesByName keys
+      // (pkg/vehicle/state.go's StateCategory constants), not the Fleet
+      // API's vehicle_data JSON section names - short/hyphenated, not
+      // "_state"-suffixed. Verified against the v0.4.1 tag this project
+      // pins (see KNOWN_ISSUES.md); a previous guess here used the wrong
+      // (Fleet API) names and made every "state" call fail before it ever
+      // reached BLE.
       cmd("state", "Get Vehicle State", [
-        arg("CATEGORY", "enum", { values: ["charge_state","climate_state","drive_state","gui_settings","vehicle_config","vehicle_state","closures_state","tire_pressure_state"] })
+        arg("CATEGORY", "enum", { values: ["charge","climate","drive","location","closures","charge-schedule","precondition-schedule","tire-pressure","media","media-detail","software-update","parental-controls"] })
       ]),
       cmd("body-controller-state", "Body Controller State"),
       cmd("product-info", "Product Info"),
