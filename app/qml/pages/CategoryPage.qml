@@ -7,11 +7,38 @@ Page {
     property var teslaClient
     property string categoryId
     property string categoryTitle
+    // Last dashboard reading from FirstPage, passed through at push time -
+    // shown as a subheader below. Not re-fetched here: it's a snapshot, not
+    // a live binding, so it can go stale while this page is open (matches
+    // FirstPage's own "Updated Xm ago" label, which is visible again as
+    // soon as the user goes back).
+    property var status: null
 
     property var category: Catalog.findCategory(categoryId)
     property string pendingCmd: ""
     property string lastResult: ""
     property bool lastOk: true
+
+    function statusSubtitle() {
+        if (!status)
+            return ""
+        if (categoryId === "climate") {
+            if (status.insideTemp === null)
+                return ""
+            return (status.isClimateOn ? "Climate on" : "Climate off") + " • " + status.insideTemp.toFixed(0) + "°C inside"
+        }
+        if (categoryId === "charging") {
+            if (status.batteryLevel === null)
+                return ""
+            return status.batteryLevel + "% battery" + (status.chargingState === "Charging" ? " • Charging" : "")
+        }
+        if (categoryId === "security" || categoryId === "home") {
+            if (status.locked === null)
+                return ""
+            return status.locked ? "Doors locked" : "Doors unlocked"
+        }
+        return ""
+    }
 
     Connections {
         target: teslaClient
@@ -53,6 +80,16 @@ Page {
             width: listView.width
 
             PageHeader { title: categoryTitle }
+
+            Label {
+                width: parent.width - Theme.horizontalPageMargin * 2
+                anchors.horizontalCenter: parent.horizontalCenter
+                visible: text.length > 0
+                wrapMode: Text.Wrap
+                font.pixelSize: Theme.fontSizeExtraSmall
+                color: Theme.secondaryColor
+                text: page.statusSubtitle()
+            }
 
             Rectangle {
                 width: parent.width

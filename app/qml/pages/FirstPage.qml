@@ -1,6 +1,7 @@
 import QtQuick 2.6
 import Sailfish.Silica 1.0
 import "../js/CommandCatalog.js" as Catalog
+import "../js/VehicleState.js" as VState
 
 Page {
     id: page
@@ -9,9 +10,39 @@ Page {
     property string vin: ""
     property bool hasKey: false
 
+    // Live dashboard state, fetched over BLE via three chained "state"
+    // subcommand calls (see refreshStatus() - chained rather than parallel
+    // because each is its own BLE connect+handshake and hammering the
+    // adapter with three concurrent ones is a worse idea than a ~1s longer
+    // sequential refresh). statusStage tracks which leg is in flight so the
+    // UI can show a single busy indicator and refuse to stack requests.
+    property var status: VState.emptyStatus()
+    property string statusStage: ""
+
     function refresh() {
         teslaClient.refreshHelperAvailable()
         teslaClient.refreshConfig()
+    }
+
+    function refreshStatus() {
+        if (!teslaClient.helperAvailable || !page.hasKey || page.vin.length === 0 || page.statusStage.length > 0)
+            return
+        page.statusStage = "closures"
+        teslaClient.runCommand("status:closures_state", "state", ["closures_state"])
+    }
+
+    function toggleLock() {
+        if (page.statusStage.length > 0)
+            return
+        page.statusStage = "toggle"
+        teslaClient.runCommand("status:toggle", page.status.locked ? "unlock" : "lock", [])
+    }
+
+    function toggleClimate() {
+        if (page.statusStage.length > 0)
+            return
+        page.statusStage = "toggle"
+        teslaClient.runCommand("status:toggle", page.status.isClimateOn ? "climate-off" : "climate-on", [])
     }
 
     Connections {
@@ -19,6 +50,40 @@ Page {
         onConfigLoaded: {
             page.vin = vin
             page.hasKey = hasKey
+            page.refreshStatus()
+        }
+    }
+
+    Connections {
+        target: teslaClient
+        onCommandFinished: {
+            if (requestId === "status:closures_state") {
+                if (ok)
+                    page.status = VState.mergeClosuresState(page.status, stdOut)
+                page.statusStage = "climate"
+                teslaClient.runCommand("status:climate_state", "state", ["climate_state"])
+            } else if (requestId === "status:climate_state") {
+                if (ok)
+                    page.status = VState.mergeClimateState(page.status, stdOut)
+                page.statusStage = "charge"
+                teslaClient.runCommand("status:charge_state", "state", ["charge_state"])
+            } else if (requestId === "status:charge_state") {
+                if (ok)
+                    page.status = VState.mergeChargeState(page.status, stdOut)
+                page.statusStage = ""
+            } else if (requestId === "status:toggle") {
+                // Whether the lock/climate toggle succeeded or not, re-fetch
+                // so the dashboard reflects reality rather than an assumed
+                // new state (the command can "succeed" over BLE without the
+                // vehicle confirming - see protocol.MayHaveSucceeded usage
+                // elsewhere in this app).
+                page.statusStage = ""
+                page.refreshStatus()
+            }
+        }
+        onCommandError: {
+            if (requestId.indexOf("status:") === 0)
+                page.statusStage = ""
         }
     }
 
@@ -83,6 +148,83 @@ Page {
                 }
             }
 
+            Rectangle {
+                width: parent.width
+                height: statusColumn.height + Theme.paddingMedium * 2
+                visible: page.hasKey && page.vin.length > 0
+                color: Theme.rgba(Theme.highlightBackgroundColor, 0.08)
+
+                Column {
+                    id: statusColumn
+                    width: parent.width - Theme.horizontalPageMargin * 2
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: Theme.paddingSmall
+
+                    Row {
+                        width: parent.width
+
+                        BackgroundItem {
+                            width: parent.width / 3
+                            height: Theme.itemSizeSmall
+                            onClicked: page.toggleLock()
+
+                            Label {
+                                anchors.centerIn: parent
+                                font.pixelSize: Theme.fontSizeSmall
+                                color: page.status.locked ? Theme.secondaryHighlightColor : Theme.highlightColor
+                                text: page.status.locked === null ? "Lock: ?" : (page.status.locked ? "Locked" : "Unlocked")
+                            }
+                        }
+
+                        Item {
+                            width: parent.width / 3
+                            height: Theme.itemSizeSmall
+
+                            Label {
+                                anchors.centerIn: parent
+                                font.pixelSize: Theme.fontSizeSmall
+                                color: Theme.primaryColor
+                                text: page.status.batteryLevel === null ? "Battery: ?" : (page.status.batteryLevel + "%" +
+                                      (page.status.chargingState === "Charging" ? " (charging)" : ""))
+                            }
+                        }
+
+                        BackgroundItem {
+                            width: parent.width / 3
+                            height: Theme.itemSizeSmall
+                            onClicked: page.toggleClimate()
+
+                            Label {
+                                anchors.centerIn: parent
+                                font.pixelSize: Theme.fontSizeSmall
+                                color: page.status.isClimateOn ? Theme.secondaryHighlightColor : Theme.highlightColor
+                                text: page.status.insideTemp === null ? "Climate: ?" : (page.status.insideTemp.toFixed(0) + "°C")
+                            }
+                        }
+                    }
+
+                    Row {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        spacing: Theme.paddingSmall
+
+                        BusyIndicator {
+                            size: BusyIndicatorSize.ExtraSmall
+                            running: page.statusStage.length > 0
+                            visible: running
+                        }
+                        Label {
+                            font.pixelSize: Theme.fontSizeTiny
+                            color: Theme.secondaryColor
+                            text: page.statusStage.length > 0 ? "Updating..." :
+                                  (VState.minutesAgo(page.status.updatedAt) < 0 ? "Tap a status to refresh" :
+                                   (VState.minutesAgo(page.status.updatedAt) === 0 ? "Updated just now" :
+                                    "Updated " + VState.minutesAgo(page.status.updatedAt) + "m ago"))
+                        }
+                    }
+                }
+            }
+
             SectionHeader { text: "Categories" }
         }
 
@@ -93,7 +235,8 @@ Page {
             onClicked: pageStack.push(Qt.resolvedUrl("CategoryPage.qml"), {
                 teslaClient: teslaClient,
                 categoryId: modelData.id,
-                categoryTitle: modelData.title
+                categoryTitle: modelData.title,
+                status: page.status
             })
 
             Label {
@@ -116,6 +259,11 @@ Page {
             MenuItem {
                 text: "Refresh"
                 onClicked: page.refresh()
+            }
+            MenuItem {
+                text: "Refresh Status"
+                visible: page.hasKey && page.vin.length > 0
+                onClicked: page.refreshStatus()
             }
         }
 

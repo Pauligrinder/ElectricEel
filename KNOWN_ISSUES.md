@@ -5,6 +5,53 @@ were either fixed, or documented here because closing them needs
 something this environment doesn't have: a real Sailfish device, the
 Platform SDK, or a car to pair against.
 
+## Added 2026-08-11 - live vehicle-status dashboard on FirstPage
+
+Compared this app against `harbour-tcarint`, a different Sailfish Tesla
+client (`../harbour-tcarint` locally). Its command coverage and D-Bus/helper
+architecture aren't actually ahead of this app's (this app's catalog is
+broader - key management, diagnostics, schedules, tonneau/media/software
+commands tcarint doesn't have - and tcarint sidesteps the CAP_NET_ADMIN
+problem by disabling Sailjail sandboxing entirely, trading away Harbour
+Store eligibility for the whole app rather than just the helper). Its real
+edge was UX: a live Tesla-app-style dashboard (lock/climate/battery state
+bound to real vehicle data) versus this app's flat command list with no
+sense of current vehicle state.
+
+Ported the useful part: `FirstPage.qml` now shows a status card (locked/
+unlocked, battery %, inside temp) that's tappable to toggle lock and
+climate, backed by three chained `teslaClient.runCommand("status:...",
+"state", [category])` calls (`closures_state`, `climate_state`,
+`charge_state` - `CategoryPage.qml`'s existing "Get Vehicle State" command
+already covers all the BLE-readable categories). Chained rather than
+parallel since each is its own BLE connect+handshake through a fresh
+`tesla-control` subprocess; three concurrent ones would just contend for
+the same adapter. `CategoryPage.qml` gets the same status object passed
+through at push time and shows a one-line subtitle for the categories it's
+relevant to, with no extra BLE round-trip.
+
+No helper changes needed - `"state"` was already in
+`helper/src/commands.rs`'s `COMMAND_CATALOG` and already wired through
+`TeslaClient::runCommand`, just never called from `FirstPage.qml`. New
+file: `app/qml/js/VehicleState.js`, parsing `tesla-control state`'s
+`protojson.Format` output into a flat status object.
+
+One real ambiguity, documented in that file: `protojson.Format` omits any
+field still at its zero value, so a missing JSON key means "false"/"0",
+not "unknown" - correct to treat the same way for every field surfaced
+here except battery level 0%, which is indistinguishable from "not fetched
+yet" through this CLI wrapper.
+
+**Not verified on-device** - no phone/car available in this environment.
+QML/JS syntax was checked (brace balance, `node --check` on the `.js`
+file's body), and the D-Bus call shape matches `CategoryPage.qml`'s
+existing, working "Get Vehicle State" command exactly, but the actual
+`protojson` field names (`insideTempCelsius`, `batteryLevel`,
+`doorOpenDriverFront`, etc., taken from `vehicle.proto` at the README's
+pinned `v0.4.1` tag) haven't been confirmed against a real
+`tesla-control state` reply. Verify field names and the toggle-then-
+refetch flow against a real vehicle before relying on this.
+
 ## Fixed 2026-08-11 - "Pairing failed: ... can't init hci: ... operation not permitted" despite correct setcap
 
 First real pairing attempt on the phone (post Rust rewrite) failed with
