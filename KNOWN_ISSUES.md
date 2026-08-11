@@ -5,6 +5,69 @@ were either fixed, or documented here because closing them needs
 something this environment doesn't have: a real Sailfish device, the
 Platform SDK, or a car to pair against.
 
+## Fixed 2026-08-11 - "Pairing failed: ... can't init hci: ... operation not permitted" despite correct setcap
+
+First real pairing attempt on the phone (post Rust rewrite) failed with
+`tesla-control`'s own BLE-adapter error, verbatim suggesting the exact fix
+already in place: `sudo setcap 'cap_net_admin=eip' "$(which
+/opt/teslacontrold/bin/tesla-control)"`. Root-caused over SSH, in order:
+
+- `getcap /opt/teslacontrold/bin/tesla-control` confirmed `cap_net_admin=eip`
+  really was set on-disk - not a redeploy-stripped-the-xattr problem.
+- Ruled out `nosuid` (root fs is `ext4 rw,noatime,seclabel`, no `nosuid`)
+  and SELinux (the binary, and even the device's own stock `bluetoothd`/
+  `connmand`, are all `unlabeled:s0`; the one real AVC hit seen was
+  unrelated and `permissive=1`) as the file-capability blocker.
+- Running the *exact same binary as the exact same `teslacontrol` user*
+  directly via `runuser -u teslacontrol --`, bypassing `teslacontrold`/
+  systemd entirely, worked (`Error: context deadline exceeded` against a
+  placeholder VIN - i.e. it got past HCI init, same result as the
+  original Phase 0 feasibility test in README.md). So the capability
+  grant itself was fine; the bug was specifically in how
+  `teslacontrold.service` runs its child.
+- Bisected the unit's sandboxing directives via `/proc/<pid>/status`'s
+  `NoNewPrivs` field (checked directly, not inferred): despite the unit's
+  explicit `NoNewPrivileges=false`, the live process showed `NoNewPrivs: 1`.
+  Clearing `SystemCallFilter=`/`SystemCallErrorNumber=`/`RestrictNamespaces=`
+  via a `systemctl edit --runtime` drop-in successfully removed the
+  resulting seccomp filter (`Seccomp_filters: 0`) but did **not** flip
+  `NoNewPrivs` back to `0`. Editing the *base* unit fragment directly (not
+  a drop-in) to permanently drop those three, plus `AmbientCapabilities=`,
+  still left `NoNewPrivs: 1`. Only dropping
+  `ProtectSystem=`/`ProtectHome=`/`PrivateTmp=`/`ProtectKernelTunables=`/
+  `ProtectControlGroups=` from the base fragment finally got `NoNewPrivs: 0`
+  - confirmed via a from-scratch throwaway unit with zero hardening
+    directives (clean `NoNewPrivs: 0`) as a control, ruling out "systemd on
+    this device always forces NNP for `User=` services" as an alternative
+    explanation.
+  - On this device's systemd 238, declaring any of that `Protect*`/
+    `PrivateTmp` family (even together with an explicit
+    `NoNewPrivileges=false`, and even if later neutralized by a drop-in)
+    makes systemd force kernel `PR_SET_NO_NEW_PRIVS=1` on the whole unit's
+    process tree anyway. Since NNP is one-way and inherited by children,
+    that silently strips the exec'd `tesla-control` child's ability to
+    pick up `CAP_NET_ADMIN` from its own file capability - producing
+    exactly this misleading "operation not permitted" error, which reads
+    like a missing `setcap` even though `getcap` shows it's correctly
+    applied.
+  - `AmbientCapabilities=CAP_SYS_PTRACE` (needed for `authorize()`'s
+    cross-UID `/proc/<pid>/exe` read, see the entry below) was separately,
+    individually verified *not* to trigger this on its own.
+
+**Fix applied:** `helper/systemd/teslacontrold.service` no longer declares
+`ProtectSystem=`, `ProtectHome=`, `PrivateTmp=`, `ProtectKernelTunables=`,
+`ProtectControlGroups=`, `RestrictNamespaces=`, `SystemCallFilter=`, or
+`SystemCallErrorNumber=` (and the now-meaningless `ReadWritePaths=`, which
+only did anything alongside `ProtectSystem=strict`). `AmbientCapabilities=
+CAP_SYS_PTRACE` and the explicit `NoNewPrivileges=false` are kept.
+Verified end-to-end on-device after this change: pairing succeeded, and a
+`Lights → Flash` command actually flashed the car's lights. RPM version
+bumped to 0.1.2. Not yet repackaged as an RPM - the checked-in
+`helper/RPMS/teslacontrold-0.1.1-1.aarch64.rpm` now predates this fix and
+needs rebuilding before shipping (the on-device fix was applied by hand-
+editing the installed unit file directly, not via reinstalling a rebuilt
+package).
+
 ## Rewritten 2026-08-10 - teslacontrold ported from Go to Rust
 
 `teslacontrold` (`helper/`) was rewritten from Go to Rust (zbus, blocking

@@ -132,7 +132,7 @@ docker cp app teslacontrol-build:/home/mersdk/app
 docker exec -u root teslacontrol-build chown -R mersdk:mersdk /home/mersdk/app
 docker exec -w /home/mersdk/app teslacontrol-build \
   mb2 --target SailfishOS-5.2.0.15-aarch64 build
-docker cp teslacontrol-build:/home/mersdk/app/RPMS/harbour-teslacontrol-0.1.1-1.aarch64.rpm app/RPMS/
+docker cp teslacontrol-build:/home/mersdk/app/RPMS/harbour-teslacontrol-0.1.0-1.aarch64.rpm app/RPMS/
 
 # --- teslacontrold.rpm - no compilation, just packaging prebuilt binaries,
 #     but still needs the aarch64 target's rpm/rpmlint config, via sb2 ---
@@ -147,7 +147,7 @@ docker exec -u root teslacontrol-build chown -R mersdk:mersdk /home/mersdk/helpe
 docker exec -w /home/mersdk/helper teslacontrol-build \
   sb2 -t SailfishOS-5.2.0.15-aarch64 rpmbuild \
     --define "_topdir /home/mersdk/helper/rpmbuild" -bb rpm/teslacontrold.spec
-docker cp teslacontrol-build:/home/mersdk/helper/rpmbuild/RPMS/aarch64/teslacontrold-0.1.1-1.aarch64.rpm helper/RPMS/
+docker cp teslacontrol-build:/home/mersdk/helper/rpmbuild/RPMS/aarch64/teslacontrold-0.1.0-1.aarch64.rpm helper/RPMS/
 
 docker rm -f teslacontrol-build
 ```
@@ -164,14 +164,14 @@ committed here:
   skip debuginfo extraction.
 
 Prebuilt RPMs from this exact process are already checked into
-`app/RPMS/harbour-teslacontrol-0.1.1-1.aarch64.rpm` and
-`helper/RPMS/teslacontrold-0.1.1-1.aarch64.rpm`.
+`app/RPMS/harbour-teslacontrol-0.1.0-1.aarch64.rpm` and
+`helper/RPMS/teslacontrold-0.1.0-1.aarch64.rpm`.
 
 ### 3. Install on the phone
 
 ```sh
 scp helper/rpmbuild/RPMS/aarch64/teslacontrold-*.rpm defaultuser@<phone-ip>:~/
-scp harbour-teslacontrol-0.1.1-1.aarch64.rpm defaultuser@<phone-ip>:~/
+scp harbour-teslacontrol-0.1.0-1.aarch64.rpm defaultuser@<phone-ip>:~/
 ssh defaultuser@<phone-ip>
 devel-su pkcon install-local ~/teslacontrold-*.rpm
 devel-su pkcon install-local ~/harbour-teslacontrol-*.rpm
