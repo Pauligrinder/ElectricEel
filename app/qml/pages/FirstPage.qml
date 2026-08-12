@@ -17,7 +17,7 @@ Page {
     // adapter with three concurrent ones is a worse idea than a ~1s longer
     // sequential refresh). statusStage tracks which leg is in flight so the
     // UI can show a single busy indicator and refuse to stack requests.
-    property var status: VState.emptyStatus()
+    property var vehicleStatus: VState.emptyStatus()
     property string statusStage: ""
     // Set from stdErr when a status leg fails. All three legs go through
     // the Infotainment domain (unlike lock/unlock and body-controller-state,
@@ -36,7 +36,7 @@ Page {
         id: statusAgeTimer
         interval: 30000
         repeat: true
-        running: page.status.updatedAt > 0
+        running: page.vehicleStatus.updatedAt > 0
         onTriggered: page.statusAgeTick++
     }
 
@@ -57,21 +57,21 @@ Page {
         if (page.statusStage.length > 0)
             return
         page.statusStage = "toggle"
-        teslaClient.runCommand("status:toggle", page.status.locked ? "unlock" : "lock", [])
+        teslaClient.runCommand("status:toggle", page.vehicleStatus.locked ? "unlock" : "lock", [])
     }
 
     function toggleClimate() {
         if (page.statusStage.length > 0)
             return
         page.statusStage = "toggle"
-        teslaClient.runCommand("status:toggle", page.status.isClimateOn ? "climate-off" : "climate-on", [])
+        teslaClient.runCommand("status:toggle", page.vehicleStatus.isClimateOn ? "climate-off" : "climate-on", [])
     }
 
     function toggleWindows() {
         if (page.statusStage.length > 0)
             return
         page.statusStage = "toggle"
-        teslaClient.runCommand("status:toggle", page.status.windowsOpen ? "windows-close" : "windows-vent", [])
+        teslaClient.runCommand("status:toggle", page.vehicleStatus.windowsOpen ? "windows-close" : "windows-vent", [])
     }
 
     function openFrunk() {
@@ -89,7 +89,7 @@ Page {
     }
 
     function batteryIconSource() {
-        var level = page.status.batteryLevel
+        var level = page.vehicleStatus.batteryLevel
         if (level === null) return "../../img/icons/battery5.svg"
         if (level > 90) return "../../img/icons/battery100.svg"
         if (level > 60) return "../../img/icons/battery75.svg"
@@ -113,21 +113,21 @@ Page {
         onCommandFinished: {
             if (requestId === "status:closures") {
                 if (ok)
-                    page.status = VState.mergeClosuresState(page.status, stdOut)
+                    page.vehicleStatus = VState.mergeClosuresState(page.vehicleStatus, stdOut)
                 else
                     page.statusError = stdErr.length ? stdErr : ("exit code " + exitCode)
                 page.statusStage = "climate"
                 teslaClient.runCommand("status:climate", "state", ["climate"])
             } else if (requestId === "status:climate") {
                 if (ok)
-                    page.status = VState.mergeClimateState(page.status, stdOut)
+                    page.vehicleStatus = VState.mergeClimateState(page.vehicleStatus, stdOut)
                 else if (page.statusError.length === 0)
                     page.statusError = stdErr.length ? stdErr : ("exit code " + exitCode)
                 page.statusStage = "charge"
                 teslaClient.runCommand("status:charge", "state", ["charge"])
             } else if (requestId === "status:charge") {
                 if (ok)
-                    page.status = VState.mergeChargeState(page.status, stdOut)
+                    page.vehicleStatus = VState.mergeChargeState(page.vehicleStatus, stdOut)
                 else if (page.statusError.length === 0)
                     page.statusError = stdErr.length ? stdErr : ("exit code " + exitCode)
                 page.statusStage = ""
@@ -279,18 +279,18 @@ Page {
                             anchors.verticalCenter: batteryIcon.verticalCenter
                             font.pixelSize: Theme.fontSizeSmall
                             color: Theme.primaryColor
-                            text: page.status.batteryLevel === null ? "--" :
-                                  (page.status.batteryLevel + "%" +
-                                   (page.status.chargingState === "Charging" ? " • charging" : ""))
+                            text: page.vehicleStatus.batteryLevel === null ? "--" :
+                                  (page.vehicleStatus.batteryLevel + "%" +
+                                   (page.vehicleStatus.chargingState === "Charging" ? " • charging" : ""))
                         }
 
                         Label {
                             id: tempLabel
                             anchors.verticalCenter: batteryIcon.verticalCenter
-                            visible: page.status.insideTemp !== null
+                            visible: page.vehicleStatus.insideTemp !== null
                             font.pixelSize: Theme.fontSizeSmall
                             color: Theme.secondaryColor
-                            text: "• " + page.status.insideTemp.toFixed(0) + "°C"
+                            text: "• " + page.vehicleStatus.insideTemp.toFixed(0) + "°C"
                         }
                     }
 
@@ -313,7 +313,7 @@ Page {
                                 // Read the periodic tick so elapsed time recomputes
                                 // between refreshes (see statusAgeTimer above).
                                 var _ = page.statusAgeTick
-                                var age = VState.minutesAgo(page.status.updatedAt)
+                                var age = VState.minutesAgo(page.vehicleStatus.updatedAt)
                                 if (page.statusStage.length > 0)
                                     return "Updating..."
                                 if (page.statusError.length > 0 && age < 0)
@@ -353,12 +353,12 @@ Page {
                         height: 96
                         icon.height: 48
                         icon.width: 48
-                        icon.source: page.status.locked === false
+                        icon.source: page.vehicleStatus.locked === false
                                     ? "../../img/icons/lock_open.svg"
                                     : "../../img/icons/lock.svg"
                         icon.color: "#5f6368"
                         icon.highlightColor: "white"
-                        icon.highlighted: !!page.status.locked
+                        icon.highlighted: !!page.vehicleStatus.locked
                         enabled: page.statusStage.length === 0
                         onClicked: page.toggleLock()
                     }
@@ -371,7 +371,7 @@ Page {
                         icon.source: "../../img/icons/fan1.svg"
                         icon.color: "#5f6368"
                         icon.highlightColor: "white"
-                        icon.highlighted: page.status.isClimateOn
+                        icon.highlighted: page.vehicleStatus.isClimateOn
                         enabled: page.statusStage.length === 0
                         onClicked: page.toggleClimate()
                     }
@@ -408,7 +408,7 @@ Page {
                         icon.source: "../../img/icons/window.svg"
                         icon.color: "#5f6368"
                         icon.highlightColor: "white"
-                        icon.highlighted: page.status.windowsOpen
+                        icon.highlighted: page.vehicleStatus.windowsOpen
                         enabled: page.statusStage.length === 0
                         onClicked: page.toggleWindows()
                     }
@@ -426,7 +426,7 @@ Page {
                 teslaClient: teslaClient,
                 categoryId: modelData.id,
                 categoryTitle: modelData.title,
-                status: page.status
+                vehicleStatus: page.vehicleStatus
             })
 
             Icon {

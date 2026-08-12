@@ -5,6 +5,44 @@ were either fixed, or documented here because closing them needs
 something this environment doesn't have: a real Sailfish device, the
 Platform SDK, or a car to pair against.
 
+## Fixed 2026-08-12 - Settings could silently wipe a configured VIN (load/save race)
+
+Symptom: on-device, a previously-working VIN kept reverting to unset -
+"No VIN configured" and no car silhouette on the front page, every time,
+even right after re-entering the VIN in Settings and getting a "Saved"
+confirmation. `helper`/`app` versions matched (ruled out the D-Bus
+signature-skew issue below) and `config.json` genuinely had `"vin": ""`
+after each of these round trips - the save itself was the thing erasing
+it.
+
+Root cause: `SettingsPage.qml`'s fields (`vinField` et al.) start at
+their blank/default values and are only populated once `GetConfig`'s
+async reply lands (`Component.onCompleted: teslaClient.refreshConfig()`
+-> `onConfigLoaded`). The Save button had no gate on that reply having
+arrived, so opening Settings and hitting Save before it did - trivially
+reproducible by opening Settings while a refresh from the front page was
+still in flight - submitted the fields' still-blank defaults. An empty
+VIN is intentionally accepted by `validate_config`
+(`helper/src/config.rs`) as "clear the VIN", so this wasn't rejected: it
+silently overwrote a good VIN with an empty one. Confirmed on-device via
+SSH (`devel-su cat /var/lib/teslacontrold/config.json`) showing
+`vin: ""` immediately after a "Saved" round trip where the VIN field had
+displayed the *placeholder* text (a realistic-looking example VIN,
+`5YJ3E1EA0PF000000`) rather than real content, compounding the
+confusion - the blank field was easy to mistake for a populated one.
+
+Fix (`app/qml/pages/SettingsPage.qml`):
+- Added `configReady`, false until the first real `onConfigLoaded` fires.
+  Save is `enabled: page.configReady`, so it cannot fire against
+  default/blank fields anymore - the race is structurally closed, not
+  just narrowed.
+- `statusText` starts as `"Loading current configuration..."` instead of
+  blank, so the form visibly isn't ready yet rather than looking like an
+  empty-but-usable state.
+- The VIN field's placeholder was changed from a real-looking example VIN
+  to `"17-character VIN"`, which can't be mistaken for actual saved
+  content at a glance.
+
 ## Fixed 2026-08-12 - "No VIN configured" after the 0.1.6 upgrade (helper/app D-Bus signature skew)
 
 Symptom: right after upgrading the app to 0.1.6, the front page showed

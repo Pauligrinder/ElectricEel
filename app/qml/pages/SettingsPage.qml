@@ -6,11 +6,20 @@ Page {
     id: page
     property var teslaClient
 
-    property string statusText: ""
+    property string statusText: "Loading current configuration..."
     // Set while onConfigLoaded is repopulating the form so vinField's
     // onTextChanged doesn't auto-guess the model and clobber the model value
     // that was actually saved for this VIN (see modelField's comment).
     property bool loadingConfig: false
+    // False until the first GetConfig reply actually lands. refreshConfig()
+    // (below) is async - every field starts at its blank/default value, so
+    // opening Settings and hitting Save before the reply arrives submitted
+    // those defaults, including an empty VIN, and a blank VIN is treated as
+    // "clear the VIN" further down the pipe (validate_config accepts it -
+    // see helper/src/config.rs). That silently wiped a previously-configured
+    // VIN. Gating Save on this makes that submission impossible instead of
+    // just unlikely.
+    property bool configReady: false
 
     Connections {
         target: teslaClient
@@ -22,6 +31,7 @@ Page {
             connectTimeoutSlider.value = connectTimeoutSec
             commandTimeoutSlider.value = commandTimeoutSec
             page.loadingConfig = false
+            page.configReady = true
             page.statusText = hasKey ? "Key on file" : "No key yet - use Pair Vehicle from the main menu"
         }
         onConfigSaved: {
@@ -56,7 +66,11 @@ Page {
                 id: vinField
                 width: parent.width
                 label: "Vehicle VIN"
-                placeholderText: "5YJ3E1EA0PF000000"
+                // Not a real-looking VIN on purpose: a placeholder that
+                // resembles an actual VIN (e.g. "5YJ3E1EA0PF000000") reads
+                // as saved content at a glance on a blank field - see
+                // KNOWN_ISSUES.md's Settings load/save race entry.
+                placeholderText: "17-character VIN"
                 EnterKey.iconSource: "image://theme/icon-m-enter-next"
                 // The VIN parser preselects the matching model in the list
                 // below as soon as a recognizable prefix appears. A manual
@@ -119,6 +133,10 @@ Page {
             Button {
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: "Save"
+                // Disabled until the current config has actually loaded (see
+                // page.configReady) - otherwise this fires against the
+                // fields' blank/default values, not what's really saved.
+                enabled: page.configReady
                 onClicked: teslaClient.setConfig(vinField.text, VState.MODELS[modelField.currentIndex].id,
                                                   keyNameField.text,
                                                   connectTimeoutSlider.value, commandTimeoutSlider.value)

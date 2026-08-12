@@ -5,7 +5,7 @@
 #   devel-su pkcon install-local teslacontrold-*.rpm
 Name:       teslacontrold
 Summary:    Privileged BLE helper service for harbour-teslacontrol
-Version:    0.1.6
+Version:    0.1.7
 Release:    1
 License:    ASL 2.0 and BSD
 URL:        https://github.com/marconapetti/ElectricEel
@@ -113,6 +113,8 @@ systemctl enable --now teslacontrold.service >/dev/null 2>&1 || :
 %dir %attr(0700,teslacontrol,teslacontrol) %{_localstatedir}/lib/teslacontrold
 
 %changelog
+* Tue Aug 12 2026 Marco Napetti <marco.napetti@proton.me> - 0.1.7-1
+- Version bump
 * Tue Aug 12 2026 Marco Napetti <marco.napetti@proton.me> - 0.1.6-1
 - Car model
 * Tue Aug 12 2026 Marco Napetti <marco.napetti@proton.me> - 0.1.5-1

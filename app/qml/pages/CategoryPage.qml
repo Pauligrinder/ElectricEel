@@ -12,7 +12,7 @@ Page {
     // a live binding, so it can go stale while this page is open (matches
     // FirstPage's own "Updated Xm ago" label, which is visible again as
     // soon as the user goes back).
-    property var status: null
+    property var vehicleStatus: null
 
     property var category: Catalog.findCategory(categoryId)
     property string pendingCmd: ""
@@ -29,28 +29,28 @@ Page {
                                    : []
 
     function commandVisible(commandDef) {
-        if (!page.status || !commandDef.visibleWhen)
+        if (!page.vehicleStatus || !commandDef.visibleWhen)
             return true
-        return commandDef.visibleWhen(page.status)
+        return commandDef.visibleWhen(page.vehicleStatus)
     }
 
     function statusSubtitle() {
-        if (!status)
+        if (!vehicleStatus)
             return ""
         if (categoryId === "climate") {
-            if (status.insideTemp === null)
+            if (vehicleStatus.insideTemp === null)
                 return ""
-            return (status.isClimateOn ? "Climate on" : "Climate off") + " • " + status.insideTemp.toFixed(0) + "°C inside"
+            return (vehicleStatus.isClimateOn ? "Climate on" : "Climate off") + " • " + vehicleStatus.insideTemp.toFixed(0) + "°C inside"
         }
         if (categoryId === "charging") {
-            if (status.batteryLevel === null)
+            if (vehicleStatus.batteryLevel === null)
                 return ""
-            return status.batteryLevel + "% battery" + (status.chargingState === "Charging" ? " • Charging" : "")
+            return vehicleStatus.batteryLevel + "% battery" + (vehicleStatus.chargingState === "Charging" ? " • Charging" : "")
         }
         if (categoryId === "security") {
-            if (status.locked === null)
+            if (vehicleStatus.locked === null)
                 return ""
-            return status.locked ? "Doors locked" : "Doors unlocked"
+            return vehicleStatus.locked ? "Doors locked" : "Doors unlocked"
         }
         return ""
     }
