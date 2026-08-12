@@ -16,6 +16,14 @@ use crate::session_client::SessionClient;
 
 pub const IFACE_NAME: &str = "org.teslacontrol.Helper1";
 
+/// `GetConfig`'s return payload, in the same order the client (Qt's
+/// `QDBusPendingReply`) and the zbus macro both destructure it:
+/// (vin, model, `key_name`, `connect_timeout_sec`, `command_timeout_sec`, `has_key`,
+/// `public_key_pem`). A transparent alias so the seven-field tuple - above
+/// clippy's type-complexity comfort zone, and easy to mismatch by position
+/// at the five call sites - is spelled once.
+type GetConfigReply = (String, String, String, i32, i32, bool, String);
+
 /// Combined exit status of a bundled binary invocation.
 struct RunOutcome {
     ok: bool,
@@ -339,6 +347,7 @@ impl Helper {
     fn set_config(
         &self,
         vin: &str,
+        model: &str,
         key_name: &str,
         connect_timeout_sec: i32,
         command_timeout_sec: i32,
@@ -346,22 +355,23 @@ impl Helper {
     ) -> Result<(bool, String), HelperError> {
         self.authorize_sender(&header)?;
 
-        let msg =
-            match crate::config::validate_config(
-                vin,
-                key_name,
-                connect_timeout_sec,
-                command_timeout_sec,
-            ) {
-                Ok(()) => None,
-                Err(e) => Some(e.to_string()),
-            };
+        let msg = match crate::config::validate_config(
+            vin,
+            model,
+            key_name,
+            connect_timeout_sec,
+            command_timeout_sec,
+        ) {
+            Ok(()) => None,
+            Err(e) => Some(e.to_string()),
+        };
         if let Some(msg) = msg {
             return Ok((false, msg));
         }
 
         let mut cfg = self.cfg.lock().unwrap();
         cfg.vin = vin.trim().to_string();
+        cfg.model = model.trim().to_ascii_lowercase();
         cfg.key_name = key_name.trim().to_string();
         cfg.connect_timeout_sec = connect_timeout_sec;
         cfg.command_timeout_sec = command_timeout_sec;
@@ -369,8 +379,8 @@ impl Helper {
             return Ok((false, e.to_string()));
         }
         eprintln!(
-            "teslacontrold: SetConfig(vin={}, keyName={:?}, connectTimeout={}s, commandTimeout={}s)",
-            cfg.vin, cfg.key_name, connect_timeout_sec, command_timeout_sec
+            "teslacontrold: SetConfig(vin={}, model={:?}, keyName={:?}, connectTimeout={}s, commandTimeout={}s)",
+            cfg.vin, cfg.model, cfg.key_name, connect_timeout_sec, command_timeout_sec
         );
         // A live persistent session (if any) was spawned with the old
         // VIN/timeouts baked into its argv - drop it so the next Run()
@@ -385,7 +395,7 @@ impl Helper {
     fn get_config(
         &self,
         #[zbus(header)] header: Header<'_>,
-    ) -> Result<(String, String, i32, i32, bool, String), HelperError> {
+    ) -> Result<GetConfigReply, HelperError> {
         self.authorize_sender(&header)?;
 
         let cfg = self.cfg.lock().unwrap();
@@ -395,12 +405,30 @@ impl Helper {
         };
         Ok((
             cfg.vin.clone(),
+            cfg.model.clone(),
             cfg.key_name.clone(),
             cfg.connect_timeout_sec,
             cfg.command_timeout_sec,
             has_key,
             pub_key,
         ))
+    }
+
+    /// Returns the helper's own build version (`CARGO_PKG_VERSION`, stamped
+    /// from the git tag by the release workflow, same as the app's
+    /// `APP_VERSION`). The app shows both on the Settings page and flags a
+    /// mismatch, so an app+helper installed from different releases stops
+    /// being a silent failure mode (the 0.1.6 `model`-field interface break
+    /// hid exactly that way). A helper built before this method existed -
+    /// or, defensively, any compat break that removed it - answers
+    /// `UnknownMethod`, which the client interprets as "helper older than
+    /// this app".
+    fn get_version(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+    ) -> Result<String, HelperError> {
+        self.authorize_sender(&header)?;
+        Ok(env!("CARGO_PKG_VERSION").to_string())
     }
 }
 
@@ -462,5 +490,22 @@ fn run_binary(bin_dir: &str, name: &str, args: &[String], timeout: Duration) -> 
         stdout,
         stderr,
         exit_code,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_get_version_is_semver() {
+        // The app compares this to its own APP_VERSION on the Settings page
+        // and flags a mismatch, so a malformed/empty version would either
+        // trip every install with a false warning or hide a real one.
+        let v = env!("CARGO_PKG_VERSION");
+        let parts: Vec<&str> = v.split('.').collect();
+        assert_eq!(parts.len(), 3, "version {v:?} must be x.y.z");
+        assert!(
+            v.chars().all(|c| c.is_ascii_digit() || c == '.'),
+            "version {v:?} must be digits and dots only"
+        );
     }
 }

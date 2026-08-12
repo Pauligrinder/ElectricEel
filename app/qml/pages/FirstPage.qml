@@ -8,6 +8,7 @@ Page {
     property var teslaClient
 
     property string vin: ""
+    property string model: ""
     property bool hasKey: false
 
     // Live dashboard state, fetched over BLE via three chained "state"
@@ -101,6 +102,7 @@ Page {
         target: teslaClient
         onConfigLoaded: {
             page.vin = vin
+            page.model = model
             page.hasKey = hasKey
             page.refreshStatus()
         }
@@ -148,7 +150,17 @@ Page {
         }
     }
 
-    Component.onCompleted: refresh()
+    // Covers both the initial load (this page becomes Active as soon as it's
+    // pushed) and returning here later. Sailfish keeps popped/pushed pages
+    // alive on the stack rather than recreating them, so a plain
+    // Component.onCompleted would only ever fire once - saving a VIN/model in
+    // SettingsPage and navigating back would then leave page.vin/page.model
+    // stale (whatever the very first refresh() returned) until the user
+    // pulled down "Refresh" manually.
+    onStatusChanged: {
+        if (status === PageStatus.Active)
+            refresh()
+    }
 
     SilicaListView {
         id: listView
@@ -162,17 +174,26 @@ Page {
                 title: "Tesla Control"
             }
 
+            // Warns when the helper half is missing, too old to report its
+            // own version, or a different version than this app. All three
+            // are the states that previously announced themselves as a
+            // silent "No VIN configured" (see KNOWN_ISSUES.md); GetVersion
+            // + APP_VERSION make them visible up front instead.
             Rectangle {
+                id: versionBanner
+                property bool helperProblem: !teslaClient.helperAvailable
+                        || teslaClient.helperVersion.length === 0
+                        || teslaClient.helperVersion !== teslaClient.appVersion
                 width: parent.width
                 height: helperWarning.visible ? helperWarning.height + Theme.paddingMedium * 2 : 0
                 color: Theme.rgba(Theme.highlightBackgroundColor, 0.15)
-                visible: !teslaClient.helperAvailable
+                visible: helperProblem
 
                 Column {
                     id: helperWarning
                     anchors.centerIn: parent
                     width: parent.width - Theme.horizontalPageMargin * 2
-                    visible: !teslaClient.helperAvailable
+                    visible: versionBanner.helperProblem
                     spacing: Theme.paddingSmall
 
                     Label {
@@ -180,7 +201,11 @@ Page {
                         wrapMode: Text.Wrap
                         color: Theme.highlightColor
                         font.pixelSize: Theme.fontSizeSmall
-                        text: "teslacontrold helper service not found. Install the companion package (devel-su pkcon install-local teslacontrold-*.rpm) and pull down to refresh."
+                        text: !teslaClient.helperAvailable
+                            ? "teslacontrold helper service not found. Install the companion package (devel-su pkcon install-local teslacontrold-*.rpm) and pull down to refresh."
+                            : teslaClient.helperVersion.length === 0
+                                ? "teslacontrold is too old to report its version. Install the helper RPM from the same release as this app (" + teslaClient.appVersion + "), then pull down to refresh."
+                                : "Version mismatch: app " + teslaClient.appVersion + ", teslacontrold " + teslaClient.helperVersion + ". Install matching RPMs from the same release, then pull down to refresh."
                     }
                 }
             }
@@ -231,7 +256,10 @@ Page {
                         height: 170
                         anchors.horizontalCenter: parent.horizontalCenter
                         fillMode: Image.PreserveAspectFit
-                        source: "../../img/tesla_model3_lf.png"
+                        // An explicit config model override wins; otherwise
+                        // the VIN is parsed for the model. See VehicleState.js
+                        // carImageSource().
+                        source: VState.carImageSource(page.model, page.vin)
                         sourceSize: Qt.size(width * 2, height * 2)
                     }
 

@@ -44,11 +44,11 @@
 // the trylist guessModel() below in sync when adding models.
 var MODELS = [
     { id: "",           name: "Auto (from VIN)", image: "" },
-    { id: "model3",     name: "Model 3",     image: "../../img/model_3.svg" },
-    { id: "models",     name: "Model S",     image: "../../img/model_s.svg" },
-    { id: "modelx",     name: "Model X",     image: "../../img/model_x.svg" },
-    { id: "modely",     name: "Model Y",     image: "../../img/model_y.svg" },
-    { id: "cybertruck", name: "Cybertruck",  image: "../../img/cybertruck.svg" },
+    { id: "model3",     name: "Model 3",     image: "../../img/model3.png" },
+    { id: "models",     name: "Model S",     image: "../../img/models.png" },
+    { id: "modelx",     name: "Model X",     image: "../../img/modelx.png" },
+    { id: "modely",     name: "Model Y",     image: "../../img/modely.png" },
+    { id: "cybertruck", name: "Cybertruck",  image: "../../img/cybertruck.png" },
 ]
 
 function modelImage(id) {
@@ -58,7 +58,7 @@ function modelImage(id) {
     }
     // Unknown/empty id (and the Auto entry, which has no image of its own)
     // fall back to the Model 3 silhouette.
-    return "../../img/model_3.svg"
+    return "../../img/model3.png"
 }
 
 function modelName(id) {
@@ -75,6 +75,21 @@ function modelIndex(id) {
             return i
     }
     return 0
+}
+
+// Effective model id to render on the front page: an explicit config
+// override wins, otherwise the VIN guess (which modelImage() maps to the
+// default silhouette when it comes back empty).
+function effectiveModel(model, vin) {
+    if (model && model.length > 0)
+        return model
+    return guessModel(vin)
+}
+
+// The front-page car graphic. Pass the config's `model` field and the VIN;
+// ""/"Auto" falls through to a VIN-based guess.
+function carImageSource(model, vin) {
+    return modelImage(effectiveModel(model, vin))
 }
 
 // Best-effort VIN -> model. This is a heuristic, not an authoritative
@@ -95,8 +110,9 @@ function guessModel(vin) {
         ["LRWY", "modely"],    // Shanghai Model Y (LRWY...)
         ["5YJ3", "model3"],    // Fremont Model 3 (5YJ3E...)
         ["5Y3",  "model3"],    // alternative Model 3 WMI
+        ["5YJY", "modely"],    // Fremont Model Y 2020-21 (5YJYGD...)
         ["5YJX", "modelx"],    // Fremont Model X (5YJXC...)
-        ["5YFY", "modely"],    // Fremont Model Y (5YFYG...)
+        ["5YFY", "modely"],    // Fremont Model Y, alternative prefix
         ["5YFS", "models"],    // Fremont Model S (5YFS...)
         ["5YJS", "models"],    // Fremont Model S (5YJSA/R...)
         ["7SAS", "models"],    // Fremont Model S, 2021+ (7SAS...)

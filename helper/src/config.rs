@@ -12,6 +12,14 @@ use tempfile::NamedTempFile;
 pub const MAX_TIMEOUT_SEC: i32 = 300;
 pub const MAX_KEY_NAME_LEN: usize = 64;
 
+/// The accepted values of Config.model. "" is "Auto (from VIN)": the QML
+/// client guesses the model from the VIN's WMI prefix and nothing is forced.
+/// Every other entry doubles as a `Model` id in the client-side MODELS list
+/// (app/qml/js/VehicleState.js) and a key into the model images the front
+/// page shows. Keep this, VehicleState.js's MODELS, and that file's
+/// VIN-prefix `guessModel()` table in sync when adding/removing models.
+pub const VALID_MODELS: [&str; 6] = ["", "model3", "models", "modelx", "modely", "cybertruck"];
+
 static VIN_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-HJ-NPR-Z0-9]{17}$").unwrap());
 // key_name is functionally near-inert (tesla-control only consults it for
 // an OS-keyring-backed key, and this app always passes -keyring-type file,
@@ -28,6 +36,7 @@ pub enum ConfigError {
     MaxTimeout,
     InvalidVin,
     InvalidKeyName,
+    InvalidModel,
 }
 
 impl fmt::Display for ConfigError {
@@ -42,6 +51,11 @@ impl fmt::Display for ConfigError {
                 f,
                 "key name must be <= {MAX_KEY_NAME_LEN} chars (letters, digits, spaces, . _ -)"
             ),
+            ConfigError::InvalidModel => write!(
+                f,
+                "model must be one of {}",
+                VALID_MODELS.into_iter().filter(|m| !m.is_empty()).collect::<Vec<_>>().join(", ")
+            ),
         }
     }
 }
@@ -49,6 +63,15 @@ impl fmt::Display for ConfigError {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub vin: String,
+    // #[serde(default)]: config.json files written before this field existed
+    // (anything pre-0.1.6) have no "model" key. Without a default, serde
+    // treats that as a missing required field and Config::load() rejects
+    // the whole file, silently falling back to Config::default() - which
+    // wipes the already-configured VIN from the running daemon too, not
+    // just the model. sanitize() still normalizes/validates whatever comes
+    // out of this either way.
+    #[serde(default)]
+    pub model: String,
     pub key_name: String,
     pub connect_timeout_sec: i32,
     pub command_timeout_sec: i32,
@@ -58,6 +81,7 @@ impl Default for Config {
     fn default() -> Self {
         Config {
             vin: String::new(),
+            model: String::new(),
             key_name: "harbour-teslacontrol".to_string(),
             connect_timeout_sec: 20,
             command_timeout_sec: 5,
@@ -120,6 +144,13 @@ impl Config {
             eprintln!("teslacontrold: config.json vin fails validation, clearing");
             self.vin = String::new();
         }
+        let model = self.model.trim().to_ascii_lowercase();
+        if VALID_MODELS.contains(&model.as_str()) {
+            self.model = model;
+        } else {
+            eprintln!("teslacontrold: config.json model fails validation, resetting to default");
+            self.model = default.model;
+        }
         let key_name = self.key_name.trim();
         if key_name.len() > MAX_KEY_NAME_LEN || !KEY_NAME_RE.is_match(key_name) {
             eprintln!("teslacontrold: config.json key_name fails validation, resetting to default");
@@ -150,6 +181,7 @@ impl Config {
 /// live D-Bus connection.
 pub fn validate_config(
     vin: &str,
+    model: &str,
     key_name: &str,
     connect_timeout: i32,
     command_timeout: i32,
@@ -164,6 +196,9 @@ pub fn validate_config(
     if !vin.is_empty() && !VIN_RE.is_match(vin) {
         return Err(ConfigError::InvalidVin);
     }
+    if !VALID_MODELS.contains(&model.trim().to_ascii_lowercase().as_str()) {
+        return Err(ConfigError::InvalidModel);
+    }
     let key_name = key_name.trim();
     if key_name.len() > MAX_KEY_NAME_LEN || !KEY_NAME_RE.is_match(key_name) {
         return Err(ConfigError::InvalidKeyName);
@@ -175,8 +210,8 @@ pub fn validate_config(
 mod tests {
     use super::*;
 
-    // (name, vin, key_name, connect_timeout, command_timeout, want)
-    type ValidateConfigCase<'a> = (&'a str, &'a str, &'a str, i32, i32, Option<ConfigError>);
+    // (name, vin, model, key_name, connect_timeout, command_timeout, want)
+    type ValidateConfigCase<'a> = (&'a str, &'a str, &'a str, &'a str, i32, i32, Option<ConfigError>);
 
     #[test]
     // One long, flat table of cases reads more clearly here than splitting
@@ -187,10 +222,20 @@ mod tests {
         let valid_vin = "5YJ3E1EA0PF000000";
         let default_key_name = "harbour-teslacontrol";
         let cases: &[ValidateConfigCase] = &[
-            ("all valid", valid_vin, default_key_name, 20, 5, None),
+            ("all valid", valid_vin, "", default_key_name, 20, 5, None),
+            (
+                "all valid with model override",
+                valid_vin,
+                "modely",
+                default_key_name,
+                20,
+                5,
+                None,
+            ),
             (
                 "zero connect timeout",
                 valid_vin,
+                "",
                 default_key_name,
                 0,
                 5,
@@ -199,6 +244,7 @@ mod tests {
             (
                 "negative command timeout",
                 valid_vin,
+                "",
                 default_key_name,
                 20,
                 -1,
@@ -207,6 +253,7 @@ mod tests {
             (
                 "connect timeout too large",
                 valid_vin,
+                "",
                 default_key_name,
                 MAX_TIMEOUT_SEC + 1,
                 5,
@@ -215,6 +262,7 @@ mod tests {
             (
                 "command timeout too large",
                 valid_vin,
+                "",
                 default_key_name,
                 20,
                 MAX_TIMEOUT_SEC + 1,
@@ -223,15 +271,17 @@ mod tests {
             (
                 "exactly at max allowed",
                 valid_vin,
+                "",
                 default_key_name,
                 MAX_TIMEOUT_SEC,
                 MAX_TIMEOUT_SEC,
                 None,
             ),
-            ("empty VIN clears config", "", default_key_name, 20, 5, None),
+            ("empty VIN clears config", "", "", default_key_name, 20, 5, None),
             (
                 " 5YJ3E1EA0PF000000 ",
                 " 5YJ3E1EA0PF000000 ",
+                "",
                 default_key_name,
                 20,
                 5,
@@ -240,6 +290,7 @@ mod tests {
             (
                 "VIN too short",
                 "5YJ3E1EA0PF00000",
+                "",
                 default_key_name,
                 20,
                 5,
@@ -248,6 +299,7 @@ mod tests {
             (
                 "VIN with letter I",
                 "5YJ3E1EA0PI000000",
+                "",
                 default_key_name,
                 20,
                 5,
@@ -256,6 +308,7 @@ mod tests {
             (
                 "VIN with letter O",
                 "5YJ3E1EA0PO000000",
+                "",
                 default_key_name,
                 20,
                 5,
@@ -264,15 +317,35 @@ mod tests {
             (
                 "VIN with lowercase",
                 "5yj3e1ea0pf000000",
+                "",
                 default_key_name,
                 20,
                 5,
                 Some(ConfigError::InvalidVin),
             ),
-            ("empty key name clears it", valid_vin, "", 20, 5, None),
+            (
+                "unknown model",
+                valid_vin,
+                "roadster",
+                default_key_name,
+                20,
+                5,
+                Some(ConfigError::InvalidModel),
+            ),
+            (
+                "uppercase model is normalized, not rejected",
+                valid_vin,
+                "MODEL3",
+                default_key_name,
+                20,
+                5,
+                None,
+            ),
+            ("empty key name clears it", valid_vin, "", "", 20, 5, None),
             (
                 "key name at max length",
                 valid_vin,
+                "",
                 &"a".repeat(MAX_KEY_NAME_LEN),
                 20,
                 5,
@@ -281,6 +354,7 @@ mod tests {
             (
                 "key name too long",
                 valid_vin,
+                "",
                 &"a".repeat(MAX_KEY_NAME_LEN + 1),
                 20,
                 5,
@@ -289,6 +363,7 @@ mod tests {
             (
                 "key name with disallowed characters",
                 valid_vin,
+                "",
                 "phone; rm -rf /",
                 20,
                 5,
@@ -297,6 +372,7 @@ mod tests {
             (
                 "key name with newline",
                 valid_vin,
+                "",
                 "phone\nkey",
                 20,
                 5,
@@ -305,15 +381,16 @@ mod tests {
             (
                 "key name with spaces/dots/dashes/underscores",
                 valid_vin,
+                "",
                 "My Phone_v2.0-test",
                 20,
                 5,
                 None,
             ),
         ];
-        for (name, vin, key_name, connect_timeout, command_timeout, want) in cases {
-            let got = validate_config(vin, key_name, *connect_timeout, *command_timeout).err();
-            assert_eq!(got, *want, "{name}: validate_config({vin:?}, {key_name:?})");
+        for (name, vin, model, key_name, connect_timeout, command_timeout, want) in cases {
+            let got = validate_config(vin, model, key_name, *connect_timeout, *command_timeout).err();
+            assert_eq!(got, *want, "{name}: validate_config({vin:?}, {model:?}, {key_name:?})");
         }
     }
 
@@ -325,6 +402,7 @@ mod tests {
 
         let cfg = Config {
             vin: "5YJ3E1EA0PF000000".to_string(),
+            model: String::new(),
             key_name: "harbour-teslacontrol".to_string(),
             connect_timeout_sec: 20,
             command_timeout_sec: 5,
@@ -358,20 +436,48 @@ mod tests {
         let path = dir.join("config.json");
 
         // Simulates a hand-edited config.json - validate_config would
-        // reject all four of these fields via SetConfig, but load() must
+        // reject all five of these fields via SetConfig, but load() must
         // not simply trust a file that bypassed that path.
         fs::write(
             &path,
-            r#"{"vin":"not-a-real-vin","key_name":"phone\nname","connect_timeout_sec":-5,"command_timeout_sec":99999}"#,
+            r#"{"vin":"not-a-real-vin","model":"roadster","key_name":"phone\nname","connect_timeout_sec":-5,"command_timeout_sec":99999}"#,
         )
         .unwrap();
 
         let cfg = Config::load(&path).expect("load");
         let default = Config::default();
         assert_eq!(cfg.vin, "", "invalid vin should be cleared, not smuggled through");
+        assert_eq!(cfg.model, default.model, "invalid model should reset to default");
         assert_eq!(cfg.key_name, default.key_name, "invalid key_name should reset to default");
         assert_eq!(cfg.connect_timeout_sec, default.connect_timeout_sec);
         assert_eq!(cfg.command_timeout_sec, default.command_timeout_sec);
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_load_pre_model_field_config_keeps_vin() {
+        // A config.json written by any pre-0.1.6 build - before the "model"
+        // field existed - has no "model" key at all. Regression test for the
+        // bug where a missing (not just invalid) field made serde reject the
+        // whole file, so load() fell back to Config::default() and silently
+        // dropped the VIN/key_name/timeouts too, not just the model.
+        let dir = std::env::temp_dir().join(format!("teslacontrold-test-premodel-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("config.json");
+
+        fs::write(
+            &path,
+            r#"{"vin":"5YJ3E1EA0PF000000","key_name":"harbour-teslacontrol","connect_timeout_sec":20,"command_timeout_sec":5}"#,
+        )
+        .unwrap();
+
+        let cfg = Config::load(&path).expect("load");
+        assert_eq!(cfg.vin, "5YJ3E1EA0PF000000", "pre-existing VIN must survive loading an old config.json");
+        assert_eq!(cfg.model, "", "missing model field should default to Auto, not reject the file");
+        assert_eq!(cfg.key_name, "harbour-teslacontrol");
+        assert_eq!(cfg.connect_timeout_sec, 20);
+        assert_eq!(cfg.command_timeout_sec, 5);
 
         fs::remove_dir_all(&dir).ok();
     }

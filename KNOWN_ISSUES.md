@@ -5,6 +5,61 @@ were either fixed, or documented here because closing them needs
 something this environment doesn't have: a real Sailfish device, the
 Platform SDK, or a car to pair against.
 
+## Fixed 2026-08-12 - "No VIN configured" after the 0.1.6 upgrade (helper/app D-Bus signature skew)
+
+Symptom: right after upgrading the app to 0.1.6, the front page showed
+"No VIN configured" even though the VIN was saved, no car silhouette
+rendered (not even after picking a model and saving from Settings), and
+Settings would not confirm the saved VIN.
+
+Root cause: 0.1.6 added a `model` field to the helper's D-Bus interface
+- `SetConfig` gained one argument and `GetConfig` gained one return
+value (`(ssii)` -> `(sssii)` / `ssiibs` -> `sssiibs`). The app and the
+helper ship as separate RPMs (`harbour-teslacontrol` and
+`teslacontrold`) that must be updated together. Qt's `QDBusPendingReply`
+treats *any* reply-signature mismatch as an error and returns **empty**
+arguments (verified empirically with a local D-Bus bus against a
+rebuilt 0.1.5-layout helper: GotConfig -> `InvalidSignature`, `vin` =
+`""`), so a stale helper left `configLoaded` never firing and the whole
+config appeared unset.
+
+Fix (`app/src/teslaclient.cpp`):
+- `refreshConfig()` now parses the `GetConfig` reply by its actual
+  signature and accepts **both** layouts - `sssiibs` (0.1.6+) and the
+  pre-0.1.6 `ssiibs` (model assumed `""`). An app and helper a version
+  apart therefore still display VIN/hasKey and render the (VIN-guessed)
+  silhouette; a `qWarning` notes the mismatch.
+- `setConfig()`'s error path translates the zbus/Qt signature-mismatch
+  error into an actionable message ("teslacontrold is too old for this
+  app version - update the helper package to 0.1.6 or later.") instead
+  of the raw D-Bus text.
+- Parsing uses `QDBusMessage::arguments()` rather than a
+  `QDBusPendingReply` constructed from a message, so it keeps compiling
+  against the older Qt the Sailfish SDK bundles.
+
+On-device when this recurs: `systemctl status teslacontrold` +
+`journalctl -u teslacontrold -b` to confirm which binary is actually
+running, and `journalctl -t harbour-teslacontrol -b` for the app-side
+`qWarning` above. The clean fix remains installing matching app+helper
+RPMs from the same release.
+
+**Follow-up in the same session - versions surfaced on the UI (0.1.7).**
+So an app/helper mismatch can never again hide as a cryptic blank
+config, the two halves now report their versions, always visible:
+- The helper gained a `GetVersion` D-Bus method returning
+  `CARGO_PKG_VERSION` (`helper/src/helper.rs`); an older helper answers
+  `UnknownMethod`, which is exactly how the app recognizes "helper too
+  old".
+- The app reads its own version from `APP_VERSION` (set from `VERSION`
+  in `app/harbour-teslacontrol.pro`) and queries `GetVersion` via
+  `refreshHelperVersion()` (`app/src/teslaclient.cpp`).
+- Settings gets an "About" section (app + helper versions, warning on
+  mismatch/too-old); FirstPage's banner now fires not just for a missing
+  helper but for one that reports no version or a mismatched one.
+- The release workflow stamps `VERSION` (in the `.pro`) and the helper's
+  `Cargo.toml` version from the same tag and asserts they're equal, so a
+  matching release always reports matching versions.
+
 ## Fixed 2026-08-11 - full-codebase review: 11 findings, mostly commands that always errored
 
 An independent review (Rust helper, Go session companion, C++/QML app,

@@ -94,6 +94,22 @@ jobs:
           sed -i "s/^Version:.*/Version:       ${{ steps.version.outputs.version }}/" helper/rpm/teslacontrold.spec
           grep '^Version:' app/rpm/harbour-teslacontrol.spec helper/rpm/teslacontrold.spec
 
+      # The app's APP_VERSION (from $${VERSION} in the .pro) and the
+      # helper's GetVersion (cargo package version) are surfaced on the
+      # Settings page and compared on the front page; stamp both from the
+      # same tag so a matched app+helper pair always reports equal versions
+      # and a mismatch means an actually-out-of-step install, never a
+      # version-constant that lagged the tag.
+      - name: Stamp app helper build versions from the tag
+        run: |
+          sed -i "s/^VERSION =.*/VERSION = ${{ steps.version.outputs.version }}/" app/harbour-teslacontrol.pro
+          sed -i "s/^version = .*/version = \"${{ steps.version.outputs.version }}\"/" helper/Cargo.toml
+          grep '^VERSION =' app/harbour-teslacontrol.pro
+          grep '^version =' helper/Cargo.toml
+          test "$(sed -n 's/^VERSION = //p' app/harbour-teslacontrol.pro)" = \
+               "$(sed -n 's/^version = "\(.*\)"/\1/p' helper/Cargo.toml)" \
+            || { echo "app (.pro) and helper (Cargo.toml) build versions diverged"; exit 1; }
+
       - name: Pull Sailfish Platform SDK
         run: docker pull coderus/sailfishos-platform-sdk-aarch64
 

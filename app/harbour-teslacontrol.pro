@@ -3,6 +3,14 @@ TARGET = harbour-teslacontrol
 CONFIG += sailfishapp
 QT += dbus
 
+# Single source of the app version, surfaced on the Settings page and
+# compared against the helper's GetVersion. The release workflow stamps
+# this (and helper/Cargo.toml) from the same git tag, so a matched pair
+# reports equal versions. Keep in sync with helper/Cargo.toml when bumping
+# outside a release.
+VERSION = 0.1.6
+DEFINES += APP_VERSION=\\\"$$VERSION\\\"
+
 SOURCES += \
     src/harbour-teslacontrol.cpp \
     src/teslaclient.cpp
@@ -17,7 +25,11 @@ DISTFILES += \
     qml/cover/CoverPage.qml \
     qml/pages/*.qml \
     qml/js/*.js \
-    img/tesla_model3_lf.png \
+    img/model3.png \
+    img/models.png \
+    img/modelx.png \
+    img/modely.png \
+    img/cybertruck.png \
     img/icons/*.svg
 
 # The sailfishapp qmake feature auto-installs TARGET.desktop and the

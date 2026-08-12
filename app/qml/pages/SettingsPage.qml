@@ -1,19 +1,27 @@
 import QtQuick 2.6
 import Sailfish.Silica 1.0
+import "../js/VehicleState.js" as VState
 
 Page {
     id: page
     property var teslaClient
 
     property string statusText: ""
+    // Set while onConfigLoaded is repopulating the form so vinField's
+    // onTextChanged doesn't auto-guess the model and clobber the model value
+    // that was actually saved for this VIN (see modelField's comment).
+    property bool loadingConfig: false
 
     Connections {
         target: teslaClient
         onConfigLoaded: {
+            page.loadingConfig = true
             vinField.text = vin
+            modelField.currentIndex = VState.modelIndex(model)
             keyNameField.text = keyName
             connectTimeoutSlider.value = connectTimeoutSec
             commandTimeoutSlider.value = commandTimeoutSec
+            page.loadingConfig = false
             page.statusText = hasKey ? "Key on file" : "No key yet - use Pair Vehicle from the main menu"
         }
         onConfigSaved: {
@@ -50,6 +58,35 @@ Page {
                 label: "Vehicle VIN"
                 placeholderText: "5YJ3E1EA0PF000000"
                 EnterKey.iconSource: "image://theme/icon-m-enter-next"
+                // The VIN parser preselects the matching model in the list
+                // below as soon as a recognizable prefix appears. A manual
+                // selection made before the VIN was pasted is overwritten,
+                // but that's the point of "Auto" preselect - and the user
+                // can always re-pick after. Suppressed while config loads so
+                // a saved explicit/model value survives repopulation.
+                onTextChanged: {
+                    if (page.loadingConfig)
+                        return
+                    modelField.currentIndex = VState.modelIndex(VState.guessModel(text))
+                }
+            }
+
+            // Model picker for the front-page car graphic. This is a real
+            // config override, not just a display setting: the chosen id is
+            // persisted (""/"Auto (from VIN)" guesses from the VIN on the
+            // front page, anything else forces that model's silhouette). The
+            // ids live in sync with helper/src/config.rs's VALID_MODELS.
+            ComboBox {
+                id: modelField
+                width: parent.width
+                label: "Front-page car model"
+                description: "Auto selects the model from the VIN"
+                menu: ContextMenu {
+                    Repeater {
+                        model: VState.MODELS
+                        MenuItem { text: modelData.name }
+                    }
+                }
             }
 
             TextField {
@@ -82,7 +119,8 @@ Page {
             Button {
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: "Save"
-                onClicked: teslaClient.setConfig(vinField.text, keyNameField.text,
+                onClicked: teslaClient.setConfig(vinField.text, VState.MODELS[modelField.currentIndex].id,
+                                                  keyNameField.text,
                                                   connectTimeoutSlider.value, commandTimeoutSlider.value)
             }
 
@@ -90,6 +128,41 @@ Page {
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: "Pairing & Keys"
                 onClicked: pageStack.push(Qt.resolvedUrl("PairingPage.qml"), { teslaClient: teslaClient })
+            }
+
+            SectionHeader { text: "About" }
+
+            // Versions of the two halves this app is made of. They're
+            // stamped from the same release tag, so a difference (or an
+            // empty helper version, i.e. a helper too old to have GetVersion)
+            // means the RPMs were updated out of step - exactly the state
+            // that used to surface as a silent "No VIN configured".
+            Label {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.margins: Theme.horizontalPageMargin
+                wrapMode: Text.Wrap
+                font.pixelSize: Theme.fontSizeExtraSmall
+                color: Theme.secondaryColor
+                text: "App: Tesla Control " + teslaClient.appVersion +
+                      "   |   helper: " + (teslaClient.helperVersion.length > 0
+                                           ? "teslacontrold " + teslaClient.helperVersion
+                                           : "teslacontrold (too old / unknown)")
+            }
+
+            Label {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.margins: Theme.horizontalPageMargin
+                wrapMode: Text.Wrap
+                font.pixelSize: Theme.fontSizeExtraSmall
+                color: Theme.highlightColor
+                visible: teslaClient.helperVersion.length === 0
+                        || teslaClient.helperVersion !== teslaClient.appVersion
+                text: teslaClient.helperVersion.length === 0
+                    ? "teslacontrold is too old to report a version - install the helper RPM from the same release as this app."
+                    : "Version mismatch: update teslacontrold to " + teslaClient.appVersion +
+                      " to match this app."
             }
         }
     }
