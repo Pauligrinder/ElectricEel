@@ -37,16 +37,96 @@
 
 .pragma library
 
+// Tesla-model metadata for the car graphic on the front page. The `id`
+// doubles as the value of config.json's `model` field (see helper/src/
+// config.rs): "" is "Auto" (guess from VIN, override nothing), the rest
+// force that model's silhouette. Keep MODELS, config.rs's VALID_MODELS and
+// the trylist guessModel() below in sync when adding models.
+var MODELS = [
+    { id: "",           name: "Auto (from VIN)", image: "" },
+    { id: "model3",     name: "Model 3",     image: "../../img/model_3.svg" },
+    { id: "models",     name: "Model S",     image: "../../img/model_s.svg" },
+    { id: "modelx",     name: "Model X",     image: "../../img/model_x.svg" },
+    { id: "modely",     name: "Model Y",     image: "../../img/model_y.svg" },
+    { id: "cybertruck", name: "Cybertruck",  image: "../../img/cybertruck.svg" },
+]
+
+function modelImage(id) {
+    for (var i = 0; i < MODELS.length; i++) {
+        if (MODELS[i].id === id && MODELS[i].image.length > 0)
+            return MODELS[i].image
+    }
+    // Unknown/empty id (and the Auto entry, which has no image of its own)
+    // fall back to the Model 3 silhouette.
+    return "../../img/model_3.svg"
+}
+
+function modelName(id) {
+    for (var i = 0; i < MODELS.length; i++) {
+        if (MODELS[i].id === id)
+            return MODELS[i].name
+    }
+    return "Model 3"
+}
+
+function modelIndex(id) {
+    for (var i = 0; i < MODELS.length; i++) {
+        if (MODELS[i].id === id)
+            return i
+    }
+    return 0
+}
+
+// Best-effort VIN -> model. This is a heuristic, not an authoritative
+// decode: over BLE this app has no way to ask the vehicle its model (the
+// state categories tesla-control exposes contain no car-type field and
+// product-info needs a Fleet API token), so the closest stable signal is
+// the VIN's WMI/prefix. The patterns below are the most commonly seen
+// modern Tesla VIN prefixes; anything that doesn't match (older or unusual
+// builds) returns "" so the Settings override/default still applies. If a
+// real VIN mis-guesses here, the manual model picker in Settings is the
+// source of truth, not this function.
+function guessModel(vin) {
+    vin = (vin || "").toUpperCase()
+    if (vin.length < 4)
+        return ""
+    var table = [
+        ["LRW3", "model3"],    // Shanghai Model 3 (LRW3E...)
+        ["LRWY", "modely"],    // Shanghai Model Y (LRWY...)
+        ["5YJ3", "model3"],    // Fremont Model 3 (5YJ3E...)
+        ["5Y3",  "model3"],    // alternative Model 3 WMI
+        ["5YJX", "modelx"],    // Fremont Model X (5YJXC...)
+        ["5YFY", "modely"],    // Fremont Model Y (5YFYG...)
+        ["5YFS", "models"],    // Fremont Model S (5YFS...)
+        ["5YJS", "models"],    // Fremont Model S (5YJSA/R...)
+        ["7SAS", "models"],    // Fremont Model S, 2021+ (7SAS...)
+        ["7SAX", "modelx"],    // Fremont Model X, 2021+
+        ["7SAY", "modely"],    // Fremont/Austin Model Y, 2021+
+        ["7G2Z", "cybertruck"],// Austin Cybertruck (7G2Z...)
+        ["7G2Y", "modely"],    // Berlin Model Y (7G2Y...)
+        ["XP7",  "modely"],    // Fremont Model Y (XP7...)
+        ["LRW",  "modely"],    // Shanghai Model 3/Y, unknown 4th char
+    ]
+    for (var i = 0; i < table.length; i++) {
+        if (vin.indexOf(table[i][0]) === 0)
+            return table[i][1]
+    }
+    return ""
+}
+
 function emptyStatus() {
     return {
         locked: null,
         doorsOpen: false,
+        trunkFrontOpen: false,
+        trunkRearOpen: false,
         windowsOpen: false,
         insideTemp: null,
         outsideTemp: null,
         isClimateOn: false,
         batteryLevel: null,
         chargingState: "",
+        chargePortOpen: false,
         minutesToFullCharge: 0,
         updatedAt: 0
     }
@@ -67,6 +147,8 @@ function mergeClosuresState(status, jsonText) {
         s.doorsOpen = !!(obj.doorOpenDriverFront || obj.doorOpenDriverRear ||
                           obj.doorOpenPassengerFront || obj.doorOpenPassengerRear ||
                           obj.doorOpenTrunkFront || obj.doorOpenTrunkRear)
+        s.trunkFrontOpen = !!obj.doorOpenTrunkFront
+        s.trunkRearOpen = !!obj.doorOpenTrunkRear
         s.windowsOpen = !!(obj.windowOpenDriverFront || obj.windowOpenPassengerFront ||
                             obj.windowOpenDriverRear || obj.windowOpenPassengerRear)
         s.updatedAt = Date.now()
@@ -113,6 +195,7 @@ function mergeChargeState(status, jsonText) {
         var obj = JSON.parse(jsonText).chargeState || {}
         s.batteryLevel = obj.batteryLevel !== undefined ? obj.batteryLevel : null
         s.chargingState = oneofVariantName(obj.chargingState)
+        s.chargePortOpen = !!obj.chargePortDoorOpen
         s.minutesToFullCharge = obj.minutesToFullCharge || 0
         s.updatedAt = Date.now()
     } catch (e) {

@@ -24,6 +24,20 @@ Page {
     // VehicleState.js), so a sleeping vehicle is the expected way for this
     // to fail even with everything else configured correctly.
     property string statusError: ""
+    // Monotonic tick bumped by statusAgeTimer below. The dashboard's "Updated
+    // Xm ago" label is computed from status.updatedAt, which only changes when
+    // a refresh returns a new BLE reading - so without re-reading a changing
+    // value here the label would freeze on "Updated just now" forever (even
+    // after navigating away and back, since both pages stay alive).
+    property int statusAgeTick: 0
+
+    Timer {
+        id: statusAgeTimer
+        interval: 30000
+        repeat: true
+        running: page.status.updatedAt > 0
+        onTriggered: page.statusAgeTick++
+    }
 
     function refresh() {
         teslaClient.refreshHelperAvailable()
@@ -50,6 +64,37 @@ Page {
             return
         page.statusStage = "toggle"
         teslaClient.runCommand("status:toggle", page.status.isClimateOn ? "climate-off" : "climate-on", [])
+    }
+
+    function toggleWindows() {
+        if (page.statusStage.length > 0)
+            return
+        page.statusStage = "toggle"
+        teslaClient.runCommand("status:toggle", page.status.windowsOpen ? "windows-close" : "windows-vent", [])
+    }
+
+    function openFrunk() {
+        if (page.statusStage.length > 0)
+            return
+        page.statusStage = "toggle"
+        teslaClient.runCommand("status:toggle", "frunk-open", [])
+    }
+
+    function openTrunk() {
+        if (page.statusStage.length > 0)
+            return
+        page.statusStage = "toggle"
+        teslaClient.runCommand("status:toggle", "trunk-open", [])
+    }
+
+    function batteryIconSource() {
+        var level = page.status.batteryLevel
+        if (level === null) return "../../img/icons/battery5.svg"
+        if (level > 90) return "../../img/icons/battery100.svg"
+        if (level > 60) return "../../img/icons/battery75.svg"
+        if (level > 40) return "../../img/icons/battery50.svg"
+        if (level > 9) return "../../img/icons/battery10.svg"
+        return "../../img/icons/battery5.svg"
     }
 
     Connections {
@@ -85,11 +130,11 @@ Page {
                     page.statusError = stdErr.length ? stdErr : ("exit code " + exitCode)
                 page.statusStage = ""
             } else if (requestId === "status:toggle") {
-                // Whether the lock/climate toggle succeeded or not, re-fetch
-                // so the dashboard reflects reality rather than an assumed
-                // new state (the command can "succeed" over BLE without the
-                // vehicle confirming - see protocol.MayHaveSucceeded usage
-                // elsewhere in this app).
+                // Whether the lock/climate/windows toggle or the frunk/trunk
+                // open succeeded or not, re-fetch so the dashboard reflects
+                // reality rather than an assumed new state (the command can
+                // "succeed" over BLE without the vehicle confirming - see
+                // protocol.MayHaveSucceeded usage elsewhere in this app).
                 page.statusStage = ""
                 page.refreshStatus()
             }
@@ -164,69 +209,65 @@ Page {
                 }
             }
 
+            // Car graphic + battery / climate readouts. The icon set and
+            // presentation mirror the harbour-tcarint app this project shares
+            // its icon style with (see ../harbour-tcarint/qml/pages/MainPage.qml).
             Rectangle {
                 width: parent.width
-                height: statusColumn.height + Theme.paddingMedium * 2
+                height: carColumn.height + Theme.paddingMedium * 2
                 visible: page.hasKey && page.vin.length > 0
                 color: Theme.rgba(Theme.highlightBackgroundColor, 0.08)
 
                 Column {
-                    id: statusColumn
+                    id: carColumn
                     width: parent.width - Theme.horizontalPageMargin * 2
                     anchors.horizontalCenter: parent.horizontalCenter
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: Theme.paddingSmall
 
-                    Row {
-                        width: parent.width
-
-                        BackgroundItem {
-                            width: parent.width / 3
-                            height: Theme.itemSizeSmall
-                            onClicked: page.toggleLock()
-
-                            Label {
-                                anchors.centerIn: parent
-                                font.pixelSize: Theme.fontSizeSmall
-                                color: page.status.locked ? Theme.secondaryHighlightColor : Theme.highlightColor
-                                text: page.status.locked === null ? "Lock: ?" : (page.status.locked ? "Locked" : "Unlocked")
-                            }
-                        }
-
-                        Item {
-                            width: parent.width / 3
-                            height: Theme.itemSizeSmall
-
-                            Label {
-                                anchors.centerIn: parent
-                                font.pixelSize: Theme.fontSizeSmall
-                                color: Theme.primaryColor
-                                // "Charging" (PascalCase) is correct here - it's the
-                                // oneof variant name VehicleState.js's oneofVariantName()
-                                // extracts, verified against real protojson output, not a
-                                // guess. See VehicleState.js's comment for why this isn't
-                                // "CHARGING" or a plain enum string.
-                                text: page.status.batteryLevel === null ? "Battery: ?" : (page.status.batteryLevel + "%" +
-                                      (page.status.chargingState === "Charging" ? " (charging)" : ""))
-                            }
-                        }
-
-                        BackgroundItem {
-                            width: parent.width / 3
-                            height: Theme.itemSizeSmall
-                            onClicked: page.toggleClimate()
-
-                            Label {
-                                anchors.centerIn: parent
-                                font.pixelSize: Theme.fontSizeSmall
-                                color: page.status.isClimateOn ? Theme.secondaryHighlightColor : Theme.highlightColor
-                                text: page.status.insideTemp === null ? "Climate: ?" : (page.status.insideTemp.toFixed(0) + "°C")
-                            }
-                        }
+                    Image {
+                        id: carImage
+                        width: parent.width * 0.85
+                        height: 170
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        fillMode: Image.PreserveAspectFit
+                        source: "../../img/tesla_model3_lf.png"
+                        sourceSize: Qt.size(width * 2, height * 2)
                     }
 
                     Row {
                         anchors.horizontalCenter: parent.horizontalCenter
+                        spacing: Theme.paddingMedium
+
+                        Icon {
+                            id: batteryIcon
+                            source: page.batteryIconSource()
+                            height: 48
+                            width: height
+                        }
+
+                        Label {
+                            id: batteryLabel
+                            anchors.verticalCenter: batteryIcon.verticalCenter
+                            font.pixelSize: Theme.fontSizeSmall
+                            color: Theme.primaryColor
+                            text: page.status.batteryLevel === null ? "--" :
+                                  (page.status.batteryLevel + "%" +
+                                   (page.status.chargingState === "Charging" ? " • charging" : ""))
+                        }
+
+                        Label {
+                            id: tempLabel
+                            anchors.verticalCenter: batteryIcon.verticalCenter
+                            visible: page.status.insideTemp !== null
+                            font.pixelSize: Theme.fontSizeSmall
+                            color: Theme.secondaryColor
+                            text: "• " + page.status.insideTemp.toFixed(0) + "°C"
+                        }
+                    }
+
+                    Row {
+                        width: carColumn.width
                         spacing: Theme.paddingSmall
 
                         BusyIndicator {
@@ -235,23 +276,113 @@ Page {
                             visible: running
                         }
                         Label {
-                            width: statusColumn.width
-                            horizontalAlignment: Text.AlignHCenter
+                            width: parent.width - Theme.itemSizeSmall
                             wrapMode: Text.Wrap
+                            horizontalAlignment: Text.AlignHCenter
                             font.pixelSize: Theme.fontSizeTiny
                             color: page.statusError.length > 0 && page.statusStage.length === 0 ? Theme.highlightColor : Theme.secondaryColor
                             text: {
+                                // Read the periodic tick so elapsed time recomputes
+                                // between refreshes (see statusAgeTimer above).
+                                var _ = page.statusAgeTick
+                                var age = VState.minutesAgo(page.status.updatedAt)
                                 if (page.statusStage.length > 0)
                                     return "Updating..."
-                                if (page.statusError.length > 0 && VState.minutesAgo(page.status.updatedAt) < 0)
-                                    return "Status unavailable (" + page.statusError + "). Vehicle may be asleep - try Wake Vehicle, then Refresh Status."
-                                if (VState.minutesAgo(page.status.updatedAt) < 0)
-                                    return "Tap a status to refresh"
-                                if (VState.minutesAgo(page.status.updatedAt) === 0)
+                                if (page.statusError.length > 0 && age < 0)
+                                    return "Status unavailable (" + page.statusError + "). Vehicle may be asleep - try Wake Vehicle (Attention), then Refresh Status."
+                                if (age < 0)
+                                    return "Pull down to refresh status"
+                                if (age === 0)
                                     return "Updated just now"
-                                return "Updated " + VState.minutesAgo(page.status.updatedAt) + "m ago"
+                                return "Updated " + age + "m ago"
                             }
                         }
+                    }
+                }
+            }
+
+            // Quick actions: small icon buttons straight on the front page -
+            // no submenu needed. Each icon always mirrors the vehicle's actual
+            // state (closed padlock when locked, open padlock when unlocked,
+            // highlighted fan/window when climate/windows are on), not the
+            // action a tap triggers, so the row can't be misread as showing
+            // the pre-tap state. Frunk/trunk have no telemetry to reflect,
+            // so those stay plain "open" actions.
+            Rectangle {
+                width: parent.width
+                height: quickRow.height + Theme.paddingMedium * 2
+                visible: page.hasKey && page.vin.length > 0
+                color: Theme.rgba(Theme.highlightBackgroundColor, 0.08)
+
+                Row {
+                    id: quickRow
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: Theme.paddingSmall
+
+                    SecondaryButton {
+                        width: 96
+                        height: 96
+                        icon.height: 48
+                        icon.width: 48
+                        icon.source: page.status.locked === false
+                                    ? "../../img/icons/lock_open.svg"
+                                    : "../../img/icons/lock.svg"
+                        icon.color: "#5f6368"
+                        icon.highlightColor: "white"
+                        icon.highlighted: !!page.status.locked
+                        enabled: page.statusStage.length === 0
+                        onClicked: page.toggleLock()
+                    }
+
+                    SecondaryButton {
+                        width: 96
+                        height: 96
+                        icon.height: 48
+                        icon.width: 48
+                        icon.source: "../../img/icons/fan1.svg"
+                        icon.color: "#5f6368"
+                        icon.highlightColor: "white"
+                        icon.highlighted: page.status.isClimateOn
+                        enabled: page.statusStage.length === 0
+                        onClicked: page.toggleClimate()
+                    }
+
+                    SecondaryButton {
+                        width: 96
+                        height: 96
+                        icon.height: 48
+                        icon.width: 48
+                        icon.source: "../../img/icons/frunk.svg"
+                        icon.color: "#5f6368"
+                        icon.highlightColor: "white"
+                        enabled: page.statusStage.length === 0
+                        onClicked: page.openFrunk()
+                    }
+
+                    SecondaryButton {
+                        width: 96
+                        height: 96
+                        icon.height: 48
+                        icon.width: 48
+                        icon.source: "../../img/icons/trunk.svg"
+                        icon.color: "#5f6368"
+                        icon.highlightColor: "white"
+                        enabled: page.statusStage.length === 0
+                        onClicked: page.openTrunk()
+                    }
+
+                    SecondaryButton {
+                        width: 96
+                        height: 96
+                        icon.height: 48
+                        icon.width: 48
+                        icon.source: "../../img/icons/window.svg"
+                        icon.color: "#5f6368"
+                        icon.highlightColor: "white"
+                        icon.highlighted: page.status.windowsOpen
+                        enabled: page.statusStage.length === 0
+                        onClicked: page.toggleWindows()
                     }
                 }
             }
@@ -270,11 +401,36 @@ Page {
                 status: page.status
             })
 
-            Label {
+            Icon {
+                id: categoryIcon
+                source: modelData.icon
+                height: 44
+                width: height
+                color: "#5f6368"
                 anchors.verticalCenter: parent.verticalCenter
                 anchors.left: parent.left
                 anchors.leftMargin: Theme.horizontalPageMargin
+            }
+
+            Label {
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.left: categoryIcon.right
+                anchors.leftMargin: Theme.paddingMedium
+                anchors.right: forwardIcon.left
+                anchors.rightMargin: Theme.paddingMedium
                 text: modelData.title
+                truncationMode: TruncationMode.Fade
+            }
+
+            Icon {
+                id: forwardIcon
+                source: "../../img/icons/arrow_forward.svg"
+                height: 40
+                width: height
+                color: "#5f6368"
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.right: parent.right
+                anchors.rightMargin: Theme.horizontalPageMargin
             }
         }
 

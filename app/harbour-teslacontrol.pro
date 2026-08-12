@@ -16,11 +16,20 @@ DISTFILES += \
     qml/harbour-teslacontrol.qml \
     qml/cover/CoverPage.qml \
     qml/pages/*.qml \
-    qml/js/*.js
+    qml/js/*.js \
+    img/tesla_model3_lf.png \
+    img/icons/*.svg
 
-# The sailfishapp qmake feature auto-installs TARGET.desktop, but icons
-# need explicit INSTALLS rules - this is the standard boilerplate every
-# Sailfish app template carries.
+# The sailfishapp qmake feature auto-installs TARGET.desktop and the
+# qml/ directory, but launcher icons and the in-app img/ assets used by
+# the QML (car graphic + SVG command icons) need explicit INSTALLS rules
+# - this is the standard boilerplate every Sailfish app template carries.
+# img/ must land under /usr/share/$$TARGET (sibling of qml/) so the
+# relative "../../img/..." paths FirstPage.qml / CommandCatalog.js use are
+# preserved on-device.
+imgdir.files = img
+imgdir.path = /usr/share/$${TARGET}
+
 icon86.files = icons/86x86/harbour-teslacontrol.png
 icon86.path = /usr/share/icons/hicolor/86x86/apps
 icon108.files = icons/108x108/harbour-teslacontrol.png
@@ -30,4 +39,4 @@ icon128.path = /usr/share/icons/hicolor/128x128/apps
 icon172.files = icons/172x172/harbour-teslacontrol.png
 icon172.path = /usr/share/icons/hicolor/172x172/apps
 
-INSTALLS += icon86 icon108 icon128 icon172
+INSTALLS += imgdir icon86 icon108 icon128 icon172

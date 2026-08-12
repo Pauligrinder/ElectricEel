@@ -10,31 +10,35 @@
 // disagrees with something here, trust the device and fix this file.
 //
 // arg.type: "none" | "int" | "float" | "string" | "pin" | "enum"
+//
+// Toggle pairs (start/stop charging, open/close charge port, climate on/off,
+// lock/unlock, vent/close windows, open/close trunk) carry a `visibleWhen`
+// predicate that CategoryPage evaluates against the dashboard status
+// snapshot: only the action matching the current vehicle state is listed,
+// mirroring the front-page quick actions rule that the UI always reflects
+// reality rather than the state a tap would produce. Commands without a
+// predicate are always listed.
 
 .pragma library
 
 var CATEGORIES = [
   {
-    id: "home",
-    title: "Quick Actions",
+    id: "attention",
+    title: "Attention",
+    icon: "../../img/icons/power.svg",
     commands: [
-      cmd("lock", "Lock"),
-      cmd("unlock", "Unlock"),
       cmd("honk", "Honk Horn"),
       cmd("flash-lights", "Flash Lights"),
       cmd("wake", "Wake Vehicle"),
-      cmd("frunk-open", "Open Front Trunk"),
-      cmd("trunk-open", "Open Rear Trunk"),
-      cmd("charge-port-open", "Open Charge Port"),
-      cmd("charge-port-close", "Close Charge Port"),
     ]
   },
   {
     id: "climate",
     title: "Climate",
+    icon: "../../img/icons/fan1.svg",
     commands: [
-      cmd("climate-on", "Climate On"),
-      cmd("climate-off", "Climate Off"),
+      cmd("climate-on", "Climate On", [], climateOff),
+      cmd("climate-off", "Climate Off", [], climateOn),
       // sendSuffix "C": tesla-control's climate-set-temp expects the unit
       // glued directly onto the number (22C or 72F) - a bare number always
       // failed to parse. See ArgumentDialog.qml's sliderField.
@@ -65,9 +69,12 @@ var CATEGORIES = [
   {
     id: "charging",
     title: "Charging",
+    icon: "../../img/icons/bolt.svg",
     commands: [
-      cmd("charging-start", "Start Charging"),
-      cmd("charging-stop", "Stop Charging"),
+      cmd("charging-start", "Start Charging", [], notCharging),
+      cmd("charging-stop", "Stop Charging", [], charging),
+      cmd("charge-port-open", "Open Charge Port", [], portClosed),
+      cmd("charge-port-close", "Close Charge Port", [], portOpen),
       cmd("charging-set-limit", "Set Charge Limit", [
         arg("PERCENT", "int", { min: 50, max: 100, unit: "%", def: 80 })
       ]),
@@ -85,9 +92,10 @@ var CATEGORIES = [
   {
     id: "security",
     title: "Locks & Security",
+    icon: "../../img/icons/security.svg",
     commands: [
-      cmd("lock", "Lock"),
-      cmd("unlock", "Unlock"),
+      cmd("lock", "Lock", [], unlockedState),
+      cmd("unlock", "Unlock", [], lockedState),
       cmd("sentry-mode", "Sentry Mode", [ arg("STATE", "enum", { values: ["on","off"] }) ]),
       cmd("valet-mode-on", "Valet Mode On", [ arg("PIN", "pin", {}) ]),
       cmd("valet-mode-off", "Valet Mode Off"),
@@ -105,21 +113,23 @@ var CATEGORIES = [
   {
     id: "body",
     title: "Trunk, Frunk & Windows",
+    icon: "../../img/icons/window.svg",
     commands: [
-      cmd("trunk-open", "Open Rear Trunk"),
+      cmd("trunk-open", "Open Rear Trunk", [], trunkClosed),
       cmd("trunk-move", "Move Rear Trunk"),
-      cmd("trunk-close", "Close Rear Trunk"),
+      cmd("trunk-close", "Close Rear Trunk", [], trunkOpen),
       cmd("frunk-open", "Open Front Trunk"),
       cmd("tonneau-open", "Open Tonneau (Cybertruck)"),
       cmd("tonneau-close", "Close Tonneau (Cybertruck)"),
       cmd("tonneau-stop", "Stop Tonneau (Cybertruck)"),
-      cmd("windows-vent", "Vent Windows"),
-      cmd("windows-close", "Close Windows"),
+      cmd("windows-vent", "Vent Windows", [], windowsClosed),
+      cmd("windows-close", "Close Windows", [], windowsOpen),
     ]
   },
   {
     id: "media",
     title: "Media",
+    icon: "../../img/icons/navigation.svg",
     commands: [
       cmd("media-toggle-playback", "Play / Pause"),
       cmd("media-next-track", "Next Track"),
@@ -136,6 +146,7 @@ var CATEGORIES = [
   {
     id: "software",
     title: "Software",
+    icon: "../../img/icons/upgrades.svg",
     commands: [
       // sendSuffix "s": upstream parses DELAY with Go's time.ParseDuration,
       // which requires a unit (10m, 2h, ...) - a bare integer only ever
@@ -150,6 +161,7 @@ var CATEGORIES = [
   {
     id: "keys",
     title: "Keys",
+    icon: "../../img/icons/lock.svg",
     commands: [
       cmd("list-keys", "List Enrolled Keys"),
       // FORM_FACTOR is vcsec.KeyFormFactor's own value names (minus the
@@ -176,6 +188,7 @@ var CATEGORIES = [
   {
     id: "diagnostics",
     title: "Diagnostics",
+    icon: "../../img/icons/service.svg",
     commands: [
       cmd("ping", "Ping Vehicle"),
       // CATEGORY values are cmd/tesla-control's own categoriesByName keys
@@ -198,8 +211,8 @@ var CATEGORIES = [
   },
 ]
 
-function cmd(id, label, args) {
-  return { id: id, label: label, args: args || [] }
+function cmd(id, label, args, visibleWhen) {
+  return { id: id, label: label, args: args || [], visibleWhen: visibleWhen }
 }
 
 function arg(name, type, opts) {
@@ -208,6 +221,27 @@ function arg(name, type, opts) {
   opts.type = type
   return opts
 }
+
+// visibleWhen predicates. Each receives the status snapshot object that
+// CategoryPage was opened with and returns whether its command row should be
+// listed. Unknown states (null/"") deliberately fall to the "not active"
+// reading so the forward action (climate on, start charging, ...) stays
+// reachable instead of leaving a category empty. See VehicleState.js for the
+// exact field names (protojson camelCase of vehicle.proto's fields, and
+// chargingState is a oneof VARIANT name - e.g. "Charging" - not a plain string).
+function climateOn(s)  { return !!s.isClimateOn }
+function climateOff(s) { return !s.isClimateOn }
+function nearlyCharging(s) { return s.chargingState === "Charging" || s.chargingState === "Starting" || s.chargingState === "Calibrating" }
+function charging(s)   { return nearlyCharging(s) }
+function notCharging(s){ return !nearlyCharging(s) }
+function portOpen(s)   { return !!s.chargePortOpen }
+function portClosed(s) { return !s.chargePortOpen }
+function lockedState(s)  { return s.locked === true }
+function unlockedState(s){ return s.locked !== true }
+function windowsOpen(s)  { return !!s.windowsOpen }
+function windowsClosed(s){ return !s.windowsOpen }
+function trunkOpen(s)  { return !!s.trunkRearOpen }
+function trunkClosed(s){ return !s.trunkRearOpen }
 
 // DAYS is GetDays()'s own dayNamesBitMask keys (case-insensitive): Sun,
 // Mon, Tues, Wed, Thurs, Fri, Sat, or all/weekdays - note "Tues"/"Thurs",

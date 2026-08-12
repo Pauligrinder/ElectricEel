@@ -19,6 +19,21 @@ Page {
     property string lastResult: ""
     property bool lastOk: true
 
+    // Commands gated by status (see CommandCatalog's visibleWhen): only the
+    // toggle action matching the current vehicle state is listed, so the page
+    // mirrors reality instead of offering a mix of "on" and "off" rows. The
+    // status here is the snapshot FirstPage passed at push time, same as the
+    // subtitle - intentionally not re-fetched live.
+    property var visibleCommands: page.category
+                                   ? page.category.commands.filter(function(commandDef) { return page.commandVisible(commandDef) })
+                                   : []
+
+    function commandVisible(commandDef) {
+        if (!page.status || !commandDef.visibleWhen)
+            return true
+        return commandDef.visibleWhen(page.status)
+    }
+
     function statusSubtitle() {
         if (!status)
             return ""
@@ -32,7 +47,7 @@ Page {
                 return ""
             return status.batteryLevel + "% battery" + (status.chargingState === "Charging" ? " • Charging" : "")
         }
-        if (categoryId === "security" || categoryId === "home") {
+        if (categoryId === "security") {
             if (status.locked === null)
                 return ""
             return status.locked ? "Doors locked" : "Doors unlocked"
@@ -74,7 +89,7 @@ Page {
     SilicaListView {
         id: listView
         anchors.fill: parent
-        model: category ? category.commands : []
+        model: page.visibleCommands
 
         header: Column {
             width: listView.width
