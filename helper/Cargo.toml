@@ -2,23 +2,39 @@
 name = "teslacontrold"
 version = "0.1.7"
 edition = "2021"
-description = "Privileged BLE helper service for harbour-teslacontrol"
+description = "Privileged BLE control core for harbour-teslacontrol"
+
+[lib]
+name = "teslacontrolcore"
+crate-type = ["staticlib", "rlib"]
+path = "src/lib.rs"
+
+# The `dbus` feature (only the teslacontrold daemon binary enables it) pulls
+# in the zbus server + caller authorization. The app's staticlib builds with
+# default (no) features so none of that machinery is linked into the app.
+[features]
+default = []
+dbus = ["dep:zbus", "dep:procfs"]
 
 [[bin]]
 name = "teslacontrold"
 path = "src/main.rs"
+required-features = ["dbus"]
 
 [lints.clippy]
 pedantic = "warn"
 
 [dependencies]
-zbus = { version = "5", default-features = false, features = ["async-io", "blocking-api"] }
+zbus = { version = "5", default-features = false, features = ["async-io", "blocking-api"], optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 regex = "1"
 wait-timeout = "0.2"
 tempfile = "3.27.0"
-procfs = { version = "0.18.0", default-features = false }
+procfs = { version = "0.18.0", default-features = false, optional = true }
+
+[build-dependencies]
+cbindgen = "0.28"
 
 [profile.release]
 strip = true

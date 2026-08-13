@@ -5,7 +5,7 @@ use zbus::names::BusName;
 use crate::error::HelperError;
 
 /// `allowed_callers` is the set of caller binary paths (resolved via
-/// /proc/<pid>/exe, see authorize) permitted to invoke the privileged
+/// `/proc/<pid>/exe`, see authorize) permitted to invoke the privileged
 /// methods below. This exists because the D-Bus system policy
 /// (org.teslacontrol.Helper.conf) can only scope access to the
 /// "defaultuser" Unix account - Sailfish's single-user model - not to a
@@ -31,16 +31,17 @@ use crate::error::HelperError;
 ///
 /// Resolving the proxy's own exe also requires `CAP_SYS_PTRACE`, since
 /// teslacontrold runs as its own unprivileged "teslacontrol" user, and
-/// reading another UID's /proc/<pid>/exe symlink is denied by the kernel
+/// reading another UID's `/proc/<pid>/exe` symlink is denied by the kernel
 /// without it, regardless of Yama `ptrace_scope` - see
 /// systemd/teslacontrold.service's `AmbientCapabilities`.
+#[must_use]
 pub fn default_allowed_callers() -> Vec<String> {
     let raw = std::env::var("TESLACONTROLD_ALLOWED_CALLERS")
         .unwrap_or_else(|_| "/usr/bin/harbour-teslacontrol,/usr/bin/xdg-dbus-proxy".to_string());
     resolve_caller_paths(&split_and_trim(&raw))
 }
 
-pub fn split_and_trim(s: &str) -> Vec<String> {
+pub(crate) fn split_and_trim(s: &str) -> Vec<String> {
     s.split(',')
         .map(str::trim)
         .filter(|p| !p.is_empty())
@@ -48,7 +49,7 @@ pub fn split_and_trim(s: &str) -> Vec<String> {
         .collect()
 }
 
-pub fn resolve_caller_paths(paths: &[String]) -> Vec<String> {
+pub(crate) fn resolve_caller_paths(paths: &[String]) -> Vec<String> {
     paths
         .iter()
         .map(|p| match fs::canonicalize(p) {
@@ -69,7 +70,7 @@ pub fn resolve_caller_paths(paths: &[String]) -> Vec<String> {
 /// PID-reuse TOCTOU without comparing against an expected UID (the caller
 /// legitimately runs as the Sailfish user, not as the teslacontrol service
 /// account).
-pub fn authorize(
+pub(crate) fn authorize(
     conn: &zbus::blocking::Connection,
     sender: &str,
     allowed_callers: &[String],

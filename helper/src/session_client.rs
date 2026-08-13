@@ -31,7 +31,7 @@ use serde::{Deserialize, Serialize};
 /// and lets the vehicle/adapter go back to sleep. Not user-configurable
 /// (see `KNOWN_ISSUES.md`: shipped as an invisible optimization, not a
 /// Settings toggle).
-pub const IDLE_TIMEOUT_SEC: u32 = 90;
+pub(crate) const IDLE_TIMEOUT_SEC: u32 = 90;
 
 #[derive(Serialize)]
 struct Request<'a> {
@@ -49,7 +49,7 @@ struct Response {
     exit_code: i32,
 }
 
-pub struct RunOutcome {
+pub(crate) struct RunOutcome {
     pub ok: bool,
     pub stdout: String,
     pub stderr: String,
@@ -57,7 +57,7 @@ pub struct RunOutcome {
 }
 
 #[derive(Debug)]
-pub enum SessionError {
+pub(crate) enum SessionError {
     Spawn(std::io::Error),
     BrokenPipe,
     Timeout,
@@ -114,14 +114,17 @@ fn spawn_reader(stdout: std::process::ChildStdout) -> mpsc::Receiver<String> {
 
 pub struct SessionClient {
     bin_path: PathBuf,
+    ble_backend: String,
     child: Mutex<Option<ChildHandle>>,
     next_id: AtomicU64,
 }
 
 impl SessionClient {
-    pub fn new(bin_path: PathBuf) -> Self {
+    #[must_use]
+    pub fn new(bin_path: PathBuf, ble_backend: &str) -> Self {
         SessionClient {
             bin_path,
+            ble_backend: ble_backend.to_string(),
             child: Mutex::new(None),
             next_id: AtomicU64::new(1),
         }
@@ -140,13 +143,22 @@ impl SessionClient {
     /// by default and unverified on real hardware - see `KNOWN_ISSUES.md`),
     /// but worth knowing before relying on `SetConfig` feeling instant
     /// while a command is running.
-    pub fn invalidate(&self) {
+    pub(crate) fn invalidate(&self) {
         if let Ok(mut guard) = self.child.lock() {
             if let Some(mut handle) = guard.take() {
                 let _ = handle.child.kill();
                 let _ = handle.child.wait();
             }
         }
+    }
+
+    /// The BLE transport backend this client was constructed with ("hci" or
+    /// "bluez"). helper.rs consults it so the hci-only one-shot fallback
+    /// (`run_binary("tesla-control", ...)`) is suppressed while a bluez
+    /// session is in use - spawning raw HCI code would bring down the very
+    /// adapter connections (e.g. a soundbar) that bluez mode exists to keep.
+    pub(crate) fn ble_backend(&self) -> &str {
+        &self.ble_backend
     }
 
     fn spawn(
@@ -161,6 +173,8 @@ impl SessionClient {
             .arg(vin)
             .arg("-key-file")
             .arg(key_file)
+            .arg("-ble-backend")
+            .arg(&self.ble_backend)
             .arg("-connect-timeout")
             .arg(format!("{connect_timeout_sec}s"))
             .arg("-command-timeout")
@@ -193,7 +207,7 @@ impl SessionClient {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn run(
+    pub(crate) fn run(
         &self,
         cmd: &str,
         args: &[String],
@@ -249,6 +263,38 @@ impl SessionClient {
             }
         }
     }
+
+    /// Generates (or, without `force`, re-prints the existing - see
+    /// dispatchKeygen in tesla-session) a P256 keypair through the session's
+    /// `keygen` request. No BLE is involved. The public key comes back PEM-
+    /// encoded on `RunOutcome::stdout`; the private key is written to
+    /// `key_file` by tesla-session itself. Pure-crypto, so there's no radio
+    /// touching here and no backend concerns - the point is to stop exec'ing
+    /// the privileged tesla-keygen binary (helper/ removal, Phases 3-4).
+    pub(crate) fn keygen(
+        &self,
+        force: bool,
+        key_file: &str,
+        vin: &str,
+        connect_timeout_sec: i32,
+        command_timeout_sec: i32,
+        timeout: Duration,
+    ) -> Result<RunOutcome, SessionError> {
+        let args: Vec<String> = if force {
+            vec!["-f".to_string()]
+        } else {
+            Vec::new()
+        };
+        self.run(
+            "keygen",
+            &args,
+            vin,
+            key_file,
+            connect_timeout_sec,
+            command_timeout_sec,
+            timeout,
+        )
+    }
 }
 
 #[cfg(test)]
@@ -264,7 +310,7 @@ mod tests {
     // process side; the two halves only meet on a real device.
     #[test]
     fn test_spawn_failure_is_reported_not_panicked() {
-        let client = SessionClient::new(PathBuf::from("/nonexistent/tesla-session"));
+        let client = SessionClient::new(PathBuf::from("/nonexistent/tesla-session"), "hci");
         let result = client.run(
             "lock",
             &[],
@@ -279,7 +325,7 @@ mod tests {
 
     #[test]
     fn test_invalidate_without_a_running_child() {
-        let client = SessionClient::new(PathBuf::from("/nonexistent/tesla-session"));
+        let client = SessionClient::new(PathBuf::from("/nonexistent/tesla-session"), "hci");
         client.invalidate();
         client.invalidate();
     }

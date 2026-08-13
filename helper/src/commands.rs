@@ -4,7 +4,7 @@
 /// smuggle in flags. A linear scan over ~50 short strings is simpler than a
 /// HashSet/phf set here and the cost is irrelevant for a command that's
 /// about to spawn a subprocess and wait seconds for it anyway.
-pub const COMMAND_CATALOG: &[&str] = &[
+pub(crate) const COMMAND_CATALOG: &[&str] = &[
     "valet-mode-on",
     "valet-mode-off",
     "unlock",
@@ -76,13 +76,13 @@ pub const COMMAND_CATALOG: &[&str] = &[
 /// parental-controls-* entries once listed here were removed along with
 /// their `COMMAND_CATALOG` entries (see below) since they don't exist
 /// upstream at all.
-pub const PIN_COMMANDS: &[&str] = &["valet-mode-on"];
+pub(crate) const PIN_COMMANDS: &[&str] = &["valet-mode-on"];
 
-pub fn is_known_command(cmd: &str) -> bool {
+pub(crate) fn is_known_command(cmd: &str) -> bool {
     COMMAND_CATALOG.contains(&cmd)
 }
 
-pub fn is_pin_command(cmd: &str) -> bool {
+pub(crate) fn is_pin_command(cmd: &str) -> bool {
     PIN_COMMANDS.contains(&cmd)
 }
 

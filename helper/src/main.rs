@@ -1,14 +1,8 @@
-mod authorize;
-mod commands;
-mod config;
-mod error;
-mod helper;
-mod session_client;
-
 use std::path::Path;
 
-use helper::{Helper, IFACE_NAME};
-use session_client::SessionClient;
+use teslacontrolcore::core::Core;
+use teslacontrolcore::helper::{Helper, IFACE_NAME};
+use teslacontrolcore::session_client::SessionClient;
 
 const BUS_NAME: &str = "org.teslacontrol.Helper";
 const OBJECT_PATH: &str = "/org/teslacontrol/Helper";
@@ -30,7 +24,7 @@ fn env_flag(key: &str) -> bool {
 fn main() {
     let bin_dir = env_or("TESLACONTROLD_BIN_DIR", "/opt/teslacontrold/bin");
     let state_dir = env_or("TESLACONTROLD_STATE_DIR", "/var/lib/teslacontrold");
-    let allowed_callers = authorize::default_allowed_callers();
+    let allowed_callers = teslacontrolcore::authorize::default_allowed_callers();
 
     if let Err(e) = std::fs::create_dir_all(&state_dir) {
         eprintln!("cannot create state dir {state_dir}: {e}");
@@ -49,16 +43,38 @@ fn main() {
     // KNOWN_ISSUES.md. tesla-session is bundled in bin_dir alongside
     // tesla-control/tesla-keygen and setcap'd the same way (needs
     // CAP_NET_ADMIN itself once it's the one holding the BLE session).
+    //
+    // TESLACONTROLD_BLE_BACKEND (default "hci") selects tesla-session's
+    // transport: "hci" is go-ble's raw HCI channel (the default, matching
+    // a one-shot tesla-control), "bluez" routes through org.bluez so the
+    // OS Bluetooth stack - and anything else using the adapter, e.g. a
+    // soundbar - is never disturbed. The setting is read here so this
+    // process shares one source of truth with the child it spawns.
     let session = if env_flag("TESLACONTROLD_PERSISTENT_SESSION") {
+        let ble_backend = env_or("TESLACONTROLD_BLE_BACKEND", "hci");
+        if ble_backend != "hci" && ble_backend != "bluez" {
+            eprintln!("teslacontrold: invalid TESLACONTROLD_BLE_BACKEND {ble_backend:?} (want hci or bluez)");
+            std::process::exit(1);
+        }
         eprintln!(
-            "teslacontrold: persistent BLE session enabled (TESLACONTROLD_PERSISTENT_SESSION)"
+            "teslacontrold: persistent BLE session enabled (TESLACONTROLD_PERSISTENT_SESSION, backend {ble_backend})"
         );
-        Some(SessionClient::new(Path::new(&bin_dir).join("tesla-session")))
+        Some(SessionClient::new(
+            Path::new(&bin_dir).join("tesla-session"),
+            &ble_backend,
+        ))
     } else {
         None
     };
 
-    let helper = Helper::new(bin_dir, state_dir, allowed_callers, credentials_conn, session);
+    let core = match Core::new(bin_dir, state_dir, session) {
+        Ok(core) => core,
+        Err(e) => {
+            eprintln!("teslacontrold: {e}");
+            std::process::exit(1);
+        }
+    };
+    let helper = Helper::new(core, allowed_callers, credentials_conn);
 
     let conn = zbus::blocking::connection::Builder::system()
         .and_then(|b| b.serve_at(OBJECT_PATH, helper))

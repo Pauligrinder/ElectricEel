@@ -6,10 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/teslamotors/vehicle-command/pkg/protocol"
 )
 
 // execute() and the commands map are vendored verbatim from upstream (see
@@ -131,5 +134,103 @@ func TestRequestResponseJSONRoundTrip(t *testing.T) {
 	}
 	if !strings.Contains(string(data), `"exit_code":0`) {
 		t.Errorf("expected snake_case exit_code field in JSON, got %s", data)
+	}
+}
+
+// TestKeygenCreatesLoadableKey exercises the Phase 3 keygen request end to
+// end without any BLE involvement: a fresh key is generated and saved, its
+// public half is returned as PEM on Stdout, and the saved private key loads
+// back through protocol.LoadPrivateKey (the same call the connection path
+// uses).
+func TestKeygenCreatesLoadableKey(t *testing.T) {
+	dir := t.TempDir()
+	keyFile := filepath.Join(dir, "private_key.pem")
+	s := &session{keyFile: keyFile}
+
+	resp := s.dispatch(request{ID: "k1", Cmd: "keygen"})
+	if !resp.OK {
+		t.Fatalf("keygen failed: %s", resp.Stderr)
+	}
+	if resp.ExitCode != 0 {
+		t.Errorf("exit_code = %d, want 0", resp.ExitCode)
+	}
+	if resp.ID != "k1" {
+		t.Errorf("response ID = %q, want %q", resp.ID, "k1")
+	}
+	pubPEM := strings.TrimSpace(resp.Stdout)
+	if !strings.Contains(pubPEM, "BEGIN PUBLIC KEY") {
+		t.Errorf("stdout is not a PEM public key:\n%s", resp.Stdout)
+	}
+
+	// The public key written must round-trip through LoadPublicKey.
+	pubPath := filepath.Join(dir, "public_key.pem")
+	if err := os.WriteFile(pubPath, []byte(pubPEM+"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := protocol.LoadPublicKey(pubPath); err != nil {
+		t.Errorf("generated public key does not parse: %v", err)
+	}
+
+	// The private key must load back for the connection path.
+	if _, err := protocol.LoadPrivateKey(keyFile); err != nil {
+		t.Errorf("generated private key does not load: %v", err)
+	}
+	// And be private (0600, matching tesla-keygen's file keyring write).
+	info, err := os.Stat(keyFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := info.Mode().Perm(); perm != 0600 {
+		t.Errorf("private key permissions = %o, want 600", perm)
+	}
+}
+
+// TestKeygenWithoutForceReusesExistingKey verifies the -f/force semantics of
+// tesla-keygen create: with no force, an existing key is not overwritten,
+// just re-printed; with -f it is regenerated (so the public key changes).
+func TestKeygenForceSemantics(t *testing.T) {
+	dir := t.TempDir()
+	keyFile := filepath.Join(dir, "private_key.pem")
+	s := &session{keyFile: keyFile}
+
+	first := s.dispatch(request{ID: "k1", Cmd: "keygen"})
+	if !first.OK {
+		t.Fatalf("first keygen failed: %s", first.Stderr)
+	}
+
+	second := s.dispatch(request{ID: "k2", Cmd: "keygen"})
+	if !second.OK {
+		t.Fatalf("second keygen failed: %s", second.Stderr)
+	}
+	if second.Stdout != first.Stdout {
+		t.Errorf("non-forced keygen regenerated the key; public key changed:\n%q\nvs\n%q", first.Stdout, second.Stdout)
+	}
+
+	forced := s.dispatch(request{ID: "k3", Cmd: "keygen", Args: []string{"-f"}})
+	if !forced.OK {
+		t.Fatalf("forced keygen failed: %s", forced.Stderr)
+	}
+	if forced.Stdout == first.Stdout {
+		t.Error("forced keygen (-f) returned the same public key - it must regenerate")
+	}
+}
+
+// TestKeygenReportsMalformedKeyWithoutForce ensures a corrupt existing key
+// doesn't wedge keygen: without -f it regenerates rather than erroring (and
+// without panicking), mirroring upstream's create fall-through.
+func TestKeygenRecoversFromCorruptKey(t *testing.T) {
+	dir := t.TempDir()
+	keyFile := filepath.Join(dir, "private_key.pem")
+	if err := os.WriteFile(keyFile, []byte("garbage\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	s := &session{keyFile: keyFile}
+
+	resp := s.dispatch(request{ID: "k1", Cmd: "keygen"})
+	if !resp.OK {
+		t.Fatalf("keygen with corrupt existing key failed: %s", resp.Stderr)
+	}
+	if _, err := protocol.LoadPrivateKey(keyFile); err != nil {
+		t.Errorf("regenerated key does not load: %v", err)
 	}
 }

@@ -9,8 +9,8 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
 
-pub const MAX_TIMEOUT_SEC: i32 = 300;
-pub const MAX_KEY_NAME_LEN: usize = 64;
+pub(crate) const MAX_TIMEOUT_SEC: i32 = 300;
+pub(crate) const MAX_KEY_NAME_LEN: usize = 64;
 
 /// The accepted values of Config.model. "" is "Auto (from VIN)": the QML
 /// client guesses the model from the VIN's WMI prefix and nothing is forced.
@@ -18,7 +18,8 @@ pub const MAX_KEY_NAME_LEN: usize = 64;
 /// (app/qml/js/VehicleState.js) and a key into the model images the front
 /// page shows. Keep this, VehicleState.js's MODELS, and that file's
 /// VIN-prefix `guessModel()` table in sync when adding/removing models.
-pub const VALID_MODELS: [&str; 6] = ["", "model3", "models", "modelx", "modely", "cybertruck"];
+pub(crate) const VALID_MODELS: [&str; 6] =
+    ["", "model3", "models", "modelx", "modely", "cybertruck"];
 
 static VIN_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-HJ-NPR-Z0-9]{17}$").unwrap());
 // key_name is functionally near-inert (tesla-control only consults it for
@@ -31,7 +32,7 @@ static KEY_NAME_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Za-z0-9 
 
 /// Validation failure for a `SetConfig` payload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ConfigError {
+pub(crate) enum ConfigError {
     PositiveTimeout,
     MaxTimeout,
     InvalidVin,
@@ -54,14 +55,18 @@ impl fmt::Display for ConfigError {
             ConfigError::InvalidModel => write!(
                 f,
                 "model must be one of {}",
-                VALID_MODELS.into_iter().filter(|m| !m.is_empty()).collect::<Vec<_>>().join(", ")
+                VALID_MODELS
+                    .into_iter()
+                    .filter(|m| !m.is_empty())
+                    .collect::<Vec<_>>()
+                    .join(", ")
             ),
         }
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Config {
+pub(crate) struct Config {
     pub vin: String,
     // #[serde(default)]: config.json files written before this field existed
     // (anything pre-0.1.6) have no "model" key. Without a default, serde
@@ -93,7 +98,7 @@ impl Config {
     /// Reads the config, returning an I/O error if the file exists but can't
     /// be read. A missing file is the caller's signal to fall back to
     /// [`Config::default`]; an unparseable file is logged and defaults too.
-    pub fn load(path: &Path) -> io::Result<Config> {
+    pub(crate) fn load(path: &Path) -> io::Result<Config> {
         let data = match fs::read(path) {
             Ok(d) => d,
             Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Config::default()),
@@ -163,7 +168,7 @@ impl Config {
     /// Both the temp file's contents (fsync before rename) and the parent
     /// directory entry (fsync after rename) are flushed to disk, so a power
     /// loss right after the rename can't lose the new config either.
-    pub fn save(&self, path: &Path) -> io::Result<()> {
+    pub(crate) fn save(&self, path: &Path) -> io::Result<()> {
         let data = serde_json::to_vec_pretty(self)?;
         let dir = path.parent().unwrap_or_else(|| Path::new("."));
         let mut tmp = NamedTempFile::new_in(dir)?;
@@ -179,7 +184,7 @@ impl Config {
 /// Returns `Ok(())` if the inputs are acceptable, else a human-readable error.
 /// Shared by `SetConfig` and unit tests so the bounds can be verified without a
 /// live D-Bus connection.
-pub fn validate_config(
+pub(crate) fn validate_config(
     vin: &str,
     model: &str,
     key_name: &str,
@@ -211,7 +216,15 @@ mod tests {
     use super::*;
 
     // (name, vin, model, key_name, connect_timeout, command_timeout, want)
-    type ValidateConfigCase<'a> = (&'a str, &'a str, &'a str, &'a str, i32, i32, Option<ConfigError>);
+    type ValidateConfigCase<'a> = (
+        &'a str,
+        &'a str,
+        &'a str,
+        &'a str,
+        i32,
+        i32,
+        Option<ConfigError>,
+    );
 
     #[test]
     // One long, flat table of cases reads more clearly here than splitting
@@ -277,7 +290,15 @@ mod tests {
                 MAX_TIMEOUT_SEC,
                 None,
             ),
-            ("empty VIN clears config", "", "", default_key_name, 20, 5, None),
+            (
+                "empty VIN clears config",
+                "",
+                "",
+                default_key_name,
+                20,
+                5,
+                None,
+            ),
             (
                 " 5YJ3E1EA0PF000000 ",
                 " 5YJ3E1EA0PF000000 ",
@@ -389,8 +410,12 @@ mod tests {
             ),
         ];
         for (name, vin, model, key_name, connect_timeout, command_timeout, want) in cases {
-            let got = validate_config(vin, model, key_name, *connect_timeout, *command_timeout).err();
-            assert_eq!(got, *want, "{name}: validate_config({vin:?}, {model:?}, {key_name:?})");
+            let got =
+                validate_config(vin, model, key_name, *connect_timeout, *command_timeout).err();
+            assert_eq!(
+                got, *want,
+                "{name}: validate_config({vin:?}, {model:?}, {key_name:?})"
+            );
         }
     }
 
@@ -431,7 +456,10 @@ mod tests {
 
     #[test]
     fn test_load_sanitizes_out_of_range_fields() {
-        let dir = std::env::temp_dir().join(format!("teslacontrold-test-sanitize-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!(
+            "teslacontrold-test-sanitize-{}",
+            std::process::id()
+        ));
         fs::create_dir_all(&dir).unwrap();
         let path = dir.join("config.json");
 
@@ -446,9 +474,18 @@ mod tests {
 
         let cfg = Config::load(&path).expect("load");
         let default = Config::default();
-        assert_eq!(cfg.vin, "", "invalid vin should be cleared, not smuggled through");
-        assert_eq!(cfg.model, default.model, "invalid model should reset to default");
-        assert_eq!(cfg.key_name, default.key_name, "invalid key_name should reset to default");
+        assert_eq!(
+            cfg.vin, "",
+            "invalid vin should be cleared, not smuggled through"
+        );
+        assert_eq!(
+            cfg.model, default.model,
+            "invalid model should reset to default"
+        );
+        assert_eq!(
+            cfg.key_name, default.key_name,
+            "invalid key_name should reset to default"
+        );
         assert_eq!(cfg.connect_timeout_sec, default.connect_timeout_sec);
         assert_eq!(cfg.command_timeout_sec, default.command_timeout_sec);
 
@@ -462,7 +499,10 @@ mod tests {
         // bug where a missing (not just invalid) field made serde reject the
         // whole file, so load() fell back to Config::default() and silently
         // dropped the VIN/key_name/timeouts too, not just the model.
-        let dir = std::env::temp_dir().join(format!("teslacontrold-test-premodel-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!(
+            "teslacontrold-test-premodel-{}",
+            std::process::id()
+        ));
         fs::create_dir_all(&dir).unwrap();
         let path = dir.join("config.json");
 
@@ -473,8 +513,14 @@ mod tests {
         .unwrap();
 
         let cfg = Config::load(&path).expect("load");
-        assert_eq!(cfg.vin, "5YJ3E1EA0PF000000", "pre-existing VIN must survive loading an old config.json");
-        assert_eq!(cfg.model, "", "missing model field should default to Auto, not reject the file");
+        assert_eq!(
+            cfg.vin, "5YJ3E1EA0PF000000",
+            "pre-existing VIN must survive loading an old config.json"
+        );
+        assert_eq!(
+            cfg.model, "",
+            "missing model field should default to Auto, not reject the file"
+        );
         assert_eq!(cfg.key_name, "harbour-teslacontrol");
         assert_eq!(cfg.connect_timeout_sec, 20);
         assert_eq!(cfg.command_timeout_sec, 5);

@@ -14,7 +14,12 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"flag"
 	"fmt"
@@ -25,9 +30,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/teslamotors/vehicle-command/pkg/connector"
 	"github.com/teslamotors/vehicle-command/pkg/connector/ble"
 	"github.com/teslamotors/vehicle-command/pkg/protocol"
 	"github.com/teslamotors/vehicle-command/pkg/vehicle"
+
+	"teslacontrol-session/bluez"
 )
 
 // writeErr is referenced by a couple of commands_vendor.go's handlers
@@ -64,12 +72,15 @@ type session struct {
 	vin            string
 	keyFile        string
 	adapterID      string
+	bleBackend     string
 	connectTimeout time.Duration
 	commandTimeout time.Duration
 	idleTimeout    time.Duration
 
-	car       *vehicle.Vehicle
-	conn      *ble.Connection
+	car   *vehicle.Vehicle
+	conn  connector.Connector
+	bluez *bluez.Conn
+
 	idleTimer *time.Timer
 }
 
@@ -88,6 +99,16 @@ func (s *session) teardownLocked() {
 	if s.conn != nil {
 		s.conn.Close()
 		s.conn = nil
+	}
+}
+
+// closeBluezLocked releases the system-bus connection held for the bluez
+// backend (it registers a D-Bus signal channel, so it must be closed exactly
+// once for the life of the process, not per connection). Caller holds mu.
+func (s *session) closeBluezLocked() {
+	if s.bluez != nil {
+		_ = s.bluez.Close()
+		s.bluez = nil
 	}
 }
 
@@ -111,12 +132,35 @@ func (s *session) ensureConnectedLocked(ctx context.Context) error {
 	connCtx, cancel := context.WithTimeout(ctx, s.connectTimeout)
 	defer cancel()
 
-	if err := ble.InitAdapterWithID(s.adapterID); err != nil {
-		return err
-	}
-	conn, err := ble.NewConnection(connCtx, s.vin)
-	if err != nil {
-		return err
+	var conn connector.Connector
+	if s.bleBackend == "bluez" {
+		// org.bluez D-Bus transport: the radio stays owned by the OS
+		// Bluetooth stack, so other connections (e.g. a soundbar) survive.
+		// The one system-bus connection is opened lazily and reused across
+		// reconnects until the process exits (closeBluezLocked).
+		if s.bluez == nil {
+			bz, err := bluez.Open()
+			if err != nil {
+				return fmt.Errorf("open bluez connection: %w", err)
+			}
+			s.bluez = bz
+		}
+		conn, err = s.bluez.Connect(connCtx, s.adapterID, s.vin, nil)
+		if err != nil {
+			return err
+		}
+	} else {
+		// Default: upstream go-ble raw HCI. The only path that calls
+		// InitAdapterWithID - which brings the controller down and binds an
+		// exclusive HCI user channel (see KNOWN_ISSUES.md). This is exactly
+		// the behavior the bluez backend exists to avoid.
+		if err := ble.InitAdapterWithID(s.adapterID); err != nil {
+			return err
+		}
+		conn, err = ble.NewConnection(connCtx, s.vin)
+		if err != nil {
+			return err
+		}
 	}
 	car, err := vehicle.NewVehicle(conn, skey, nil)
 	if err != nil {
@@ -154,6 +198,66 @@ func (s *session) resetIdleTimerLocked() {
 	})
 }
 
+// keygen generates (or, when an existing key exists and force is unset,
+// re-prints the existing key's) P256 private/public key pair and saves the
+// private key to s.keyFile - the same work upstream tesla-keygen's `create`
+// subcommand does, so the Rust helper no longer needs to exec a privileged
+// binary for key management. The PEM-encoded public key is returned in the
+// response's Stdout, matching what tesla-keygen writes to stdout.
+//
+// No BLE connection is involved; this runs even when the session has never
+// connected (and does not need to).
+func (s *session) dispatchKeygen(req request) response {
+	force := false
+	for _, a := range req.Args {
+		if a == "-f" {
+			force = true
+		}
+	}
+
+	if !force {
+		if skey, err := protocol.LoadPrivateKey(s.keyFile); err == nil {
+			if pub, ok := publicKeyPEM(skey); ok {
+				return response{ID: req.ID, OK: true, Stdout: pub, ExitCode: 0}
+			}
+		}
+	}
+
+	newKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return response{ID: req.ID, OK: false, Stderr: fmt.Sprintf("Failed to generate private key: %s\n", err), ExitCode: 1}
+	}
+	scalar := make([]byte, 32)
+	newKey.D.FillBytes(scalar)
+	skey := protocol.UnmarshalECDHPrivateKey(scalar)
+	if skey == nil {
+		return response{ID: req.ID, OK: false, Stderr: "failed to build private key from generated scalar\n", ExitCode: 1}
+	}
+	if err := protocol.SavePrivateKey(skey, s.keyFile); err != nil {
+		return response{ID: req.ID, OK: false, Stderr: fmt.Sprintf("Failed to save private key: %s\n", err), ExitCode: 1}
+	}
+	pub, ok := publicKeyPEM(skey)
+	if !ok {
+		return response{ID: req.ID, OK: false, Stderr: "Failed to parse key. The keyring may be corrupted. Run with -f to generate new key.\n", ExitCode: 1}
+	}
+	return response{ID: req.ID, OK: true, Stdout: pub, ExitCode: 0}
+}
+
+// publicKeyPEM encodes skey's public half as a PEM "PUBLIC KEY" block,
+// mirroring tesla-keygen's printPublicKey.
+func publicKeyPEM(skey protocol.ECDHPrivateKey) (string, bool) {
+	pkey := ecdsa.PublicKey{Curve: elliptic.P256()}
+	pkey.X, pkey.Y = elliptic.Unmarshal(elliptic.P256(), skey.PublicBytes())
+	if pkey.X == nil {
+		return "", false
+	}
+	derPublicKey, err := x509.MarshalPKIXPublicKey(&pkey)
+	if err != nil {
+		return "", false
+	}
+	return string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: derPublicKey})), true
+}
+
 // dispatch runs one command against the (lazily connected) session and
 // captures its output. Mirrors cmd/tesla-control/main.go's runCommand()
 // error-text formatting (not vendored - main.go isn't reused wholesale,
@@ -161,6 +265,14 @@ func (s *session) resetIdleTimerLocked() {
 // one-shot subprocess fallback doesn't change what error text reaches the
 // app.
 func (s *session) dispatch(req request) response {
+	// keygen is pure crypto, no BLE session required (or wanted - it must
+	// work on first run, before any connection exists).
+	if req.Cmd == "keygen" {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return s.dispatchKeygen(req)
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -240,6 +352,7 @@ func main() {
 		vin            string
 		keyFile        string
 		adapterID      string
+		bleBackend     string
 		connectTimeout time.Duration
 		commandTimeout time.Duration
 		idleTimeout    time.Duration
@@ -247,6 +360,7 @@ func main() {
 	flag.StringVar(&vin, "vin", "", "Vehicle Identification Number (required)")
 	flag.StringVar(&keyFile, "key-file", "", "Private key file (required)")
 	flag.StringVar(&adapterID, "bt-adapter-id", "", "Bluetooth adapter ID (Linux only)")
+	flag.StringVar(&bleBackend, "ble-backend", "hci", "BLE transport backend: hci (go-ble raw HCI) or bluez (org.bluez D-Bus)")
 	flag.DurationVar(&connectTimeout, "connect-timeout", 20*time.Second, "Timeout for establishing a connection")
 	flag.DurationVar(&commandTimeout, "command-timeout", 5*time.Second, "Timeout for each command sent to the vehicle")
 	flag.DurationVar(&idleTimeout, "idle-timeout", 90*time.Second, "Tear down the BLE session after this much inactivity")
@@ -256,11 +370,16 @@ func main() {
 		fmt.Fprintln(os.Stderr, "tesla-session: -vin and -key-file are required")
 		os.Exit(2)
 	}
+	if bleBackend != "hci" && bleBackend != "bluez" {
+		fmt.Fprintf(os.Stderr, "tesla-session: invalid -ble-backend %q (want hci or bluez)\n", bleBackend)
+		os.Exit(2)
+	}
 
 	s := &session{
 		vin:            vin,
 		keyFile:        keyFile,
 		adapterID:      adapterID,
+		bleBackend:     bleBackend,
 		connectTimeout: connectTimeout,
 		commandTimeout: commandTimeout,
 		idleTimeout:    idleTimeout,
@@ -272,6 +391,7 @@ func main() {
 		<-sigCh
 		s.mu.Lock()
 		s.teardownLocked()
+		s.closeBluezLocked()
 		s.mu.Unlock()
 		os.Exit(0)
 	}()
@@ -296,5 +416,6 @@ func main() {
 
 	s.mu.Lock()
 	s.teardownLocked()
+	s.closeBluezLocked()
 	s.mu.Unlock()
 }

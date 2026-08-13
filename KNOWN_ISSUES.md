@@ -5,6 +5,49 @@ were either fixed, or documented here because closing them needs
 something this environment doesn't have: a real Sailfish device, the
 Platform SDK, or a car to pair against.
 
+## Fixed 2026-08-13 - bluez BLE session "hung" on-device for the full connect timeout; root cause was a property typo plus a hot retry loop, not a D-Bus deadlock
+
+Debugged on the Sailfish phone (192.168.1.121) against `org.bluez`.
+`tesla-session -ble-backend=bluez` under the Section-7 soundbar survival
+test would sit "hung" until the connect timeout: main goroutine blocked
+in `CallWithContext`, one inWorker spinning decoding `a{oa{sa{sv}}}`
+(GetManagedObjects replies), thousands of leaked godbus `createCall.func2`
+watchdog goroutines (goroutine IDs ~5341), and `Properties.Get`/enumeration
+coming back "context deadline exceeded". A goroutine dump at first
+suggested a D-Bus reply deadlock; `dbus-monitor` looked empty but was
+falling back to eavesdropping (BecomeMonitor denied) so it only saw
+broadcast signals, not point-to-point calls - both red herrings.
+
+Root cause was two compounding bugs in `helper/session/bluez/`:
+- `scan.go`'s `ensurePowered` read the adapter property `"Power"` - BlueZ
+  Adapter1 actually exposes `"Powered"` - so every `Properties.Get` failed
+  with `No such property 'Power'` (confirmed against the live adapter via
+  probe binaries).
+- `Scan()` returned that error immediately (probe control succeeded), but
+  `Connect()`'s retry loop in `gatt.go` had **no backoff**, so it retried
+  hot until ctx deadline: hammering bluetoothd with GetManagedObjects,
+  leaking a godbus call goroutine per attempt, and degrading into the
+  apparent hang. This is why one-shot probes passed while the full session
+  "hung" - only the session path's connect loop is hot.
+
+Fix:
+- `scan.go`: `"Power"` → `"Powered"` (get/set + error text).
+- `gatt.go`: `connect()` now backs off 100ms between retries
+  (`select` on `ctx.Done()` vs `time.After(100ms)`), so a transient error
+  can't spin or leak goroutines.
+- `fake_test.go`: the fake now serves `Powered` and returns the real
+  `No such property 'Power'` error for `Power`, mirroring bluetoothd.
+
+Verified on-device after fix: goroutine count dropped ~5341 → 73; main
+sits in the beacon-poll select at `scan.go:70`; FIFO repro exits cleanly
+with generic `context deadline exceeded` (no-car scan timeout being the
+correct behavior); `go test ./bluez/...` passes. Also closed the Phase-2
+scan half of the Section-7 soundbar survival test on-device (see
+`BLUEZ_BACKEND_PLAN.md` §Phase 2): adapter `Powered/Discovering=true` and
+soundbar `Connected=true` / transport `State=active` stayed up while the
+session scanned, and it exited cleanly - under the old code discovery
+never even started because power-on failed instantly.
+
 ## Fixed 2026-08-12 - Settings could silently wipe a configured VIN (load/save race)
 
 Symptom: on-device, a previously-working VIN kept reverting to unset -
