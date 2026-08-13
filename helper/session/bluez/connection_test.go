@@ -80,6 +80,35 @@ func TestConnectScansWhenNoTarget(t *testing.T) {
 	}
 }
 
+// TestConnectDoesNotScanWithTarget locks in the assumption
+// electric-eel-session/main.go's ensureConnectedLocked depends on: passing
+// a target skips connect()'s own scan entirely. Without this, a caller that
+// already holds its own long-lived discovery session (presenceLoop's
+// Watcher) and then calls Connect with a target would still be safe from
+// self-collision; if this ever regressed to scanning regardless, that
+// caller would silently start colliding with itself again - confirmed live
+// as "bluez: start discovery: Operation already in progress" before
+// ensureConnectedLocked was fixed to pass its Watcher's last Peek() result
+// through instead of nil.
+func TestConnectDoesNotScanWithTarget(t *testing.T) {
+	bus := newFakeBluez()
+	vin := "5YJ3E1EA0PF000000"
+	bus.dev = &fakeDevice{path: bus.devPath(), name: vehicleBeaconName(vin)}
+	bus.deviceVisible = true
+	bus.servicesResolved = true
+	bus.gattReady = true
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	if _, err := connect(ctx, bus, "", vin, &ScanResult{Path: bus.dev.path}); err != nil {
+		t.Fatalf("connect(with target): %v", err)
+	}
+	if hasCall(bus.calls, adapterIface+".StartDiscovery") {
+		t.Error("connect with a target must not scan - it would collide with a caller's own already-open discovery session")
+	}
+}
+
 func TestConnectFailsWhenDeviceNeverShowsUp(t *testing.T) {
 	bus := newFakeBluez()
 	vin := "5YJ3E1EA0PF000000"

@@ -236,21 +236,22 @@ impl Core {
         // Holds the config mutex for the whole call, same as the original -
         // GenerateKey doesn't read Config, but this still serializes
         // concurrent key generation against writing the same key files.
-        let _cfg = self.cfg.lock().unwrap();
+        // Read from this single guard below rather than locking again:
+        // std::sync::Mutex isn't reentrant, so a second self.cfg.lock() on
+        // this thread while _cfg is still held would deadlock forever -
+        // exactly what happened here before this fix (Generate Key hanging
+        // indefinitely on the QML side, since the worker thread never
+        // returns to emit keyGenerated).
+        let cfg = self.cfg.lock().unwrap();
 
         let key_path = self.private_key_path().to_string_lossy().into_owned();
 
         // Keygen needs no connection, but spawning the session child still
         // wants the configured VIN/timeouts for the -vin/-key-file/-timeout
         // flags - they're only read once, at spawn (see SessionClient::run).
-        let (vin, connect_timeout_sec, command_timeout_sec) = {
-            let cfg = self.cfg.lock().unwrap();
-            (
-                cfg.vin.clone(),
-                cfg.connect_timeout_sec,
-                cfg.command_timeout_sec,
-            )
-        };
+        let vin = cfg.vin.clone();
+        let connect_timeout_sec = cfg.connect_timeout_sec;
+        let command_timeout_sec = cfg.command_timeout_sec;
 
         eprintln!("Core: generate_key(force={force})");
 
@@ -578,6 +579,8 @@ pub(crate) fn run_binary(
 
 #[cfg(test)]
 mod tests {
+    use super::Core;
+
     #[test]
     fn test_get_version_is_semver() {
         // The app compares this to its own APP_VERSION on the Settings page
@@ -590,5 +593,40 @@ mod tests {
             v.chars().all(|c| c.is_ascii_digit() || c == '.'),
             "version {v:?} must be digits and dots only"
         );
+    }
+
+    // Regression test for a real bug: generate_key locked self.cfg, then
+    // locked it again on the same thread to read vin/timeouts out of it.
+    // std::sync::Mutex isn't reentrant, so that second lock() blocked
+    // forever - on the app side this surfaced as the "Generate Key" button
+    // reading "Generating..." and never completing. Bounded by a channel +
+    // recv_timeout so a reintroduced deadlock fails this test loudly and
+    // fast in CI instead of hanging the run.
+    #[test]
+    fn test_generate_key_does_not_deadlock() {
+        let dir = tempfile::tempdir().unwrap();
+        let bin_dir = dir.path().join("bin");
+        std::fs::create_dir_all(&bin_dir).unwrap();
+        let core = Core::new(
+            bin_dir.to_string_lossy().into_owned(),
+            dir.path().to_string_lossy().into_owned(),
+            None,
+        )
+        .unwrap();
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(core.generate_key(false));
+        });
+
+        match rx.recv_timeout(std::time::Duration::from_secs(5)) {
+            Ok((ok, _pubkey, _err)) => {
+                // No tesla-keygen binary in this test's fake bin_dir, so the
+                // one-shot fallback is expected to fail - what's under test
+                // is that the call returns at all, not that it succeeds.
+                assert!(!ok, "unexpected success with no tesla-keygen binary present");
+            }
+            Err(_) => panic!("generate_key did not return within 5s - looks deadlocked on self.cfg"),
+        }
     }
 }

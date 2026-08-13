@@ -90,8 +90,16 @@ func (c *Connection) Send(_ context.Context, buffer []byte) error {
 	return nil
 }
 
+// writeChunk calls org.bluez.GattCharacteristic1.WriteValue(ay value, a{sv}
+// options) - options is a real D-Bus dict, not a bare string; passing a
+// plain string as the second argument (as this used to) produces a
+// signature mismatch ("ays" vs the real "aya{sv}") that only a live BlueZ
+// rejects, since the test fake never validated the argument's D-Bus type.
+// "type": "request" asks for a write-with-response, matching upstream
+// ble.go's use of WithResponse writes.
 func (c *Connection) writeChunk(b []byte) error {
-	_, err := c.bus.object(bluezService, c.txPath).call(context.Background(), gattChrIface+".WriteValue", b, "request")
+	options := map[string]dbus.Variant{"type": dbus.MakeVariant("request")}
+	_, err := c.bus.object(bluezService, c.txPath).call(context.Background(), gattChrIface+".WriteValue", b, options)
 	return err
 }
 

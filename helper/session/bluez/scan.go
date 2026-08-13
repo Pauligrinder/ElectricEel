@@ -75,6 +75,47 @@ func scan(ctx context.Context, bus dbusBus, adapterID, vin string) (*ScanResult,
 	}
 }
 
+// Watcher keeps BlueZ discovery running so Peek can be called repeatedly
+// without scan()'s per-call Start/StopDiscovery churn - the shape a
+// presence-maintenance loop needs (poll every couple seconds for as long as
+// it runs), as opposed to scan()'s "block until found once" shape.
+type Watcher struct {
+	bus         dbusBus
+	adapterPath dbus.ObjectPath
+	name        string
+}
+
+// newWatcher starts discovery on adapterID (or the first available adapter)
+// and returns a Watcher ready for repeated Peek calls. Callers must call
+// Stop when done to turn discovery back off.
+func newWatcher(ctx context.Context, bus dbusBus, adapterID, vin string) (*Watcher, error) {
+	adapterPath, err := findAdapter(ctx, bus, adapterID)
+	if err != nil {
+		return nil, err
+	}
+	if err := ensurePowered(ctx, bus, adapterPath); err != nil {
+		return nil, err
+	}
+	_ = setDiscoveryFilter(ctx, bus, adapterPath)
+	if err := startDiscovery(ctx, bus, adapterPath); err != nil {
+		return nil, fmt.Errorf("bluez: start discovery: %w", err)
+	}
+	return &Watcher{bus: bus, adapterPath: adapterPath, name: vehicleBeaconName(vin)}, nil
+}
+
+// Peek returns the vehicle's current beacon snapshot, or (nil, nil) if it
+// isn't visible right now. Unlike Scan, it never blocks waiting for the
+// beacon to appear - callers poll it on their own schedule.
+func (w *Watcher) Peek(ctx context.Context) (*ScanResult, error) {
+	return findBeacon(ctx, w.bus, w.adapterPath, w.name)
+}
+
+// Stop turns discovery back off. Safe to call once; a Peek after Stop simply
+// stops seeing new devices as BlueZ's cache goes stale.
+func (w *Watcher) Stop(ctx context.Context) {
+	stopDiscovery(ctx, w.bus, w.adapterPath)
+}
+
 // managedObjects returns BlueZ's full object tree keyed by object path.
 func managedObjects(ctx context.Context, bus dbusBus) (map[dbus.ObjectPath]map[string]map[string]dbus.Variant, error) {
 	body, err := bus.object(bluezService, "/").call(ctx, objMgrIface+".GetManagedObjects")

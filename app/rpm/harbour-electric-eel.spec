@@ -1,6 +1,6 @@
 Name:       harbour-electric-eel
 Summary:    Control your Tesla over Bluetooth
-Version:    0.2.0
+Version:    0.2.1
 Release:    1
 License:    ASL 2.0
 URL:        https://github.com/marconapetti/ElectricEel
@@ -46,6 +46,8 @@ desktop-file-install --delete-original \
 %{_datadir}/icons/hicolor/*/apps/%{name}.png
 
 %changelog
+* Thu Aug 13 2026 Marco Napetti <marco.napetti@proton.me> - 0.2.1-1
+- Proximity unlock
 * Thu Aug 13 2026 Marco Napetti <marco.napetti@proton.me> - 0.2.0-1
 - Renamed the app from harbour-teslacontrol to harbour-electric-eel (ElectricEel)
 - BlueZ D-Bus BLE backend; in-process Rust core, no privileged helper service

@@ -40,6 +40,23 @@ Page {
         onTriggered: page.statusAgeTick++
     }
 
+    // Settle delay between a toggle command completing and re-fetching
+    // status to confirm it. Firing that re-fetch immediately (the original
+    // behavior) reads Infotainment's closures/climate telemetry before it
+    // has caught up with what VCSEC (which lock/unlock/climate/windows all
+    // go through) just actuated - so the "authoritative" re-fetch stomps
+    // the optimistic update in toggleLock/etc. right back to the stale
+    // pre-command value. Confirmed live: the optimistic update alone wasn't
+    // enough: the icon looked unchanged because this immediate re-fetch was
+    // overwriting it a moment later, not because the optimistic update
+    // itself failed to apply.
+    Timer {
+        id: toggleSettleTimer
+        interval: 2500
+        repeat: false
+        onTriggered: page.refreshStatus()
+    }
+
     function refresh() {
         teslaClient.refreshHelperAvailable()
         teslaClient.refreshConfig()
@@ -53,25 +70,49 @@ Page {
         teslaClient.runCommand("status:closures", "state", ["closures"])
     }
 
+    // Flips field to !field's current value on a clone of vehicleStatus and
+    // assigns it (a plain in-place mutation wouldn't trigger the QML
+    // property's change notification), so the icon reflects the command
+    // we're about to send immediately rather than waiting on refreshStatus's
+    // re-fetch. That re-fetch still runs right after (see onCommandFinished)
+    // and is what's actually authoritative - this is just to stop the UI
+    // showing a stale icon for the second or so of real lag between VCSEC
+    // physically actuating (lock/unlock, climate, windows are all VCSEC
+    // commands) and Infotainment's own closures/climate telemetry catching
+    // up, which is what "closures"/"climate" reads afterward. Confirmed live:
+    // without this, each button press displayed the *previous* press's
+    // now-settled result, one step behind.
+    function optimistic(field) {
+        var next = VState.clone(page.vehicleStatus)
+        next[field] = !page.vehicleStatus[field]
+        page.vehicleStatus = next
+    }
+
     function toggleLock() {
         if (page.statusStage.length > 0)
             return
+        var wasLocked = page.vehicleStatus.locked
+        optimistic("locked")
         page.statusStage = "toggle"
-        teslaClient.runCommand("status:toggle", page.vehicleStatus.locked ? "unlock" : "lock", [])
+        teslaClient.runCommand("status:toggle", wasLocked ? "unlock" : "lock", [])
     }
 
     function toggleClimate() {
         if (page.statusStage.length > 0)
             return
+        var wasOn = page.vehicleStatus.isClimateOn
+        optimistic("isClimateOn")
         page.statusStage = "toggle"
-        teslaClient.runCommand("status:toggle", page.vehicleStatus.isClimateOn ? "climate-off" : "climate-on", [])
+        teslaClient.runCommand("status:toggle", wasOn ? "climate-off" : "climate-on", [])
     }
 
     function toggleWindows() {
         if (page.statusStage.length > 0)
             return
+        var wereOpen = page.vehicleStatus.windowsOpen
+        optimistic("windowsOpen")
         page.statusStage = "toggle"
-        teslaClient.runCommand("status:toggle", page.vehicleStatus.windowsOpen ? "windows-close" : "windows-vent", [])
+        teslaClient.runCommand("status:toggle", wereOpen ? "windows-close" : "windows-vent", [])
     }
 
     function openFrunk() {
@@ -137,8 +178,10 @@ Page {
                 // reality rather than an assumed new state (the command can
                 // "succeed" over BLE without the vehicle confirming - see
                 // protocol.MayHaveSucceeded usage elsewhere in this app).
+                // Delayed via toggleSettleTimer, not fired immediately - see
+                // its doc comment for why.
                 page.statusStage = ""
-                page.refreshStatus()
+                toggleSettleTimer.restart()
             }
         }
         onCommandError: {

@@ -12,6 +12,13 @@
 //! `run_binary("tesla-control", ...)` path on any such error, so a bug
 //! here degrades to today's behavior rather than to a broken app.
 //!
+//! tesla-session's presence-maintenance loop (presence-start/presence-stop)
+//! also writes unsolicited `{"kind": ..., ...}` event lines onto the same
+//! stdout stream, outside any request/response pairing - see
+//! `dispatchPresenceStart` and `presenceLoop` in `helper/session/main.go`.
+//! `run()` below reads and discards these while waiting for the response it
+//! actually asked for; nothing here surfaces them to the app yet.
+//!
 //! Requests are never sent concurrently: the only caller is `Helper::run`,
 //! itself serialized by `ble_sem`, so a single in-flight request at a time
 //! is a precondition here, not something this module enforces on its own.
@@ -47,6 +54,27 @@ struct Response {
     stdout: String,
     stderr: String,
     exit_code: i32,
+}
+
+/// An unsolicited presence-loop line - has a "kind" but none of Response's
+/// fields, so it's tried second: a genuine Response will already have
+/// matched the first variant. The field itself is never read; its presence
+/// is what makes this variant match instead of failing to parse at all.
+#[derive(Deserialize)]
+struct Event {
+    #[allow(dead_code)]
+    kind: String,
+}
+
+/// Either shape a line on tesla-session's stdout can take. `run()` waits
+/// specifically for a `Response`, silently skipping any `Event` lines it
+/// reads along the way.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum Line {
+    Response(Response),
+    #[allow(dead_code)]
+    Event(Event),
 }
 
 pub(crate) struct RunOutcome {
@@ -234,32 +262,51 @@ impl SessionClient {
             return Err(SessionError::BrokenPipe);
         }
 
-        match handle.rx.recv_timeout(timeout) {
-            Ok(raw) => {
-                let resp: Response = match serde_json::from_str(&raw) {
-                    Ok(r) => r,
-                    Err(e) => {
-                        let handle = guard.take().unwrap();
-                        Self::kill(handle);
-                        return Err(SessionError::Decode(e));
-                    }
-                };
-                if resp.id != id {
-                    let handle = guard.take().unwrap();
-                    Self::kill(handle);
-                    return Err(SessionError::IdMismatch);
-                }
-                Ok(RunOutcome {
-                    ok: resp.ok,
-                    stdout: resp.stdout,
-                    stderr: resp.stderr,
-                    exit_code: resp.exit_code,
-                })
-            }
-            Err(RecvTimeoutError::Timeout | RecvTimeoutError::Disconnected) => {
+        // Looped, not a single recv_timeout: with presence mode running, an
+        // Event line can legitimately land between sending this request and
+        // its reply, and must be skipped rather than mistaken for (or
+        // rejected in place of) the Response actually being waited for.
+        // deadline turns the per-line recv_timeout calls into one overall
+        // budget so a stream of events can't extend the wait past `timeout`.
+        let deadline = std::time::Instant::now() + timeout;
+        loop {
+            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+            if remaining.is_zero() {
                 let handle = guard.take().unwrap();
                 Self::kill(handle);
-                Err(SessionError::Timeout)
+                return Err(SessionError::Timeout);
+            }
+            match handle.rx.recv_timeout(remaining) {
+                Ok(raw) => {
+                    let line: Line = match serde_json::from_str(&raw) {
+                        Ok(l) => l,
+                        Err(e) => {
+                            let handle = guard.take().unwrap();
+                            Self::kill(handle);
+                            return Err(SessionError::Decode(e));
+                        }
+                    };
+                    let resp = match line {
+                        Line::Event(_) => continue,
+                        Line::Response(resp) => resp,
+                    };
+                    if resp.id != id {
+                        let handle = guard.take().unwrap();
+                        Self::kill(handle);
+                        return Err(SessionError::IdMismatch);
+                    }
+                    return Ok(RunOutcome {
+                        ok: resp.ok,
+                        stdout: resp.stdout,
+                        stderr: resp.stderr,
+                        exit_code: resp.exit_code,
+                    });
+                }
+                Err(RecvTimeoutError::Timeout | RecvTimeoutError::Disconnected) => {
+                    let handle = guard.take().unwrap();
+                    Self::kill(handle);
+                    return Err(SessionError::Timeout);
+                }
             }
         }
     }
@@ -328,5 +375,36 @@ mod tests {
         let client = SessionClient::new(PathBuf::from("/nonexistent/tesla-session"), "hci");
         client.invalidate();
         client.invalidate();
+    }
+
+    // These exercise Line's untagged parsing directly - the piece run()'s
+    // skip-events loop depends on to tell a presence-loop event apart from
+    // the response it's actually waiting for, without needing a real
+    // tesla-session child to produce the two shapes on a pipe.
+    #[test]
+    fn test_line_parses_response_shape() {
+        let raw = r#"{"id":"5","ok":true,"stdout":"done","stderr":"","exit_code":0}"#;
+        match serde_json::from_str::<Line>(raw).expect("valid Response line") {
+            Line::Response(r) => {
+                assert_eq!(r.id, "5");
+                assert!(r.ok);
+                assert_eq!(r.stdout, "done");
+            }
+            Line::Event(_) => panic!("Response-shaped line parsed as Event"),
+        }
+    }
+
+    #[test]
+    fn test_line_parses_event_shape_without_response_fields() {
+        let raw = r#"{"kind":"presence_near","vin":"5YJ3E1EA0PF000000"}"#;
+        match serde_json::from_str::<Line>(raw).expect("valid Event line") {
+            Line::Event(_) => {}
+            Line::Response(_) => panic!("Event-shaped line parsed as Response"),
+        }
+    }
+
+    #[test]
+    fn test_line_rejects_garbage() {
+        assert!(serde_json::from_str::<Line>(r#"{"unexpected":"shape"}"#).is_err());
     }
 }

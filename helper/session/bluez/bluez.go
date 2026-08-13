@@ -201,6 +201,13 @@ func (c *Conn) Scan(ctx context.Context, adapterID, vin string) (*ScanResult, er
 	return scan(ctx, c.bus, adapterID, vin)
 }
 
+// Watch starts BLE discovery and returns a Watcher for repeated,
+// non-blocking beacon snapshots - the primitive a presence-maintenance loop
+// polls on its own schedule, as opposed to Scan's block-until-found shape.
+func (c *Conn) Watch(ctx context.Context, adapterID, vin string) (*Watcher, error) {
+	return newWatcher(ctx, c.bus, adapterID, vin)
+}
+
 // Connect connects to the vehicle. If target is nil, the vehicle's beacon is
 // scanned for first. It returns a live connector.Connector.
 func (c *Conn) Connect(ctx context.Context, adapterID, vin string, target *ScanResult) (connector.Connector, error) {

@@ -172,6 +172,14 @@ func (fc *fakeCaller) call(ctx context.Context, method string, args ...interface
 		if !ok {
 			return nil, errors.New("WriteValue: expected []byte argument")
 		}
+		// Real org.bluez signature is WriteValue(ay value, a{sv} options) -
+		// a live BlueZ rejects anything else (e.g. a bare string) as a
+		// signature mismatch. Enforcing the real shape here is what would
+		// have caught that bug in this suite instead of only against
+		// hardware.
+		if _, ok := args[1].(map[string]dbus.Variant); !ok {
+			return nil, fmt.Errorf("WriteValue: expected a{sv} options argument, got %T", args[1])
+		}
 		if fc.b.failLargeWrites && len(b) > defaultMTU-3 {
 			return nil, errors.New("org.bluez.Error.Failed: attribute value too large")
 		}

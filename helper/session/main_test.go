@@ -71,6 +71,54 @@ func TestCaptureOutputIsolatesAndRestores(t *testing.T) {
 	}
 }
 
+// TestSessionDomainsScopesBodyControllerState checks the one command whose
+// domain restriction actually goes through commands_vendor.go's own field
+// (session-info takes its domain as a runtime argument instead, so it's
+// correctly nil here - no static override wanted).
+func TestSessionDomainsScopesBodyControllerState(t *testing.T) {
+	cases := []struct {
+		cmd  string
+		want []protocol.Domain
+	}{
+		{"body-controller-state", []protocol.Domain{protocol.DomainVCSEC}},
+		{"session-info", nil},
+		{"lock", nil},
+		{"unlock", nil},
+		{"add-key-request", nil}, // skips StartSession entirely - see commandsWithoutSession
+		{"", nil},
+		{"not-a-real-command", nil},
+	}
+	for _, c := range cases {
+		t.Run(c.cmd, func(t *testing.T) {
+			got := sessionDomains(c.cmd)
+			if !reflect.DeepEqual(got, c.want) {
+				t.Errorf("sessionDomains(%q) = %v, want %v", c.cmd, got, c.want)
+			}
+		})
+	}
+}
+
+// TestCommandsWithoutSessionSkipsStartSession is a regression test for a
+// real bug, found live against a real vehicle: ensureConnectedLocked used
+// to call StartSession unconditionally, but StartSession's own SessionInfo
+// handshake rejects an unrecognized key for every domain once the vehicle
+// already has other keys enrolled - VCSEC included, so scoping the domain
+// down doesn't help either (a prior, insufficient version of this fix
+// tried exactly that). add-key-request's handler never depends on
+// StartSession succeeding (it sends an unauthenticated, self-identifying
+// message directly), so it must skip StartSession rather than request a
+// narrower one.
+func TestCommandsWithoutSessionSkipsStartSession(t *testing.T) {
+	if !commandsWithoutSession["add-key-request"] {
+		t.Error(`commandsWithoutSession["add-key-request"] = false, want true`)
+	}
+	for _, cmd := range []string{"lock", "unlock", "add-key", "list-keys", ""} {
+		if commandsWithoutSession[cmd] {
+			t.Errorf("commandsWithoutSession[%q] = true, want false", cmd)
+		}
+	}
+}
+
 func TestEnsureConnectedMissingKeyFile(t *testing.T) {
 	s := &session{
 		vin:            "5YJ3E1EA0PF000000",
@@ -80,7 +128,7 @@ func TestEnsureConnectedMissingKeyFile(t *testing.T) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	err := s.ensureConnectedLocked(context.Background())
+	err := s.ensureConnectedLocked(context.Background(), "lock", nil)
 	if err == nil {
 		t.Fatal("expected an error loading a private key that doesn't exist, got nil")
 	}
@@ -212,6 +260,173 @@ func TestKeygenForceSemantics(t *testing.T) {
 	}
 	if forced.Stdout == first.Stdout {
 		t.Error("forced keygen (-f) returned the same public key - it must regenerate")
+	}
+}
+
+// TestPresenceStepArrivalRequiresConsecutiveNearSamples verifies the
+// hysteresis debounce: a single strong RSSI sample must not be enough to
+// declare arrival, guarding against a false unlock-readiness trigger from
+// one noisy reading.
+func TestPresenceStepArrivalRequiresConsecutiveNearSamples(t *testing.T) {
+	cfg := presenceConfig{nearRSSI: -70, nearConfirm: 3, farTimeout: 30 * time.Second, scanInterval: time.Second}
+	now := time.Now()
+
+	near, consecNear, _, action := presenceStep(cfg, false, 0, time.Time{}, now, true, -60)
+	if near || action != presenceActionNone {
+		t.Fatalf("1st near sample: near=%v action=%v, want near=false action=None", near, action)
+	}
+	near, consecNear, _, action = presenceStep(cfg, near, consecNear, time.Time{}, now, true, -60)
+	if near || action != presenceActionNone {
+		t.Fatalf("2nd near sample: near=%v action=%v, want near=false action=None", near, action)
+	}
+	near, _, _, action = presenceStep(cfg, near, consecNear, time.Time{}, now, true, -60)
+	if !near || action != presenceActionArrive {
+		t.Fatalf("3rd near sample: near=%v action=%v, want near=true action=Arrive", near, action)
+	}
+}
+
+// TestPresenceStepArrivalResetsOnWeakSample ensures a single weak/absent
+// reading between strong ones resets the debounce counter rather than
+// letting intermittent detections accumulate toward arrival.
+func TestPresenceStepArrivalResetsOnWeakSample(t *testing.T) {
+	cfg := presenceConfig{nearRSSI: -70, nearConfirm: 2, farTimeout: 30 * time.Second, scanInterval: time.Second}
+	now := time.Now()
+
+	near, consecNear, _, _ := presenceStep(cfg, false, 0, time.Time{}, now, true, -60)
+	near, consecNear, _, _ = presenceStep(cfg, near, consecNear, time.Time{}, now, false, 0) // weak sample resets
+	near, _, _, action := presenceStep(cfg, near, consecNear, time.Time{}, now, true, -60)
+	if near || action != presenceActionNone {
+		t.Fatalf("after reset + 1 near sample: near=%v action=%v, want near=false action=None (needs 2 consecutive)", near, action)
+	}
+}
+
+// TestPresenceStepStaysNearOnEverySeenSample checks the steady-state branch:
+// once near, every tick that still sees the beacon must yield StayNear (so
+// the caller keeps resetting the idle timer) rather than re-triggering
+// Arrive or falling through to None.
+func TestPresenceStepStaysNearOnEverySeenSample(t *testing.T) {
+	cfg := presenceConfig{nearRSSI: -70, nearConfirm: 1, farTimeout: 30 * time.Second, scanInterval: time.Second}
+	now := time.Now()
+
+	near, consecNear, lastSeen, action := presenceStep(cfg, false, 0, time.Time{}, now, true, -60)
+	if !near || action != presenceActionArrive {
+		t.Fatalf("initial arrival: near=%v action=%v", near, action)
+	}
+	later := now.Add(5 * time.Second)
+	near, _, lastSeen, action = presenceStep(cfg, near, consecNear, lastSeen, later, true, -55)
+	if !near || action != presenceActionStayNear {
+		t.Fatalf("still-near tick: near=%v action=%v, want near=true action=StayNear", near, action)
+	}
+	if !lastSeen.Equal(later) {
+		t.Errorf("lastSeen = %v, want it advanced to %v", lastSeen, later)
+	}
+}
+
+// TestPresenceStepDepartsAfterFarTimeout verifies departure only fires once
+// the beacon has been unseen for longer than farTimeout, not on the first
+// missed sample (walk-in-place / brief signal dropout tolerance).
+func TestPresenceStepDepartsAfterFarTimeout(t *testing.T) {
+	cfg := presenceConfig{nearRSSI: -70, nearConfirm: 1, farTimeout: 10 * time.Second, scanInterval: time.Second}
+	now := time.Now()
+
+	near, consecNear, lastSeen, action := presenceStep(cfg, false, 0, time.Time{}, now, true, -60)
+	if !near || action != presenceActionArrive {
+		t.Fatalf("initial arrival: near=%v action=%v", near, action)
+	}
+
+	// Beacon vanishes but not for long enough yet.
+	soon := now.Add(5 * time.Second)
+	near, consecNear, lastSeen, action = presenceStep(cfg, near, consecNear, lastSeen, soon, false, 0)
+	if !near || action != presenceActionNone {
+		t.Fatalf("brief dropout: near=%v action=%v, want near=true action=None (still within farTimeout)", near, action)
+	}
+
+	// Now past farTimeout since lastSeen.
+	later := now.Add(11 * time.Second)
+	near, _, _, action = presenceStep(cfg, near, consecNear, lastSeen, later, false, 0)
+	if near || action != presenceActionDepart {
+		t.Fatalf("after farTimeout: near=%v action=%v, want near=false action=Depart", near, action)
+	}
+}
+
+// TestParsePresenceArgsDefaults verifies presence-start with no args gets
+// sane hysteresis defaults rather than zero values (a zero nearConfirm, for
+// instance, would disable the arrival debounce entirely).
+func TestParsePresenceArgsDefaults(t *testing.T) {
+	cfg, err := parsePresenceArgs(nil)
+	if err != nil {
+		t.Fatalf("parsePresenceArgs(nil): %v", err)
+	}
+	want := defaultPresenceConfig()
+	if cfg != want {
+		t.Errorf("parsePresenceArgs(nil) = %+v, want defaults %+v", cfg, want)
+	}
+}
+
+// TestParsePresenceArgsOverrides checks each flag actually reaches the
+// returned config, not just that parsing doesn't error.
+func TestParsePresenceArgsOverrides(t *testing.T) {
+	cfg, err := parsePresenceArgs([]string{
+		"-near-rssi", "-80",
+		"-near-confirm", "5",
+		"-away-timeout", "45s",
+		"-scan-interval", "500ms",
+	})
+	if err != nil {
+		t.Fatalf("parsePresenceArgs: %v", err)
+	}
+	want := presenceConfig{nearRSSI: -80, nearConfirm: 5, farTimeout: 45 * time.Second, scanInterval: 500 * time.Millisecond}
+	if cfg != want {
+		t.Errorf("parsePresenceArgs overrides = %+v, want %+v", cfg, want)
+	}
+}
+
+// TestParsePresenceArgsRejectsUnknownFlag ensures a typo'd flag surfaces as
+// an error rather than being silently ignored.
+func TestParsePresenceArgsRejectsUnknownFlag(t *testing.T) {
+	if _, err := parsePresenceArgs([]string{"-near-rssi-typo", "-80"}); err == nil {
+		t.Fatal("expected an error for an unrecognized flag")
+	}
+}
+
+// TestDispatchPresenceStartRequiresBluezBackend guards the reason presence
+// mode is gated to the bluez backend: raw-HCI's InitAdapterWithID takes
+// exclusive control of the controller, which continuous discovery for
+// proximity polling can't share.
+func TestDispatchPresenceStartRequiresBluezBackend(t *testing.T) {
+	s := &session{bleBackend: "hci"}
+	resp := s.dispatch(request{ID: "p1", Cmd: "presence-start"})
+	if resp.OK {
+		t.Fatal("expected presence-start to fail on the hci backend")
+	}
+	if !strings.Contains(resp.Stderr, "bluez") {
+		t.Errorf("stderr = %q, want it to mention the bluez backend requirement", resp.Stderr)
+	}
+	if s.presenceCancel != nil {
+		t.Error("presenceCancel should remain nil when presence-start is rejected")
+	}
+}
+
+// TestDispatchPresenceStartRejectsBadArgs ensures a malformed flag is
+// reported as a request error rather than silently falling back to
+// defaults.
+func TestDispatchPresenceStartRejectsBadArgs(t *testing.T) {
+	s := &session{bleBackend: "bluez"}
+	resp := s.dispatch(request{ID: "p1", Cmd: "presence-start", Args: []string{"-not-a-flag"}})
+	if resp.OK {
+		t.Fatal("expected presence-start to reject an unrecognized flag")
+	}
+}
+
+// TestDispatchPresenceStopWithoutStartIsSafe ensures presence-stop is a
+// harmless no-op when presence mode was never started (e.g. the Rust core
+// stops it unconditionally on shutdown regardless of whether it was ever
+// running).
+func TestDispatchPresenceStopWithoutStartIsSafe(t *testing.T) {
+	s := &session{}
+	resp := s.dispatch(request{ID: "p1", Cmd: "presence-stop"})
+	if !resp.OK {
+		t.Fatalf("expected presence-stop with nothing running to succeed, got: %s", resp.Stderr)
 	}
 }
 
