@@ -1,15 +1,15 @@
 [package]
-name = "teslacontrold"
-version = "0.1.7"
+name = "electric-eel-core"
+version = "0.2.0"
 edition = "2021"
-description = "Privileged BLE control core for harbour-teslacontrol"
+description = "In-process BLE control core for harbour-electric-eel"
 
 [lib]
-name = "teslacontrolcore"
+name = "electriceelcore"
 crate-type = ["staticlib", "rlib"]
 path = "src/lib.rs"
 
-# The `dbus` feature (only the teslacontrold daemon binary enables it) pulls
+# The `dbus` feature (only the electric-eel-daemon binary enables it) pulls
 # in the zbus server + caller authorization. The app's staticlib builds with
 # default (no) features so none of that machinery is linked into the app.
 [features]
@@ -17,7 +17,7 @@ default = []
 dbus = ["dep:zbus", "dep:procfs"]
 
 [[bin]]
-name = "teslacontrold"
+name = "electric-eel-daemon"
 path = "src/main.rs"
 required-features = ["dbus"]
 

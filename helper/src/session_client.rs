@@ -185,7 +185,7 @@ impl SessionClient {
             .stdout(Stdio::piped())
             // Inherited, not discarded: tesla-session's own startup
             // failures (bad flags, an unexpected panic) should land in
-            // teslacontrold's journal, same place run_binary's captured
+            // the app's own journal tag, same place run_binary's captured
             // tesla-control stderr effectively ends up via Run()'s reply.
             .stderr(Stdio::inherit())
             .spawn()

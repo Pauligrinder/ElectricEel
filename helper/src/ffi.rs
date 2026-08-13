@@ -1,8 +1,8 @@
-//! C ABI surface for the in-process control core (Phase 4 of
-//! `BLUEZ_BACKEND_PLAN.md`). The app links `libteslacontrolcore.a` and drives
+//! C ABI surface for the in-process control core (see `BLUEZ_BACKEND_PLAN.md`
+//! for why). The app links `libelectriceelcore.a` and drives
 //! all vehicle/config work through these functions on its own worker thread;
 //! the header is generated from this module with cbindgen
-//! (`cbindgen --crate teslacontrolcore --output teslacontrolcore.h`, or the
+//! (`cbindgen --crate electriceelcore --output electriceelcore.h`, or the
 //! build.rs hook described in Cargo.toml).
 //!
 //! Conventions:
@@ -70,7 +70,7 @@ pub unsafe extern "C" fn core_string_free(ptr: *mut c_char) {
 }
 
 /// The build version of the core, stamped from `CARGO_PKG_VERSION` (same git
-/// tag as `APP_VERSION` in harbour-teslacontrol.pro). Static storage - do not
+/// tag as `APP_VERSION` in harbour-electric-eel.pro). Static storage - do not
 /// free.
 ///
 /// # Panics
@@ -423,7 +423,7 @@ mod tests {
 
     fn tmp_core() -> (*mut Core, std::path::PathBuf) {
         let dir =
-            std::env::temp_dir().join(format!("teslacontrold-ffitest-{}", std::process::id()));
+            std::env::temp_dir().join(format!("electric-eel-ffitest-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let bin_dir = dir.join("bin");
         std::fs::create_dir_all(&bin_dir).unwrap();
@@ -510,7 +510,7 @@ mod tests {
         assert!(!core.is_null());
         let vin = CString::new("5YJ3E1EA0PF000000").unwrap();
         let model = CString::new("").unwrap();
-        let key_name = CString::new("harbour-teslacontrol").unwrap();
+        let key_name = CString::new("harbour-electric-eel").unwrap();
         // SAFETY: valid core + strings, ok slot valid.
         let mut ok = false;
         let mut msg: *mut c_char = ptr::null_mut();

@@ -1,5 +1,5 @@
-//! In-process control core for harbour-teslacontrol (Phase 4 of
-//! `BLUEZ_BACKEND_PLAN.md`).
+//! In-process control core for harbour-electric-eel (see `BLUEZ_BACKEND_PLAN.md`
+//! for why it's a staticlib + C ABI instead of a D-Bus daemon).
 //!
 //! Built two ways:
 //! - As a staticlib (`crate-type = ["staticlib"]`) linked into the app,

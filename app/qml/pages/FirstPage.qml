@@ -171,7 +171,7 @@ Page {
             width: listView.width
 
             PageHeader {
-                title: "Tesla Control"
+                title: "ElectricEel"
             }
 
             // Warns when the helper half is missing, too old to report its
@@ -202,10 +202,10 @@ Page {
                         color: Theme.highlightColor
                         font.pixelSize: Theme.fontSizeSmall
                         text: !teslaClient.helperAvailable
-                            ? "teslacontrold helper service not found. Install the companion package (devel-su pkcon install-local teslacontrold-*.rpm) and pull down to refresh."
+                            ? "The control core failed to start. Reinstall the app, then pull down to refresh."
                             : teslaClient.helperVersion.length === 0
-                                ? "teslacontrold is too old to report its version. Install the helper RPM from the same release as this app (" + teslaClient.appVersion + "), then pull down to refresh."
-                                : "Version mismatch: app " + teslaClient.appVersion + ", teslacontrold " + teslaClient.helperVersion + ". Install matching RPMs from the same release, then pull down to refresh."
+                                ? "The control core is too old to report its version. Reinstall the app (" + teslaClient.appVersion + "), then pull down to refresh."
+                                : "Version mismatch: app " + teslaClient.appVersion + ", core " + teslaClient.helperVersion + ". Reinstall the app, then pull down to refresh."
                     }
                 }
             }

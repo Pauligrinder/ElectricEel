@@ -1,9 +1,14 @@
 # Prebuilt/cross-compiled binaries - see README.md for how to rebuild them.
 # Not committed: they can't be verified from source by reading the repo,
-# and they get setcap'd with CAP_NET_ADMIN - build fresh from a pinned
-# upstream commit instead of trusting a blob in git (see KNOWN_ISSUES.md).
+# so build fresh from a pinned upstream commit instead of trusting a blob
+# in git (see KNOWN_ISSUES.md).
 spike/bin/
 helper/dist/
+
+# Phase 4 in-app core artifact (helper/make-app-bundle.sh stages these into
+# the app's qmake tree so the app RPM bundles the Rust core + Go child)
+app/thirdparty/
+app/bin/
 
 # Build logs (environment-specific, no reuse value)
 spike/*.log
@@ -31,13 +36,13 @@ qrc_*.cpp
 ui_*.h
 *_qmlcache.qrc
 
-# Rust build output (teslacontrold)
+# Rust build output (electric-eel-daemon)
 /helper/target/
-/helper/teslacontrold
+/helper/electric-eel-daemon
 
 # Go build output (tesla-session) - `go build .` with no -o names the
-# binary after the module (teslacontrol-session)
-/helper/session/teslacontrol-session
+# binary after the module (electric-eel-session)
+/helper/session/electric-eel-session
 /helper/session/tesla-session
 
 # Editor / OS cruft

@@ -1,11 +1,11 @@
 use std::path::Path;
 
-use teslacontrolcore::core::Core;
-use teslacontrolcore::helper::{Helper, IFACE_NAME};
-use teslacontrolcore::session_client::SessionClient;
+use electriceelcore::core::Core;
+use electriceelcore::helper::{Helper, IFACE_NAME};
+use electriceelcore::session_client::SessionClient;
 
-const BUS_NAME: &str = "org.teslacontrol.Helper";
-const OBJECT_PATH: &str = "/org/teslacontrol/Helper";
+const BUS_NAME: &str = "org.electriceel.Helper";
+const OBJECT_PATH: &str = "/org/electriceel/Helper";
 
 /// binDir holds the bundled, setcap'd tesla-control/tesla-keygen binaries.
 /// stateDir holds the private key and persisted config; both are created by
@@ -22,9 +22,9 @@ fn env_flag(key: &str) -> bool {
 }
 
 fn main() {
-    let bin_dir = env_or("TESLACONTROLD_BIN_DIR", "/opt/teslacontrold/bin");
-    let state_dir = env_or("TESLACONTROLD_STATE_DIR", "/var/lib/teslacontrold");
-    let allowed_callers = teslacontrolcore::authorize::default_allowed_callers();
+    let bin_dir = env_or("ELECTRICEEL_BIN_DIR", "/opt/electric-eel/bin");
+    let state_dir = env_or("ELECTRICEEL_STATE_DIR", "/var/lib/electric-eel");
+    let allowed_callers = electriceelcore::authorize::default_allowed_callers();
 
     if let Err(e) = std::fs::create_dir_all(&state_dir) {
         eprintln!("cannot create state dir {state_dir}: {e}");
@@ -44,20 +44,20 @@ fn main() {
     // tesla-control/tesla-keygen and setcap'd the same way (needs
     // CAP_NET_ADMIN itself once it's the one holding the BLE session).
     //
-    // TESLACONTROLD_BLE_BACKEND (default "hci") selects tesla-session's
+    // ELECTRICEEL_BLE_BACKEND (default "hci") selects tesla-session's
     // transport: "hci" is go-ble's raw HCI channel (the default, matching
     // a one-shot tesla-control), "bluez" routes through org.bluez so the
     // OS Bluetooth stack - and anything else using the adapter, e.g. a
     // soundbar - is never disturbed. The setting is read here so this
     // process shares one source of truth with the child it spawns.
-    let session = if env_flag("TESLACONTROLD_PERSISTENT_SESSION") {
-        let ble_backend = env_or("TESLACONTROLD_BLE_BACKEND", "hci");
+    let session = if env_flag("ELECTRICEEL_PERSISTENT_SESSION") {
+        let ble_backend = env_or("ELECTRICEEL_BLE_BACKEND", "hci");
         if ble_backend != "hci" && ble_backend != "bluez" {
-            eprintln!("teslacontrold: invalid TESLACONTROLD_BLE_BACKEND {ble_backend:?} (want hci or bluez)");
+            eprintln!("electric-eel: invalid ELECTRICEEL_BLE_BACKEND {ble_backend:?} (want hci or bluez)");
             std::process::exit(1);
         }
         eprintln!(
-            "teslacontrold: persistent BLE session enabled (TESLACONTROLD_PERSISTENT_SESSION, backend {ble_backend})"
+            "electric-eel: persistent BLE session enabled (ELECTRICEEL_PERSISTENT_SESSION, backend {ble_backend})"
         );
         Some(SessionClient::new(
             Path::new(&bin_dir).join("tesla-session"),
@@ -70,7 +70,7 @@ fn main() {
     let core = match Core::new(bin_dir, state_dir, session) {
         Ok(core) => core,
         Err(e) => {
-            eprintln!("teslacontrold: {e}");
+            eprintln!("electric-eel: {e}");
             std::process::exit(1);
         }
     };
@@ -89,11 +89,11 @@ fn main() {
     let _conn = match conn {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("cannot start teslacontrold: {e}");
+            eprintln!("cannot start electric-eel-daemon: {e}");
             std::process::exit(1);
         }
     };
 
-    eprintln!("teslacontrold listening on {BUS_NAME} {OBJECT_PATH} ({IFACE_NAME})");
+    eprintln!("electric-eel-daemon listening on {BUS_NAME} {OBJECT_PATH} ({IFACE_NAME})");
     std::thread::park();
 }

@@ -4,13 +4,13 @@
 /// The `#[derive(zbus::DBusError)]` below is feature-gated: the app links the
 /// staticlib that builds the plain core, and must not drag in zbus/async-io
 /// machinery it never runs. Only the daemon binary enables the `dbus` feature,
-/// gaining the D-Bus error name `"org.teslacontrol.Helper1.<Variant>"` that the
+/// gaining the D-Bus error name `"org.electriceel.Helper1.<Variant>"` that the
 /// pre-Phase-4 QML client matched exactly.
 #[derive(Debug)]
 #[cfg_attr(
     feature = "dbus",
     derive(zbus::DBusError),
-    zbus(prefix = "org.teslacontrol.Helper1")
+    zbus(prefix = "org.electriceel.Helper1")
 )]
 pub enum HelperError {
     Forbidden(String),

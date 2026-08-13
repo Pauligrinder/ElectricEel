@@ -28,7 +28,7 @@ void core_string_free(char *ptr);
 
 /**
  * The build version of the core, stamped from `CARGO_PKG_VERSION` (same git
- * tag as `APP_VERSION` in harbour-teslacontrol.pro). Static storage - do not
+ * tag as `APP_VERSION` in harbour-electric-eel.pro). Static storage - do not
  * free.
  *
  * # Panics

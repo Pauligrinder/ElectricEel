@@ -2,9 +2,10 @@
 // connecting, running one command, and exiting (paying a full BLE
 // connect+StartSession handshake every time), it holds a live
 // *vehicle.Vehicle across many commands and only reconnects after a period
-// of inactivity. It's spoken to over stdin/stdout by teslacontrold, which
-// falls back to spawning tesla-control directly (today's behavior) if this
-// process is unreachable or misbehaves - see helper/src/session_client.rs.
+// of inactivity. It's spoken to over stdin/stdout by the in-process Rust
+// control core, which falls back to spawning tesla-control directly
+// (today's behavior) if this process is unreachable or misbehaves - see
+// helper/src/session_client.rs.
 //
 // Every command still goes through commands_vendor.go's execute() and
 // commands map, unmodified - this file only changes when the BLE
@@ -35,7 +36,7 @@ import (
 	"github.com/teslamotors/vehicle-command/pkg/protocol"
 	"github.com/teslamotors/vehicle-command/pkg/vehicle"
 
-	"teslacontrol-session/bluez"
+	"electric-eel-session/bluez"
 )
 
 // writeErr is referenced by a couple of commands_vendor.go's handlers
@@ -62,8 +63,9 @@ type response struct {
 }
 
 // session owns the (possibly absent) live vehicle connection. All access is
-// serialized by mu - the caller (teslacontrold, via its own ble_sem) never
-// issues concurrent commands, and this process only ever has one goroutine
+// serialized by mu - the caller (the in-process Rust core, via its own
+// ble_sem) never issues concurrent commands, and this process only ever has
+// one goroutine
 // (the stdin loop) calling dispatch, but idleTimer's callback runs on its
 // own goroutine and must take mu too.
 type session struct {
@@ -261,7 +263,7 @@ func publicKeyPEM(skey protocol.ECDHPrivateKey) (string, bool) {
 // dispatch runs one command against the (lazily connected) session and
 // captures its output. Mirrors cmd/tesla-control/main.go's runCommand()
 // error-text formatting (not vendored - main.go isn't reused wholesale,
-// only commands.go is) so switching between this path and teslacontrold's
+// only commands.go is) so switching between this path and the core's
 // one-shot subprocess fallback doesn't change what error text reaches the
 // app.
 func (s *session) dispatch(req request) response {

@@ -87,7 +87,7 @@ impl Default for Config {
         Config {
             vin: String::new(),
             model: String::new(),
-            key_name: "harbour-teslacontrol".to_string(),
+            key_name: "harbour-electric-eel".to_string(),
             connect_timeout_sec: 20,
             command_timeout_sec: 5,
         }
@@ -108,7 +108,7 @@ impl Config {
             Ok(cfg) => cfg,
             Err(e) => {
                 eprintln!(
-                    "teslacontrold: ignoring unparseable config {}: {}",
+                    "electric-eel: ignoring unparseable config {}: {}",
                     path.display(),
                     e
                 );
@@ -133,32 +133,32 @@ impl Config {
         let default = Config::default();
         if self.connect_timeout_sec <= 0 || self.connect_timeout_sec > MAX_TIMEOUT_SEC {
             eprintln!(
-                "teslacontrold: config.json connect_timeout_sec={} out of range, resetting to default",
+                "electric-eel: config.json connect_timeout_sec={} out of range, resetting to default",
                 self.connect_timeout_sec
             );
             self.connect_timeout_sec = default.connect_timeout_sec;
         }
         if self.command_timeout_sec <= 0 || self.command_timeout_sec > MAX_TIMEOUT_SEC {
             eprintln!(
-                "teslacontrold: config.json command_timeout_sec={} out of range, resetting to default",
+                "electric-eel: config.json command_timeout_sec={} out of range, resetting to default",
                 self.command_timeout_sec
             );
             self.command_timeout_sec = default.command_timeout_sec;
         }
         if !self.vin.trim().is_empty() && !VIN_RE.is_match(self.vin.trim()) {
-            eprintln!("teslacontrold: config.json vin fails validation, clearing");
+            eprintln!("electric-eel: config.json vin fails validation, clearing");
             self.vin = String::new();
         }
         let model = self.model.trim().to_ascii_lowercase();
         if VALID_MODELS.contains(&model.as_str()) {
             self.model = model;
         } else {
-            eprintln!("teslacontrold: config.json model fails validation, resetting to default");
+            eprintln!("electric-eel: config.json model fails validation, resetting to default");
             self.model = default.model;
         }
         let key_name = self.key_name.trim();
         if key_name.len() > MAX_KEY_NAME_LEN || !KEY_NAME_RE.is_match(key_name) {
-            eprintln!("teslacontrold: config.json key_name fails validation, resetting to default");
+            eprintln!("electric-eel: config.json key_name fails validation, resetting to default");
             self.key_name = default.key_name;
         }
     }
@@ -233,7 +233,7 @@ mod tests {
     #[allow(clippy::too_many_lines)]
     fn test_validate_config() {
         let valid_vin = "5YJ3E1EA0PF000000";
-        let default_key_name = "harbour-teslacontrol";
+        let default_key_name = "harbour-electric-eel";
         let cases: &[ValidateConfigCase] = &[
             ("all valid", valid_vin, "", default_key_name, 20, 5, None),
             (
@@ -421,14 +421,14 @@ mod tests {
 
     #[test]
     fn test_save_config_atomic() {
-        let dir = std::env::temp_dir().join(format!("teslacontrold-test-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("electric-eel-test-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
         let path = dir.join("config.json");
 
         let cfg = Config {
             vin: "5YJ3E1EA0PF000000".to_string(),
             model: String::new(),
-            key_name: "harbour-teslacontrol".to_string(),
+            key_name: "harbour-electric-eel".to_string(),
             connect_timeout_sec: 20,
             command_timeout_sec: 5,
         };
@@ -457,7 +457,7 @@ mod tests {
     #[test]
     fn test_load_sanitizes_out_of_range_fields() {
         let dir = std::env::temp_dir().join(format!(
-            "teslacontrold-test-sanitize-{}",
+            "electric-eel-test-sanitize-{}",
             std::process::id()
         ));
         fs::create_dir_all(&dir).unwrap();
@@ -500,7 +500,7 @@ mod tests {
         // whole file, so load() fell back to Config::default() and silently
         // dropped the VIN/key_name/timeouts too, not just the model.
         let dir = std::env::temp_dir().join(format!(
-            "teslacontrold-test-premodel-{}",
+            "electric-eel-test-premodel-{}",
             std::process::id()
         ));
         fs::create_dir_all(&dir).unwrap();
@@ -508,7 +508,7 @@ mod tests {
 
         fs::write(
             &path,
-            r#"{"vin":"5YJ3E1EA0PF000000","key_name":"harbour-teslacontrol","connect_timeout_sec":20,"command_timeout_sec":5}"#,
+            r#"{"vin":"5YJ3E1EA0PF000000","key_name":"harbour-electric-eel","connect_timeout_sec":20,"command_timeout_sec":5}"#,
         )
         .unwrap();
 
@@ -521,7 +521,7 @@ mod tests {
             cfg.model, "",
             "missing model field should default to Auto, not reject the file"
         );
-        assert_eq!(cfg.key_name, "harbour-teslacontrol");
+        assert_eq!(cfg.key_name, "harbour-electric-eel");
         assert_eq!(cfg.connect_timeout_sec, 20);
         assert_eq!(cfg.command_timeout_sec, 5);
 

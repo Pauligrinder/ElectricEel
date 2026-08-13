@@ -1,6 +1,6 @@
-Name:       harbour-teslacontrol
+Name:       harbour-electric-eel
 Summary:    Control your Tesla over Bluetooth
-Version:    0.1.7
+Version:    0.2.0
 Release:    1
 License:    ASL 2.0
 URL:        https://github.com/marconapetti/ElectricEel
@@ -12,16 +12,16 @@ BuildRequires:  pkgconfig(sailfishapp) >= 1.0.2
 BuildRequires:  pkgconfig(Qt5Core)
 BuildRequires:  pkgconfig(Qt5Qml)
 BuildRequires:  pkgconfig(Qt5Quick)
-BuildRequires:  pkgconfig(Qt5DBus)
 BuildRequires:  desktop-file-utils
 
 %description
-Sandboxed Silica UI for tesla-control (teslamotors/vehicle-command), grouped
-like the official Tesla app: quick actions, climate, charging, locks &
-security, trunk/frunk/windows, media, software, keys and diagnostics. All
-BLE work needing CAP_NET_ADMIN happens out-of-sandbox in the companion
-teslacontrold service, which this app talks to over D-Bus - see the
-teslacontrold package for that half.
+Sandboxed Silica UI for controlling a Tesla over Bluetooth, grouped like
+the official Tesla app: quick actions, climate, charging, locks & security,
+trunk/frunk/windows, media, software, keys and diagnostics. BLE transport
+runs through a cooperative org.bluez backend (no raw HCI takeover), driven
+by an in-process Rust control core (staticlib) that spawns the bundled
+tesla-session binary. No privileged helper service, no CAP_NET_ADMIN, no
+devel-su - a single self-contained Harbour app.
 
 %prep
 %setup -q -n %{name}-%{version}
@@ -46,6 +46,9 @@ desktop-file-install --delete-original \
 %{_datadir}/icons/hicolor/*/apps/%{name}.png
 
 %changelog
+* Thu Aug 13 2026 Marco Napetti <marco.napetti@proton.me> - 0.2.0-1
+- Renamed the app from harbour-teslacontrol to harbour-electric-eel (ElectricEel)
+- BlueZ D-Bus BLE backend; in-process Rust core, no privileged helper service
 * Tue Aug 12 2026 Marco Napetti <marco.napetti@proton.me> - 0.1.7-1
 - Avoid config edit before config load
 * Tue Aug 12 2026 Marco Napetti <marco.napetti@proton.me> - 0.1.6-1

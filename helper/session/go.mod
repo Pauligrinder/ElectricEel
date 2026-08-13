@@ -1,4 +1,4 @@
-module teslacontrol-session
+module electric-eel-session
 
 go 1.26.5
 

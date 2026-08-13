@@ -1,5 +1,0 @@
-[D-BUS Service]
-Name=org.teslacontrol.Helper
-Exec=/opt/teslacontrold/bin/teslacontrold
-User=teslacontrol
-SystemdService=teslacontrold.service

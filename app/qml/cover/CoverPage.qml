@@ -4,7 +4,7 @@ import Sailfish.Silica 1.0
 CoverBackground {
     Label {
         anchors.centerIn: parent
-        text: "Tesla Control"
+        text: "ElectricEel"
         wrapMode: Text.Wrap
         width: parent.width - 2 * Theme.paddingLarge
         horizontalAlignment: Text.AlignHCenter

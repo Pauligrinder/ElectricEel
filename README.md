@@ -1,136 +1,94 @@
-# ElectricEel — Sailfish OS GUI for tesla-control
+# ElectricEel — Sailfish OS GUI for Tesla
 
 A Silica (Sailfish OS) app that gives a Tesla-app-like GUI over
 [teslamotors/vehicle-command](https://github.com/teslamotors/vehicle-command)'s
-`tesla-control` CLI, controlling a Tesla vehicle over local BLE. Built and
+command protocol, controlling a Tesla vehicle over local Bluetooth. Built and
 tested against a Jolla Phone 2026 (aarch64, Sailfish OS 5.2.0.16).
 
-## Why two packages
+![electric-eel](./electric-eel.png)
 
-`tesla-control`'s BLE library (`go-ble/ble`) needs `CAP_NET_ADMIN` on a raw
-HCI socket to bring the Bluetooth adapter up. Sailfish's Sailjail sandbox
-(`/etc/sailjail/permissions/Base.permission`) applies `caps.drop all` to
-*every* sandboxed app unconditionally — confirmed on-device, see
-"Feasibility findings" below — so a Harbour-distributable, sandboxed app can
-never do this itself, with or without `setcap`. Fix: split into two
-packages.
+## One self-contained package
 
-- **`app/` → `harbour-teslacontrol`** — the sandboxed Silica UI. Harbour/Store
-  compatible. Talks to the helper over the D-Bus *system* bus.
-- **`helper/` → `teslacontrold`** — a small unsandboxed companion service
-  that owns a `setcap`'d copy of the real `tesla-control`/`tesla-keygen`
-  binaries and exposes them as D-Bus methods (`org.teslacontrol.Helper`).
-  **Not Harbour-distributable** (ships a systemd service + capability grant);
-  distribute via OpenRepos or install directly with `devel-su`.
+The app talks to the vehicle through `tesla-session`, a small Go companion
+that uses a **cooperative `org.bluez` D-Bus backend** (no raw-HCI adapter
+takeover, so other radio users like a soundbar are never disturbed), driven
+by an **in-process Rust control core** linked into the app as a staticlib
+(cbindgen C ABI, see `BLUEZ_BACKEND_PLAN.md`). Everything ships in a single
+Harbour RPM: the Rust core, the Go `tesla-session` child, and the Silica UI.
 
-This mirrors how Sailfish's own `Bluetooth.permission` grants sandboxed apps
-D-Bus access to `org.bluez` rather than raw device access — same pattern,
-just with a custom-installed permission (`TeslaControlHelper.permission`)
-instead of a stock one, since Harbour review doesn't host third-party
-system services.
+This removes the old two-package split (sandboxed UI + privileged
+`electric-eel-daemon` system service) — no systemd service, no
+`setcap`/`CAP_NET_ADMIN` grant, no `devel-su` install. The BLE work that
+previously needed raw HCI + the capability now goes through `org.bluez`,
+which Sailjail's stock `Bluetooth.permission` already grants the sandboxed
+app.
+
+## Layout
+
+```
+helper/                          Rust in-process control core (staticlib) + Go child
+  src/lib.rs                     crate root: staticlib + rlib (no zbus in the app build)
+  src/core.rs                    Core handle: run/generate_key/pair/set_config/get_config
+  src/ffi.rs                     cbindgen C ABI (core_new/.../core_free, see
+                                  electriceelcore.h)
+  src/config.rs                  Config persistence + validation
+  src/commands.rs                command catalog
+  src/session_client.rs          talks to tesla-session (the Go child)
+  electriceelcore.h               generated header (build.rs, cbindgen)
+  session/                       Go BLE child (bluez backend)
+    main.go                      keeps one session alive across commands
+  make-app-bundle.sh             cross-builds the staticlib + tesla-session into app/
+
+app/                              Harbour Silica app (qmake project)
+  harbour-electric-eel.pro        links thirdparty/libelectriceelcore.a, installs bin/
+  src/teslaclient.{h,cpp}         thin QObject wrapper: worker thread calls the C ABI
+  src/harbour-electric-eel.cpp    main()
+  qml/harbour-electric-eel.qml
+  qml/js/CommandCatalog.js        every command, grouped like the Tesla app
+  qml/pages/                      FirstPage, CategoryPage (generic), ArgumentDialog, PairingPage, SettingsPage
+  rpm/harbour-electric-eel.spec
+  harbour-electric-eel.desktop
+  icons/                          launcher icons (86/108/128/172px, from the ElectricEel artwork)
+```
 
 ## Feasibility findings (Phase 0 spike)
 
 Tested directly against a Jolla Phone 2026 over SSH before building the GUI:
 
-1. `CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build` cross-compiles
-   `tesla-control`/`tesla-keygen` cleanly — the BLE library is pure Go, no
-   cgo, no Sailfish Platform SDK needed for this half.
-2. As the normal `defaultuser` account, `tesla-control -ble ping` fails with:
-   `can't down device: operation not permitted` and suggests
-   `setcap 'cap_net_admin=eip'`.
-3. After `devel-su setcap 'cap_net_admin=eip' tesla-control`, the same
-   unprivileged user gets past HCI init (error becomes `context deadline
-   exceeded` against a placeholder VIN with no matching car nearby — i.e.
-   the *permission* problem is resolved, confirming the capability grant
-   works).
-4. `/etc/sailjail/permissions/Base.permission` contains `caps.drop all`,
-   applied to every sandboxed profile with no opt-out; the stock
-   `Bluetooth.permission` only grants D-Bus access to `org.bluez`, not raw
-   HCI. → sandboxed raw HCI is a dead end, hence the two-package split.
-5. Sailjail doesn't change the process UID (just capabilities/namespaces via
-   firejail), so D-Bus policy keyed on `user="defaultuser"` still applies
-   correctly to the sandboxed app — this is what makes the split
-   architecture work at all.
-
-## Layout
-
-```
-helper/                          Rust (zbus) daemon, cross-compiled for aarch64
-  src/main.rs                    wires up the D-Bus connection, serves the object
-  src/helper.rs                  D-Bus interface impl: Run/GenerateKey/Pair/SetConfig/GetConfig
-  src/authorize.rs               caller-authorization logic (see its module doc comment)
-  src/config.rs                  Config persistence + validation
-  src/commands.rs                tesla-control subcommand catalog
-  src/error.rs                   custom D-Bus error type
-  src/session_client.rs          talks to tesla-session (see below); Run() falls back to a
-                                  one-shot tesla-control exec on any session-layer error
-  session/                       optional persistent-BLE-session companion (Go), off by
-                                  default - TESLACONTROLD_PERSISTENT_SESSION, see KNOWN_ISSUES.md
-    commands_vendor.go           byte-for-byte copy of upstream's cmd/tesla-control/commands.go
-    main.go                      the actual new part: keeps one *vehicle.Vehicle session alive
-                                  across commands instead of reconnecting every time
-  systemd/teslacontrold.service
-  dbus/org.teslacontrol.Helper.{service,conf}
-  sailjail/TeslaControlHelper.permission
-  rpm/teslacontrold.spec
-  dist/teslacontrold             built binary (see below)
-
-app/                              Harbour Silica app (qmake project)
-  harbour-teslacontrol.pro
-  src/teslaclient.{h,cpp}         QDBusInterface client for the helper
-  src/harbour-teslacontrol.cpp    main()
-  qml/harbour-teslacontrol.qml
-  qml/js/CommandCatalog.js        every tesla-control subcommand, grouped like the Tesla app
-  qml/pages/                      FirstPage, CategoryPage (generic), ArgumentDialog, PairingPage, SettingsPage
-  rpm/harbour-teslacontrol.spec
-  harbour-teslacontrol.desktop
-  icons/                          placeholder icons - replace before shipping
-
-spike/bin/                        Phase 0 cross-compiled tesla-control/tesla-keygen
-```
+1. `CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build` cross-compiles the Go
+   BLE tooling cleanly — the BLE stack is pure Go, no cgo, no Sailfish
+   Platform SDK needed for that half.
+2. As the normal `defaultuser` account, raw-HCI BLE needs `CAP_NET_ADMIN`
+   (`can't down device: operation not permitted` without a `setcap` grant).
+3. `/etc/sailjail/permissions/Base.permission` applies `caps.drop all` to
+   *every* sandboxed app with no opt-out, and the stock `Bluetooth.permission`
+   only grants D-Bus access to `org.bluez` — so sandboxed raw HCI is a dead
+   end. → the cooperative `org.bluez` backend, where the sandboxed app (and
+   its spawned child) can do everything through the stock permission.
+4. Sailjail doesn't change the process UID (just capabilities/namespaces via
+   firejail), which is why the app's child can use the system bus directly.
 
 ## Build
 
-### 1. Cross-compile the CLI tools and the helper daemon
+### 1. Stage the in-app core (Rust staticlib + Go tesla-session child)
 
-`tesla-control`/`tesla-keygen` are pure Go (upstream, unmodified) and
-cross-compile from any Linux host with Docker - no Sailfish SDK needed:
-
-```sh
-# tesla-control / tesla-keygen (already done once, in spike/bin/):
-docker run --rm -v "$PWD/spike/bin:/out" golang:1.23 bash -c '
-  git clone --depth 1 https://github.com/teslamotors/vehicle-command.git /src
-  cd /src
-  CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o /out/tesla-control ./cmd/tesla-control
-  CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o /out/tesla-keygen ./cmd/tesla-keygen
-'
-```
-
-`tesla-session` (the optional persistent-BLE-session companion, see
-KNOWN_ISSUES.md - off by default, `TESLACONTROLD_PERSISTENT_SESSION`) is
-its own small Go module at `helper/session/` and cross-compiles the same
-way, no Docker required since it's pure Go with no cgo:
+`helper/make-app-bundle.sh` cross-builds the Rust control core as a
+`aarch64-unknown-linux-gnu` **staticlib** (glibc — it links against the
+app's Qt/Silica; the musl target used for the old standalone daemon would
+clash) and the Go `tesla-session` child, staging both into the app's qmake
+tree:
 
 ```sh
-cd helper/session
-CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o ../dist/tesla-session .
+rustup target add aarch64-unknown-linux-gnu   # if not already installed
+./helper/make-app-bundle.sh
+# -> app/thirdparty/{libelectriceelcore.a,electriceelcore.h}
+# -> app/bin/tesla-session
 ```
 
-`teslacontrold` itself is Rust ([zbus](https://docs.rs/zbus), blocking API -
-see its module doc comments for why). It cross-compiles to
-`aarch64-unknown-linux-musl` - fully static, same as the Go binaries above,
-so there's no glibc version to match against the phone:
+The staticlib must be rebuilt whenever `helper/` (the core) changes; nothing
+in `app/thirdparty` or `app/bin` is committed to git.
 
-```sh
-cd helper
-docker run --rm -v "$PWD":/home/rust/src messense/rust-musl-cross:aarch64-musl \
-  cargo build --release
-mkdir -p dist
-cp target/aarch64-unknown-linux-musl/release/teslacontrold dist/teslacontrold
-```
-
-### 2. Build both RPMs with the Sailfish Platform SDK (Docker)
+### 2. Build the app RPM with the Sailfish Platform SDK (Docker)
 
 Verified working with the `coderus/sailfishos-platform-sdk-aarch64` image
 (~13GB, includes a ready `SailfishOS-5.2.0.15-aarch64` mb2/sb2 build
@@ -141,64 +99,42 @@ doesn't work cleanly - `docker cp` in, build, `docker cp` out:
 ```sh
 docker pull coderus/sailfishos-platform-sdk-aarch64
 
-docker create --name teslacontrol-build coderus/sailfishos-platform-sdk-aarch64 sleep infinity
-docker start teslacontrol-build
+docker create --name electric-eel-build coderus/sailfishos-platform-sdk-aarch64 sleep infinity
+docker start electric-eel-build
 
-# --- harbour-teslacontrol.rpm - compiles the C++/QML app for real ---
-docker cp app teslacontrol-build:/home/mersdk/app
-docker exec -u root teslacontrol-build chown -R mersdk:mersdk /home/mersdk/app
-docker exec -w /home/mersdk/app teslacontrol-build \
+# harbour-electric-eel.aarch64.rpm - compiles the C++/QML app, links the
+# staticlib, and installs bin/tesla-session under /usr/share/harbour-electric-eel/bin
+docker cp app electric-eel-build:/home/mersdk/app
+docker exec -u root electric-eel-build chown -R mersdk:mersdk /home/mersdk/app
+docker exec -w /home/mersdk/app electric-eel-build \
   mb2 --target SailfishOS-5.2.0.15-aarch64 build
-docker cp teslacontrol-build:/home/mersdk/app/RPMS/harbour-teslacontrol-0.1.0-1.aarch64.rpm app/RPMS/
+docker cp electric-eel-build:/home/mersdk/app/RPMS/harbour-electric-eel-0.2.0-1.aarch64.rpm app/RPMS/
 
-# --- teslacontrold.rpm - no compilation, just packaging prebuilt binaries,
-#     but still needs the aarch64 target's rpm/rpmlint config, via sb2 ---
-mkdir -p helper/rpmbuild/SOURCES
-cp helper/dist/teslacontrold spike/bin/tesla-control spike/bin/tesla-keygen \
-   helper/dist/tesla-session \
-   helper/systemd/teslacontrold.service \
-   helper/dbus/org.teslacontrol.Helper.service helper/dbus/org.teslacontrol.Helper.conf \
-   helper/sailjail/TeslaControlHelper.permission \
-   helper/rpmbuild/SOURCES/
-docker cp helper teslacontrol-build:/home/mersdk/helper
-docker exec -u root teslacontrol-build chown -R mersdk:mersdk /home/mersdk/helper
-docker exec -w /home/mersdk/helper teslacontrol-build \
-  sb2 -t SailfishOS-5.2.0.15-aarch64 rpmbuild \
-    --define "_topdir /home/mersdk/helper/rpmbuild" -bb rpm/teslacontrold.spec
-docker cp teslacontrol-build:/home/mersdk/helper/rpmbuild/RPMS/aarch64/teslacontrold-0.1.0-1.aarch64.rpm helper/RPMS/
-
-docker rm -f teslacontrol-build
+docker rm -f electric-eel-build
 ```
 
-Two gotchas that cost time getting this working, already fixed in the specs
-committed here:
-- rpmlint's Sailfish config only accepts old Fedora short license names
-  (`ASL 2.0`, not `Apache-2.0`) and requires a `%changelog` section -
-  both specs use `ASL 2.0` now.
-- The prebuilt `tesla-control`/`tesla-keygen`/`teslacontrold` binaries carry
-  no GNU build-id note (true of the Rust musl build too - checked with
-  `readelf -n`), which makes rpm's `find-debuginfo.sh --strict-build-id`
-  hard-fail; `teslacontrold.spec` sets `%global debug_package %{nil}` to
-  skip debuginfo extraction.
-
-Prebuilt RPMs from this exact process are already checked into
-`app/RPMS/harbour-teslacontrol-0.1.0-1.aarch64.rpm` and
-`helper/RPMS/teslacontrold-0.1.0-1.aarch64.rpm`.
+Gotcha already fixed in the committed spec: rpmlint's Sailfish config only
+accepts old Fedora short license names (`ASL 2.0`, not `Apache-2.0`) and
+requires a `%changelog` section.
 
 ### 3. Install on the phone
 
+One package, no helper service to install or configure (devel-su only for
+`pkcon` itself):
+
 ```sh
-scp helper/rpmbuild/RPMS/aarch64/teslacontrold-*.rpm defaultuser@<phone-ip>:~/
-scp harbour-teslacontrol-0.1.0-1.aarch64.rpm defaultuser@<phone-ip>:~/
+scp app/RPMS/harbour-electric-eel-0.2.0-1.aarch64.rpm defaultuser@<phone-ip>:~/
 ssh defaultuser@<phone-ip>
-devel-su pkcon install-local ~/teslacontrold-*.rpm
-devel-su pkcon install-local ~/harbour-teslacontrol-*.rpm
-systemctl status teslacontrold   # should be active
+devel-su pkcon install-local ~/harbour-electric-eel-0.2.0-1.aarch64.rpm
 ```
+
+Renamed from `harbour-teslacontrol` - the two package names don't collide
+or upgrade each other, so remove the old one first if it's still
+installed: `devel-su pkcon remove harbour-teslacontrol`.
 
 ## Releasing (GitHub CI)
 
-`.github/workflows/release.yml` builds both RPMs and publishes them. Push a
+`.github/workflows/release.yml` builds the app RPM and publishes it. Push a
 tag to trigger it:
 
 ```sh
@@ -206,13 +142,14 @@ git tag v0.2.0
 git push origin v0.2.0
 ```
 
-- The RPM version is taken from the tag (leading `v` stripped); the spec
-  files are stamped with it at build time.
-- `tesla-control`/`tesla-keygen` are cross-compiled from a **pinned**
-  `teslamotors/vehicle-command` release (`v0.4.1` in the workflow) - bump
-  that `--branch` deliberately after validating a newer upstream release.
-- On a tag push the RPMs are attached to the GitHub release for that tag; on
-  a manual `workflow_dispatch` run they are uploaded as workflow artifacts
+- The RPM version is taken from the tag (leading `v` stripped); the spec,
+  the app's `.pro`, and `helper/Cargo.toml` are all stamped with it at
+  build time so `appVersion` and `core_version()` always match.
+- The in-app core bundle (Rust staticlib + Go `tesla-session`) is built
+  fresh on the runner by `helper/make-app-bundle.sh` — nothing binary is
+  committed to git.
+- On a tag push the RPM is attached to the GitHub release for that tag; on
+  a manual `workflow_dispatch` run it is uploaded as a workflow artifact
   instead (optional `version` input, else it fails).
 - The build pulls the ~13GB `coderus/sailfishos-platform-sdk-aarch64` image,
   so the job is slow (~30+ min) and needs the preinstalled Android/.NET/etc.
@@ -220,100 +157,57 @@ git push origin v0.2.0
 
 ## Testing runbook
 
-1. Launch Tesla Control → pull down → **Settings** → enter VIN → Save.
+1. Launch ElectricEel → pull down → **Settings** → enter VIN → Save.
 2. Pull down → **Pair Vehicle** → **Generate Key** → **Pair with Vehicle** →
    tap the NFC card on the center console when the car prompts.
 3. Start with read-only commands (Diagnostics → Ping, Keys → List Enrolled
    Keys) before actuation commands (Lock/Unlock, Climate, Trunk).
-4. If `teslacontrold` isn't reachable, `FirstPage` shows a banner with the
-   install command; check `systemctl status teslacontrold` and
-   `journalctl -u teslacontrold` on-device. If the daemon's journal shows
-   calls being authorized but the banner still won't clear, check the
-   app's own log too (`journalctl -t harbour-teslacontrol`) for a QML
-   error - see [KNOWN_ISSUES.md](KNOWN_ISSUES.md) for one already found
-   and fixed this way.
+4. If the core failed to initialize (`helperAvailable` false), `FirstPage`
+   shows a banner; check the app's own log (`journalctl -t
+   harbour-electric-eel`) for the `core_new` error, and on-device that the
+   bundled `tesla-session` exists and runs (`ls -l
+   /usr/share/harbour-electric-eel/bin/tesla-session`).
 5. The launcher runs the app with `--single-instance`: backgrounding it
    via the multitasking view and relaunching from the app grid resumes
    the existing process rather than starting fresh, so `Component.onCompleted`
    won't re-run and any newly-deployed QML won't take effect. Kill it
-   explicitly when iterating: `devel-su pkill -f harbour-teslacontrol`.
-
-## Build verification status
-
-Both RPMs have been built for real (not just written) using
-`coderus/sailfishos-platform-sdk-aarch64` with its bundled
-`SailfishOS-5.2.0.15-aarch64` target - one version patch behind the phone's
-5.2.0.16, close enough to compile/link against:
-
-- **`harbour-teslacontrol`**: `mb2 --target SailfishOS-5.2.0.15-aarch64 build`
-  compiled the C++, ran moc, linked against real Qt5/Silica/DBus, and
-  packaged the RPM cleanly (0 rpmlint errors after fixing the license tag
-  format and adding `%changelog` - see below). QML files aren't compiled,
-  only reviewed, so runtime QML errors are still possible.
-- **`teslacontrold`**: packaged with `rpmbuild` (via `sb2 -t
-  SailfishOS-5.2.0.15-aarch64`) after disabling debuginfo extraction
-  (`%global debug_package %{nil}`), since prebuilt binaries carry no GNU
-  build-id note and `find-debuginfo.sh --strict-build-id` errored on them
-  otherwise. Systemd scriptlet macros expanded correctly. This was
-  verified against the Go build; after the Rust rewrite, the daemon was
-  cross-compiled, smoke-tested locally against a private D-Bus bus, and
-  hot-deployed straight to `/opt/teslacontrold/bin/teslacontrold` on the
-  phone (bypassing RPM) for the on-device verification pass - the
-  `rpmbuild`/`sb2` packaging step itself hasn't been re-run against the
-  Rust binary yet. `readelf -n` confirms it still has no build-id note, so
-  `%global debug_package %{nil}` should still apply unchanged, but do a
-  real RPM build before shipping.
-
-Both `.rpm` files are checked into `app/RPMS/` and `helper/RPMS/` respectively.
-Neither has been installed on the phone yet or tested against a real vehicle.
+   explicitly when iterating: `devel-su pkill -f harbour-electric-eel`.
 
 ## Security notes
 
-`teslacontrold`'s D-Bus methods (`Run`, `GenerateKey`, `Pair`, `SetConfig`,
-`GetConfig`) check the calling process's PID/UID via
-`org.freedesktop.DBus.GetConnectionCredentials` and `/proc/<pid>/exe` against
-an allow-list (`TESLACONTROLD_ALLOWED_CALLERS`, default
-`/usr/bin/harbour-teslacontrol,/usr/bin/xdg-dbus-proxy`) before doing
-anything, since the D-Bus system policy alone can only scope access to the
-`defaultuser` account, not to a specific app.
+There is no privileged helper anymore. The Rust control core runs
+**in-process** inside the sandboxed app, and BLE goes over D-Bus to the
+stock `org.bluez` (`tesla-session` in "bluez" mode), so the app needs no
+setcap, no `CAP_NET_ADMIN`, and nothing beyond the stock
+`Bluetooth.permission` Sailjail grants - precisely why the raw-HCI route
+(Phase 0 findings 2/3) was abandoned.
 
-**Verified on real hardware (Jolla Phone 2026, Sailfish 5.2.0.16):** Sailjail
-routes a sandboxed app's entire system-bus traffic through a dedicated
-per-app `xdg-dbus-proxy` process, so the caller PID/exe that
-`teslacontrold` resolves for a legitimate call is the proxy's
-(`/usr/bin/xdg-dbus-proxy`), not `harbour-teslacontrol`'s own - hence
-that binary being in the allow-list default. The actual per-app gate is
-Sailjail itself: only an app whose `.desktop` file declares the
-`TeslaControlHelper` permission gets `org.teslacontrol.Helper` added to
-its own proxy's filter at all. `teslacontrold`'s allow-list still blocks a
-rogue *unsandboxed* process calling directly as `defaultuser`, since such
-a process's own exe matches neither allow-list entry. Resolving the
-proxy's exe cross-UID also requires `CAP_SYS_PTRACE`, granted via
-`AmbientCapabilities` in `teslacontrold.service` - without it, every
-caller is silently rejected (`Forbidden: cannot resolve caller binary`),
-which is what "helper service not found" turned out to mean the first
-time this was tested end-to-end. See [KNOWN_ISSUES.md](KNOWN_ISSUES.md)
-for the full investigation and why the previously-proposed SMACK-label
-fallback doesn't apply on this device.
+The only cross-process surface is the `tesla-session` child, spawned and
+fed commands exclusively by the in-process core over a private
+stdin/stdout pipe (newline-delimited JSON, one request in flight at a
+time) - there is no ambient D-Bus service to call, so no unauthorized
+process can invoke control commands. BLE to the car still uses the
+session-token auth that `tesla-control` itself uses, with the private key
+stored under the app's own data dir.
+
+The legacy raw-HCI (`hci`) transport still exists in `tesla-session` for
+dev-hardware diagnostics (it requires `CAP_NET_ADMIN`), but it is off by
+default and not what the app is packaged to use.
 
 ## Known gaps / next steps
 
+- The RPM builds successfully and has been staged on the phone, but hasn't
+  been installed or exercised against a real vehicle yet — the remaining
+  gate on this project, not a code issue.
+- QML files aren't compiled by `mb2`, only reviewed, so runtime QML errors
+  are still possible even though the C++/Qt build is clean.
 - `CommandCatalog.js` argument bounds/enum values (STATE on/off, ROLE,
   FORM_FACTOR, `state` CATEGORY names, etc.) are best-effort from public
   docs, not verified against `tesla-control help <cmd>` on this exact
   binary version - check that if a command rejects otherwise-sane input.
-- Icons in `app/icons/` are placeholders (solid color + "TC"); replace
-  before any real distribution.
 - Fleet API / internet mode (`-proxy`, `get`/`post` Fleet API passthrough)
   is intentionally out of scope for v1 - BLE only.
-- Compiled and packaged, but **not yet installed or run on-device** - the
-  `%pre`/`%post` scriptlets (user/group creation, `setcap`, systemd enable)
-  are only syntax-checked by rpmbuild, not execution-tested; same for the
-  actual D-Bus round-trip between the app and the helper.
 - Built RPMs and rpmbuild staging output are no longer tracked in git (see
   `.gitignore`) - they're build output, not source, and get regenerated by
-  the steps above. Rebuild locally before installing rather than relying on
-  a committed copy.
-- See [KNOWN_ISSUES.md](KNOWN_ISSUES.md) for the full list, including a
-  D-Bus caller-authorization fix from a later review pass that still needs
-  on-device verification.
+  the steps above.
+- See [KNOWN_ISSUES.md](KNOWN_ISSUES.md) for anything else open.

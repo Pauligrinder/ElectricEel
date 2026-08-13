@@ -1,15 +1,15 @@
-name: Build & publish RPMs
+name: Build & publish RPM
 
-# Builds both RPMs (harbour-teslacontrol + teslacontrold) exactly as
-# documented in README.md and publishes them:
+# Builds the app RPM (harbour-electric-eel) exactly as documented in
+# README.md and publishes it:
 #   - on a `v*` tag push  -> attached to the GitHub release for that tag
 #   - on workflow_dispatch -> uploaded as workflow artifacts (no release)
 #
-# The upstream tesla-control/tesla-keygen binaries are cross-compiled from a
-# PINNED vehicle-command release (v0.4.1), never from an unpinned checkout -
-# see KNOWN_ISSUES.md ("prebuilt binaries ... build fresh from a pinned
-# upstream commit"). Bump the clone --branch below deliberately when a new
-# upstream release is validated.
+# Phase 4 end-state: the Rust control core is an in-process staticlib
+# (aarch64 glibc) staged into the app tree by helper/make-app-bundle.sh,
+# which also builds the Go tesla-session child that the core spawns. The app
+# RPM is self-contained - there is no electric-eel-daemon helper package anymore
+# (BLUEZ_BACKEND_PLAN.md).
 
 on:
   push:
@@ -30,7 +30,7 @@ concurrency:
 
 jobs:
   build:
-    name: Build RPMs
+    name: Build RPM
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -49,6 +49,11 @@ jobs:
           # helper/session/go.mod requires go >= 1.26.5
           go-version: '1.26.5'
 
+      - name: Set up Rust (aarch64 glibc target for the in-app staticlib)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-gnu
+
       - name: Compute RPM version
         id: version
         run: |
@@ -63,93 +68,59 @@ jobs:
           fi
           echo "version=${VER}" >> "$GITHUB_OUTPUT"
 
-      - name: Cross-compile tesla-control / tesla-keygen (pinned upstream v0.4.1)
+      # The app's APP_VERSION (from $${VERSION} in the .pro) and the
+      # core's version (cargo package version, core_version()) are surfaced
+      # on the Settings page and compared on the front page; stamp both from
+      # the same tag so a matched pair always reports equal versions. This
+      # must run BEFORE the bundle is staged so the staticlib's
+      # core_version() carries the new tag.
+      - name: Stamp app core build versions from the tag
         run: |
-          mkdir -p "${GITHUB_WORKSPACE}/spike/bin"
-          git clone --depth 1 --branch v0.4.1 https://github.com/teslamotors/vehicle-command.git /tmp/vehicle-command
-          cd /tmp/vehicle-command
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o "${GITHUB_WORKSPACE}/spike/bin/tesla-control" ./cmd/tesla-control
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o "${GITHUB_WORKSPACE}/spike/bin/tesla-keygen" ./cmd/tesla-keygen
-          file "${GITHUB_WORKSPACE}/spike/bin/"*
+          sed -i "s/^VERSION =.*/VERSION = ${{ steps.version.outputs.version }}/" app/harbour-electric-eel.pro
+          sed -i "s/^version = .*/version = \"${{ steps.version.outputs.version }}\"/" helper/Cargo.toml
+          grep '^VERSION =' app/harbour-electric-eel.pro
+          grep '^version =' helper/Cargo.toml
+          test "$(sed -n 's/^VERSION = //p' app/harbour-electric-eel.pro)" = \
+               "$(sed -n 's/^version = "\(.*\)"/\1/p' helper/Cargo.toml)" \
+            || { echo "app (.pro) and core (Cargo.toml) build versions diverged"; exit 1; }
 
-      - name: Cross-compile tesla-session (Go, aarch64)
+      # Rust staticlib (aarch64 glibc - matches the app's Qt/Silica) + Go
+      # tesla-session child, staged into app/thirdparty and app/bin. Nothing
+      # here is committed to git (see .gitignore) - it is build output.
+      - name: Stage the in-app core bundle (staticlib + tesla-session)
         run: |
-          mkdir -p helper/dist
-          cd helper/session
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o ../dist/tesla-session .
-          file ../dist/tesla-session
-
-      - name: Cross-compile teslacontrold (Rust, aarch64-unknown-linux-musl)
-        run: |
-          cd "${GITHUB_WORKSPACE}/helper"
-          docker run --rm -v "$PWD":/home/rust/src messense/rust-musl-cross:aarch64-musl \
-            cargo build --release
-          mkdir -p dist
-          cp target/aarch64-unknown-linux-musl/release/teslacontrold dist/teslacontrold
-          file dist/teslacontrold
+          ./helper/make-app-bundle.sh
 
       - name: Stamp RPM version into the spec files
         run: |
-          sed -i "s/^Version:.*/Version:       ${{ steps.version.outputs.version }}/" app/rpm/harbour-teslacontrol.spec
-          sed -i "s/^Version:.*/Version:       ${{ steps.version.outputs.version }}/" helper/rpm/teslacontrold.spec
-          grep '^Version:' app/rpm/harbour-teslacontrol.spec helper/rpm/teslacontrold.spec
-
-      # The app's APP_VERSION (from $${VERSION} in the .pro) and the
-      # helper's GetVersion (cargo package version) are surfaced on the
-      # Settings page and compared on the front page; stamp both from the
-      # same tag so a matched app+helper pair always reports equal versions
-      # and a mismatch means an actually-out-of-step install, never a
-      # version-constant that lagged the tag.
-      - name: Stamp app helper build versions from the tag
-        run: |
-          sed -i "s/^VERSION =.*/VERSION = ${{ steps.version.outputs.version }}/" app/harbour-teslacontrol.pro
-          sed -i "s/^version = .*/version = \"${{ steps.version.outputs.version }}\"/" helper/Cargo.toml
-          grep '^VERSION =' app/harbour-teslacontrol.pro
-          grep '^version =' helper/Cargo.toml
-          test "$(sed -n 's/^VERSION = //p' app/harbour-teslacontrol.pro)" = \
-               "$(sed -n 's/^version = "\(.*\)"/\1/p' helper/Cargo.toml)" \
-            || { echo "app (.pro) and helper (Cargo.toml) build versions diverged"; exit 1; }
+          sed -i "s/^Version:.*/Version:       ${{ steps.version.outputs.version }}/" app/rpm/harbour-electric-eel.spec
+          grep '^Version:' app/rpm/harbour-electric-eel.spec
 
       - name: Pull Sailfish Platform SDK
         run: docker pull coderus/sailfishos-platform-sdk-aarch64
 
-      - name: Build RPMs in the Sailfish SDK container
+      - name: Build the app RPM in the Sailfish SDK container
         run: |
           set -euxo pipefail
-          docker create --name teslacontrol-build coderus/sailfishos-platform-sdk-aarch64 sleep infinity
-          docker start teslacontrol-build
-          trap 'docker rm -f teslacontrol-build >/dev/null 2>&1 || true' EXIT
+          docker create --name electric-eel-build coderus/sailfishos-platform-sdk-aarch64 sleep infinity
+          docker start electric-eel-build
+          trap 'docker rm -f electric-eel-build >/dev/null 2>&1 || true' EXIT
 
-          # harbour-teslacontrol.aarch64.rpm
-          docker cp app teslacontrol-build:/home/mersdk/app
-          docker exec -u root teslacontrol-build chown -R mersdk:mersdk /home/mersdk/app
-          docker exec -w /home/mersdk/app teslacontrol-build \
+          # harbour-electric-eel.aarch64.rpm (staticlib + Go child staged by
+          # make-app-bundle.sh ride along in app/thirdparty + app/bin)
+          docker cp app electric-eel-build:/home/mersdk/app
+          docker exec -u root electric-eel-build chown -R mersdk:mersdk /home/mersdk/app
+          docker exec -w /home/mersdk/app electric-eel-build \
             mb2 --target SailfishOS-5.2.0.15-aarch64 build
           mkdir -p app/RPMS
-          docker cp teslacontrol-build:/home/mersdk/app/RPMS/. app/RPMS/
+          docker cp electric-eel-build:/home/mersdk/app/RPMS/. app/RPMS/
 
-          # teslacontrold.aarch64.rpm (packages the prebuilt binaries)
-          mkdir -p helper/rpmbuild/SOURCES
-          cp helper/dist/teslacontrold spike/bin/tesla-control spike/bin/tesla-keygen \
-             helper/dist/tesla-session \
-             helper/systemd/teslacontrold.service \
-             helper/dbus/org.teslacontrol.Helper.service helper/dbus/org.teslacontrol.Helper.conf \
-             helper/sailjail/TeslaControlHelper.permission \
-             helper/rpmbuild/SOURCES/
-          docker cp helper teslacontrol-build:/home/mersdk/helper
-          docker exec -u root teslacontrol-build chown -R mersdk:mersdk /home/mersdk/helper
-          docker exec -w /home/mersdk/helper teslacontrol-build \
-            sb2 -t SailfishOS-5.2.0.15-aarch64 rpmbuild \
-              --define "_topdir /home/mersdk/helper/rpmbuild" -bb rpm/teslacontrold.spec
-          mkdir -p helper/RPMS
-          docker cp teslacontrol-build:/home/mersdk/helper/rpmbuild/RPMS/aarch64/. helper/RPMS/
-
-      - name: Sanity-check the built RPMs
+      - name: Sanity-check the built RPM
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq rpm >/dev/null
           expected="${{ steps.version.outputs.version }}"
           found=0
-          for f in app/RPMS/*.rpm helper/RPMS/*.rpm; do
+          for f in app/RPMS/*.rpm; do
             [ -e "$f" ] || continue
             found=1
             echo "== $f =="
@@ -161,21 +132,19 @@ jobs:
           done
           [ "$found" -eq 1 ] || { echo "no RPMs produced"; exit 1; }
 
-      - name: Publish RPMs to the tag release
+      - name: Publish RPM to the tag release
         if: github.event_name == 'push'
         uses: softprops/action-gh-release@v2
         with:
           files: |
             app/RPMS/*.rpm
-            helper/RPMS/*.rpm
           generate_release_notes: true
           make_latest: true
 
-      - name: Upload RPMs as workflow artifacts
+      - name: Upload RPM as workflow artifact
         if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
-          name: rpms-${{ steps.version.outputs.version }}
+          name: rpm-${{ steps.version.outputs.version }}
           path: |
             app/RPMS/*.rpm
-            helper/RPMS/*.rpm

@@ -1,7 +1,7 @@
 //! D-Bus daemon surface for the control core (pre-Phase-4 and fallback). This
 //! module is only compiled with the `dbus` cargo feature, which only the
-//! `teslacontrold` binary enables; the app's staticlib (no features) never
-//! pulls in zbus or the caller-authorization machinery.
+//! `electric-eel-daemon` binary enables; the app's staticlib (no features)
+//! never pulls in zbus or the caller-authorization machinery.
 //!
 //! All real work lives in [`crate::core::Core`]; these interface methods are
 //! thin wrappers that (a) authorize the D-Bus caller and (b) hand off to the
@@ -14,7 +14,7 @@ use crate::authorize::authorize;
 use crate::core::{Core, GetConfigReply};
 use crate::error::HelperError;
 
-pub const IFACE_NAME: &str = "org.teslacontrol.Helper1";
+pub const IFACE_NAME: &str = "org.electriceel.Helper1";
 
 pub struct Helper {
     core: Core,
@@ -61,7 +61,7 @@ impl Helper {
 // `&str`, which zvariant *can* deserialize zero-copy - see set_config's
 // vin/key_name, which clippy correctly flagged and are fixed below).
 #[allow(clippy::needless_pass_by_value)]
-#[zbus::interface(name = "org.teslacontrol.Helper1")]
+#[zbus::interface(name = "org.electriceel.Helper1")]
 impl Helper {
     /// Executes a single command. cmd must be one of the known tesla-control
     /// subcommands; args are passed through verbatim (never as flags).

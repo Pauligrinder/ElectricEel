@@ -107,7 +107,7 @@ Page {
                 id: keyNameField
                 width: parent.width
                 label: "Key name"
-                placeholderText: "harbour-teslacontrol"
+                placeholderText: "harbour-electric-eel"
             }
 
             Slider {
@@ -150,11 +150,11 @@ Page {
 
             SectionHeader { text: "About" }
 
-            // Versions of the two halves this app is made of. They're
-            // stamped from the same release tag, so a difference (or an
-            // empty helper version, i.e. a helper too old to have GetVersion)
-            // means the RPMs were updated out of step - exactly the state
-            // that used to surface as a silent "No VIN configured".
+            // Versions of the app and its in-process control core. They're
+            // stamped from the same release tag and compiled together, so a
+            // difference (or an empty core version, i.e. one too old to have
+            // GetVersion) means something's wrong with the install - exactly
+            // the state that used to surface as a silent "No VIN configured".
             Label {
                 anchors.left: parent.left
                 anchors.right: parent.right
@@ -162,10 +162,10 @@ Page {
                 wrapMode: Text.Wrap
                 font.pixelSize: Theme.fontSizeExtraSmall
                 color: Theme.secondaryColor
-                text: "App: Tesla Control " + teslaClient.appVersion +
-                      "   |   helper: " + (teslaClient.helperVersion.length > 0
-                                           ? "teslacontrold " + teslaClient.helperVersion
-                                           : "teslacontrold (too old / unknown)")
+                text: "App: ElectricEel " + teslaClient.appVersion +
+                      "   |   core: " + (teslaClient.helperVersion.length > 0
+                                         ? teslaClient.helperVersion
+                                         : "(too old / unknown)")
             }
 
             Label {
@@ -178,9 +178,9 @@ Page {
                 visible: teslaClient.helperVersion.length === 0
                         || teslaClient.helperVersion !== teslaClient.appVersion
                 text: teslaClient.helperVersion.length === 0
-                    ? "teslacontrold is too old to report a version - install the helper RPM from the same release as this app."
-                    : "Version mismatch: update teslacontrold to " + teslaClient.appVersion +
-                      " to match this app."
+                    ? "The control core is too old to report a version - reinstall the app."
+                    : "Version mismatch: core " + teslaClient.helperVersion +
+                      " vs app " + teslaClient.appVersion + " - reinstall the app."
             }
         }
     }

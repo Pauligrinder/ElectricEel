@@ -1,5 +1,5 @@
-//! In-process control core for harbour-teslacontrol (Phase 4 of
-//! `BLUEZ_BACKEND_PLAN.md)`: everything `helper.rs`'s D-Bus daemon did, minus
+//! In-process control core for harbour-electric-eel (see `BLUEZ_BACKEND_PLAN.md`
+//! for why): everything `helper.rs`'s D-Bus daemon did, minus
 //! the D-Bus surface, the caller authorization, and the system-bus
 //! connection. The app links this as a staticlib and drives it through the C
 //! ABI in `ffi.rs`; the daemon binary (`main.rs` + `helper.rs`, built only
@@ -50,7 +50,7 @@ pub struct Core {
     bin_dir: String,
     state_dir: String,
     /// `Some()` only when a persistent session is desired (the daemon only
-    /// enables it with `TESLACONTROLD_PERSISTENT_SESSION`; the app always
+    /// enables it with `ELECTRICEEL_PERSISTENT_SESSION`; the app always
     /// enables it) - None means `run()` behaves exactly as one-shot did,
     /// not "session client that always fails over".
     session: Option<SessionClient>,
@@ -230,9 +230,8 @@ impl Core {
     ///
     /// With a persistent session this routes through tesla-session's `keygen`
     /// request (pure crypto, no BLE) so the privileged tesla-keygen binary
-    /// isn't exec'd at all - Phases 3-4 of `BLUEZ_BACKEND_PLAN.md`. Without a
-    /// session it falls back to exec'ing tesla-keygen, the pre-session
-    /// behavior.
+    /// isn't exec'd at all. Without a session it falls back to exec'ing
+    /// tesla-keygen, the pre-session behavior.
     pub(crate) fn generate_key(&self, force: bool) -> (bool, String, String) {
         // Holds the config mutex for the whole call, same as the original -
         // GenerateKey doesn't read Config, but this still serializes
