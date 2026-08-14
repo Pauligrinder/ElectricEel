@@ -36,9 +36,8 @@ use crate::error::HelperError;
 /// systemd unit's `AmbientCapabilities` (deleted in Phase 4).
 #[must_use]
 pub fn default_allowed_callers() -> Vec<String> {
-    let raw = std::env::var("ELECTRICEEL_ALLOWED_CALLERS").unwrap_or_else(|_| {
-        "/usr/bin/harbour-electric-eel,/usr/bin/xdg-dbus-proxy".to_string()
-    });
+    let raw = std::env::var("ELECTRICEEL_ALLOWED_CALLERS")
+        .unwrap_or_else(|_| "/usr/bin/harbour-electric-eel,/usr/bin/xdg-dbus-proxy".to_string());
     resolve_caller_paths(&split_and_trim(&raw))
 }
 
@@ -110,9 +109,7 @@ pub(crate) fn authorize(
         // this branch used to fail silently in the original Go
         // implementation, which is exactly what made the original "helper
         // not found" bug invisible in the journal.
-        eprintln!(
-            "electric-eel: rejected call from pid {pid}: cannot resolve caller binary ({e})"
-        );
+        eprintln!("electric-eel: rejected call from pid {pid}: cannot resolve caller binary ({e})");
         HelperError::Forbidden("cannot resolve caller binary".to_string())
     })?;
     let exe = exe.to_string_lossy();

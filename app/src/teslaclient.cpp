@@ -217,8 +217,10 @@ TeslaClient::TeslaClient(QObject *parent)
     , m_helperAvailable(false)
 {
     // The worker lives on its own thread so the blocking C ABI calls
-    // (core_run/core_pair: up to connect+command+10s, and Pair adds a 30s
-    // NFC-tap allowance) never stall the GUI thread.
+    // (core_run/core_pair: up to connect+command+10s, and Pair adds a 95s
+    // allowance covering tesla-session's 90s post-add-key-request grace
+    // period for the NFC-card tap - see core.rs's pair()) never stall the
+    // GUI thread.
     QThread *thread = new QThread(this);
     m_worker = new CoreWorker();
     m_worker->moveToThread(thread);

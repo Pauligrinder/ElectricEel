@@ -139,7 +139,7 @@ var CATEGORIES = [
       cmd("media-volume-up", "Volume Up"),
       cmd("media-volume-down", "Volume Down"),
       cmd("media-set-volume", "Set Volume", [
-        arg("VOLUME", "float", { min: 0, max: 11, step: 0.3, def: 5 })
+        arg("VOLUME", "float", { min: 0, max: 10, step: 0.5, def: 5 })
       ]),
     ]
   },
@@ -250,6 +250,13 @@ function trunkClosed(s){ return !s.trunkRearOpen }
 // weekly and gets an auto-generated ID unless told otherwise) - marked
 // optional here relies on ArgumentDialog.qml's "not set" choice actually
 // omitting the arg, not just defaulting to the first enum value / 0.
+// Note: unlike precondition-schedule-add, charging-schedule-add does NOT
+// honor an ID argument - commands_vendor.go's handler stamps the schedule's
+// Id from time.Now().Unix() and never reads args["ID"] (upstream v0.4.1
+// behavior, commands_vendor.go "charging-schedule-add"). So no ID field is
+// offered here; preconditionScheduleAddArgs() keeps one because its handler
+// does read it. Use charging-schedule-remove with TYPE "id" to target an
+// existing schedule instead.
 function chargeScheduleAddArgs() {
   return [
     arg("DAYS", "string", { placeholder: "Mon,Tues,Wed" }),
@@ -257,7 +264,6 @@ function chargeScheduleAddArgs() {
     arg("LATITUDE", "float", { min: -90, max: 90, step: 0.000001, def: 0 }),
     arg("LONGITUDE", "float", { min: -180, max: 180, step: 0.000001, def: 0 }),
     arg("REPEAT", "enum", { values: ["once"], optional: true }),
-    arg("ID", "int", { placeholder: "leave blank for a new schedule", optional: true }),
     arg("ENABLED", "enum", { values: ["true","false"], optional: true }),
   ]
 }

@@ -1,0 +1,53 @@
+name: CI
+
+# Runs the real quality gates on every push and pull request, independent of
+# the release packaging workflow (release.yml only builds/publishes the RPM and
+# never exercised the test suites - see the old KNOWN gap where "CI green" did
+# not mean "tests pass"). Gates mirror the local dev commands:
+#   Rust: cargo fmt --check, cargo clippy -- -D warnings, cargo test
+#   Go  : gofmt -l, go vet ./..., go test ./...
+#
+# Cross-compilation for the staticlib / app RPM (aarch64) is deliberately not
+# part of this job: that's the release workflow's concern, and testing the
+# host build catches logic regressions far faster than the ~30min RPM build.
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    name: Rust core (fmt, clippy, test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: helper
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets --all-features -- -D warnings
+      - run: cargo test
+
+  go:
+    name: Go session (gofmt, vet, test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: helper/session
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          # matches helper/session/go.mod
+          go-version: '1.26.5'
+      - run: gofmt -l .
+      - run: go vet ./...
+      - run: go test ./...

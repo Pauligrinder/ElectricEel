@@ -53,7 +53,9 @@ fn main() {
     let session = if env_flag("ELECTRICEEL_PERSISTENT_SESSION") {
         let ble_backend = env_or("ELECTRICEEL_BLE_BACKEND", "hci");
         if ble_backend != "hci" && ble_backend != "bluez" {
-            eprintln!("electric-eel: invalid ELECTRICEEL_BLE_BACKEND {ble_backend:?} (want hci or bluez)");
+            eprintln!(
+                "electric-eel: invalid ELECTRICEEL_BLE_BACKEND {ble_backend:?} (want hci or bluez)"
+            );
             std::process::exit(1);
         }
         eprintln!(

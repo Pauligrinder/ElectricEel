@@ -114,8 +114,11 @@ Page {
                 id: connectTimeoutSlider
                 width: parent.width
                 label: "Connect timeout"
+                // Max mirrors helper/src/config.rs's MAX_TIMEOUT_SEC (300),
+                // so a saved value that high isn't silently clamped down to
+                // the old 60 cap and then persisted as 60 on the next Save.
                 minimumValue: 5
-                maximumValue: 60
+                maximumValue: 300
                 stepSize: 1
                 valueText: value + " s"
             }
@@ -125,7 +128,7 @@ Page {
                 width: parent.width
                 label: "Command timeout"
                 minimumValue: 2
-                maximumValue: 30
+                maximumValue: 300
                 stepSize: 1
                 valueText: value + " s"
             }

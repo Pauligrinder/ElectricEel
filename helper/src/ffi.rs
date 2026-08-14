@@ -325,6 +325,10 @@ pub unsafe extern "C" fn core_pair(
             CoreError::Ok
         }
         Err(e) => {
+            if !ok.is_null() {
+                // SAFETY: caller-owned slot.
+                unsafe { *ok = false };
+            }
             if !error_message.is_null() {
                 // SAFETY: caller-owned slot.
                 unsafe { *error_message = err_str(&e.to_string()) };
@@ -422,8 +426,7 @@ mod tests {
     use std::ptr;
 
     fn tmp_core() -> (*mut Core, std::path::PathBuf) {
-        let dir =
-            std::env::temp_dir().join(format!("electric-eel-ffitest-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("electric-eel-ffitest-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let bin_dir = dir.join("bin");
         std::fs::create_dir_all(&bin_dir).unwrap();

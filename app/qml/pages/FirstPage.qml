@@ -189,6 +189,16 @@ Page {
                 page.statusStage = ""
                 if (page.statusError.length === 0)
                     page.statusError = message
+                // status:toggle's optimistic() flip (toggleLock/toggleClimate/
+                // toggleWindows) assumed the command would reach the vehicle -
+                // a hard failure (busy adapter, no session, core not
+                // initialized) means it never did, so the icon is now
+                // showing a state that was never actually requested. Re-fetch
+                // the same way onCommandFinished does for a soft (ok=false)
+                // failure, rather than leaving the wrong icon up until the
+                // user happens to pull down to refresh.
+                if (requestId === "status:toggle")
+                    toggleSettleTimer.restart()
             }
         }
     }

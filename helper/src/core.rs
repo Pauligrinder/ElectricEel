@@ -145,6 +145,7 @@ impl Core {
                 )));
             }
         }
+        validate_arg_ranges(cmd, args)?;
 
         let (common, timeout, vin, connect_timeout_sec, command_timeout_sec) = {
             let cfg = self.cfg.lock().unwrap();
@@ -318,16 +319,20 @@ impl Core {
         let (common, vin, key_path, connect_timeout_sec, command_timeout_sec, timeout) = {
             let cfg = self.cfg.lock().unwrap();
             let common = self.common_args_locked(&cfg)?;
-            // Same envelope as Run() (connect + command + 10s), plus a
-            // flat 30s allowance for the physical NFC-card tap at the
-            // center console this command waits for. Previously a
-            // hardcoded 60s independent of the configured connect
-            // timeout - fine at the 20s default (60s > 20+5+10=35s), but
-            // could cut off a connect attempt that was still legitimately
-            // in progress once connect_timeout_sec was raised anywhere
-            // near its 300s max.
+            // Same envelope as Run() (connect + command + 10s), plus an
+            // allowance that covers the physical NFC-card tap at the
+            // center console this command waits for. The persistent
+            // session (tesla-session, helper/session/main.go) deliberately
+            // holds the BLE connection open for 90s *after* a successful
+            // add-key-request so the operator has time to walk up and tap
+            // the card, and only then replies - so the deadline here must
+            // exceed that 90s grace period, or the core kills the session
+            // in the middle of pairing and reports a spurious timeout.
+            // (A flat 30s used to be added, which under the 90s grace was
+            // less than the real reply latency even at default timeouts:
+            // 20+5+10+30 = 65s < 90s.) 95s comfortably tops the 90s grace.
             let secs =
-                i64::from(cfg.connect_timeout_sec) + i64::from(cfg.command_timeout_sec) + 10 + 30;
+                i64::from(cfg.connect_timeout_sec) + i64::from(cfg.command_timeout_sec) + 10 + 95;
             (
                 common,
                 cfg.vin.clone(),
@@ -511,6 +516,37 @@ fn generate_key_one_shot(
     }
 }
 
+/// Rejects out-of-range numeric arguments for the few commands with a
+/// well-defined value range, before anything reaches the wired session or
+/// the subprocess. This is server-side defense-in-depth: the QML sliders in
+/// `ArgumentDialog.qml` already bound these, but the JSON stdin path accepts
+/// arbitrary args, and the vendored upstream handlers (`commands_vendor.go`)
+/// do `Atoi` to `int32` with no range check, so a huge value would wrap or be
+/// sent to the vehicle. Keep the per-command bounds here in sync with the
+/// `min`/`max` in `app/qml/js/CommandCatalog.js`.
+fn validate_arg_ranges(cmd: &str, args: &[String]) -> Result<(), HelperError> {
+    let bounds: Option<(i64, i64)> = match cmd {
+        "charging-set-limit" => Some((50, 100)),
+        "charging-set-amps" => Some((1, 48)),
+        _ => None,
+    };
+    let Some((lo, hi)) = bounds else {
+        return Ok(());
+    };
+    let arg = args.first().ok_or_else(|| {
+        HelperError::InvalidArgument(format!("{cmd} requires a numeric argument"))
+    })?;
+    let value: i64 = arg.trim().parse().map_err(|_| {
+        HelperError::InvalidArgument(format!("{cmd} argument must be an integer: {arg}"))
+    })?;
+    if !(lo..=hi).contains(&value) {
+        return Err(HelperError::InvalidArgument(format!(
+            "{cmd} argument {value} out of range [{lo}, {hi}]"
+        )));
+    }
+    Ok(())
+}
+
 /// Execs a bundled binary with a hard deadline, returning combined exit
 /// status. Never invoked with attacker-controlled binary names.
 pub(crate) fn run_binary(
@@ -595,6 +631,28 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_validate_arg_ranges() {
+        // Unbounded commands pass through untouched (only the dash-check
+        // guard in run() constrains them).
+        assert!(super::validate_arg_ranges("lock", &[]).is_ok());
+        assert!(super::validate_arg_ranges("ping", &[]).is_ok());
+
+        // Bounded charging commands.
+        assert!(super::validate_arg_ranges("charging-set-limit", &["50".into()]).is_ok());
+        assert!(super::validate_arg_ranges("charging-set-limit", &["100".into()]).is_ok());
+        assert!(super::validate_arg_ranges("charging-set-limit", &["49".into()]).is_err());
+        assert!(super::validate_arg_ranges("charging-set-limit", &["101".into()]).is_err());
+        assert!(super::validate_arg_ranges("charging-set-amps", &["1".into()]).is_ok());
+        assert!(super::validate_arg_ranges("charging-set-amps", &["48".into()]).is_ok());
+        assert!(super::validate_arg_ranges("charging-set-amps", &["0".into()]).is_err());
+        assert!(super::validate_arg_ranges("charging-set-amps", &["49".into()]).is_err());
+
+        // Non-integer / missing arguments are rejected, not passed through.
+        assert!(super::validate_arg_ranges("charging-set-limit", &[]).is_err());
+        assert!(super::validate_arg_ranges("charging-set-limit", &["abc".into()]).is_err());
+    }
+
     // Regression test for a real bug: generate_key locked self.cfg, then
     // locked it again on the same thread to read vin/timeouts out of it.
     // std::sync::Mutex isn't reentrant, so that second lock() blocked
@@ -624,9 +682,14 @@ mod tests {
                 // No tesla-keygen binary in this test's fake bin_dir, so the
                 // one-shot fallback is expected to fail - what's under test
                 // is that the call returns at all, not that it succeeds.
-                assert!(!ok, "unexpected success with no tesla-keygen binary present");
+                assert!(
+                    !ok,
+                    "unexpected success with no tesla-keygen binary present"
+                );
             }
-            Err(_) => panic!("generate_key did not return within 5s - looks deadlocked on self.cfg"),
+            Err(e) => panic!(
+                "generate_key did not return within 5s - looks deadlocked on self.cfg (recv: {e:?})"
+            ),
         }
     }
 }

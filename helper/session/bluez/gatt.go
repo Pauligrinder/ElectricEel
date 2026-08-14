@@ -91,6 +91,7 @@ func tryConnect(ctx context.Context, bus dbusBus, adapterID, vin string, target 
 		inbox:       make(chan []byte, connector.BufferSize),
 		blockLength: maxExpectedMTU - 3,
 		done:        make(chan struct{}),
+		loopDone:    make(chan struct{}),
 		match:       match,
 	}
 	go c.rxLoop()

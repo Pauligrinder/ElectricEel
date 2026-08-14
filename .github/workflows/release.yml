@@ -56,9 +56,15 @@ jobs:
 
       - name: Compute RPM version
         id: version
+        # The workflow_dispatch input is routed through an env var (not
+        # interpolated straight into the run: script) so its contents are
+        # never re-parsed by the shell - a value like "$(curl ...)" can't
+        # inject commands. It's still strictly validated below before use.
+        env:
+          RELEASE_VERSION: ${{ github.event.inputs.version }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.version }}" ]; then
-            VER="${{ github.event.inputs.version }}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "$RELEASE_VERSION" ]; then
+            VER="$RELEASE_VERSION"
           else
             VER="${GITHUB_REF_NAME#v}"
           fi

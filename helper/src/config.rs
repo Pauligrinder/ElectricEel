@@ -456,10 +456,8 @@ mod tests {
 
     #[test]
     fn test_load_sanitizes_out_of_range_fields() {
-        let dir = std::env::temp_dir().join(format!(
-            "electric-eel-test-sanitize-{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("electric-eel-test-sanitize-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
         let path = dir.join("config.json");
 
@@ -499,10 +497,8 @@ mod tests {
         // bug where a missing (not just invalid) field made serde reject the
         // whole file, so load() fell back to Config::default() and silently
         // dropped the VIN/key_name/timeouts too, not just the model.
-        let dir = std::env::temp_dir().join(format!(
-            "electric-eel-test-premodel-{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("electric-eel-test-premodel-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
         let path = dir.join("config.json");
 

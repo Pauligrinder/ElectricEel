@@ -715,13 +715,33 @@ func captureOutput(f func()) (stdout, stderr string) {
 	go func() { b, _ := io.ReadAll(outR); outCh <- string(b) }()
 	go func() { b, _ := io.ReadAll(errR); errCh <- string(b) }()
 
-	f()
+	// Run the wrapped handler, but capture any panic and let the cleanup
+	// below run regardless, so a panicking handler can't leave the
+	// process-global os.Stdout/os.Stderr swapped to a pipe (which would
+	// silently swallow every later response/event) or strand the reader
+	// goroutines.
+	var panicValue interface{}
+	func() {
+		defer func() { panicValue = recover() }()
+		f()
+	}()
 
+	// Closing the write ends lets the readers hit EOF and finish; the pipe
+	// is drained only after f returns so a handler that fills the OS buffer
+	// mid-call can't deadlock against us.
 	outW.Close()
 	errW.Close()
 	os.Stdout, os.Stderr = origOut, origErr
 
-	return <-outCh, <-errCh
+	out := <-outCh
+	errOut := <-errCh
+	_ = outR.Close()
+	_ = errR.Close()
+
+	if panicValue != nil {
+		panic(panicValue)
+	}
+	return out, errOut
 }
 
 func main() {

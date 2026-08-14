@@ -28,7 +28,19 @@ type Connection struct {
 	mu        sync.Mutex // serializes Send
 	closeOnce sync.Once
 	done      chan struct{}
-	match     []dbus.MatchOption
+	// loopDone is closed by rxLoop when it returns. Close() waits on it
+	// before returning: rxLoop reads directly off the dbusBus's single
+	// process-lifetime signal channel (shared by every Connection created
+	// from the same bluez.Conn, see bluez.go's adaptConn), so without this
+	// wait a caller that tears down and immediately reconnects (idle
+	// timeout followed by a fresh command, or presenceLoop's arrival
+	// reconnect) could start a new rxLoop that races the outgoing one for
+	// that same channel, occasionally losing a signal to the goroutine
+	// that's on its way out. nil (left unset) when no rxLoop was ever
+	// started, e.g. connection_test.go's newTestConnection - Close() must
+	// not block forever waiting for a close that will never come.
+	loopDone chan struct{}
+	match    []dbus.MatchOption
 
 	// RX reassembly state. Touched only by the rxLoop goroutine (the single
 	// writer), so it needs no lock of its own.
@@ -104,9 +116,15 @@ func (c *Connection) writeChunk(b []byte) error {
 }
 
 // Close tears down the RX subscription and the device link. Idempotent.
+// Blocks until rxLoop has actually exited (see loopDone's doc comment) so a
+// caller that reconnects right after Close() returns can't race the old
+// rxLoop for the shared signal channel.
 func (c *Connection) Close() {
 	c.closeOnce.Do(func() {
 		close(c.done)
+		if c.loopDone != nil {
+			<-c.loopDone
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
 		// Best-effort: the link is going away regardless.
@@ -118,6 +136,7 @@ func (c *Connection) Close() {
 
 // rxLoop dispatches incoming D-Bus signals until the connection is closed.
 func (c *Connection) rxLoop() {
+	defer close(c.loopDone)
 	for {
 		select {
 		case <-c.done:
