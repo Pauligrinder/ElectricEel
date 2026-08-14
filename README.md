@@ -196,9 +196,14 @@ default and not what the app is packaged to use.
 
 ## Known gaps / next steps
 
-- The RPM builds successfully and has been staged on the phone, but hasn't
-  been installed or exercised against a real vehicle yet — the remaining
-  gate on this project, not a code issue.
+- The RPM builds, installs, and has been exercised against a real vehicle:
+  BLE commands (lock/unlock/climate/trunk/...) work over the `org.bluez`
+  backend. Driving is authorized by the enrolled key: with the pairing form
+  factor now set to a phone key (`android_device`, see `helper/src/core.rs`),
+  the connected session is treated as a drive-authorizing phone key. If a
+  re-enrolled key still requires a physical NFC-card tap to drive, re-pair
+  and confirm the vehicle's key list shows the key as a phone device, not a
+  cloud key.
 - QML files aren't compiled by `mb2`, only reviewed, so runtime QML errors
   are still possible even though the C++/Qt build is clean.
 - `CommandCatalog.js` argument bounds/enum values (STATE on/off, ROLE,

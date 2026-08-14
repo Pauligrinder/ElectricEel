@@ -351,11 +351,18 @@ impl Core {
             ));
         }
 
+        // Form factor is what tells the vehicle this is a real phone key that
+        // authorizes driving. A cloud_key is a Fleet/API key: it can send BLE
+        // commands (lock/unlock/climate/...) but the car does NOT count it as a
+        // drive-authorizing key, so the driver still has to tap the physical
+        // NFC card to drive. Enrolling as a phone form factor (android_device)
+        // makes the vehicle treat the connected session as a phone key, which
+        // authorizes both unlock and drive - no NFC tap needed to drive.
         let pair_args = [
             "add-key-request",
             pubkey_path.to_string_lossy().as_ref(),
             "owner",
-            "cloud_key",
+            "android_device",
         ]
         .map(str::to_string)
         .to_vec();

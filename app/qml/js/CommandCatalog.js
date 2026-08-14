@@ -96,6 +96,12 @@ var CATEGORIES = [
     commands: [
       cmd("lock", "Lock", [], unlockedState),
       cmd("unlock", "Unlock", [], lockedState),
+      // drive = remote start / keyless drive (RKE_ACTION_REMOTE_DRIVE): lets
+      // a keyless driver drive for a short window after unlock. Distinct from
+      // phone-key driving, which needs no command at all - the car authorizes
+      // it from an authenticated VCSEC session with a valid key. Kept in
+      // Locks & Security as it's a drive-authorization action.
+      cmd("drive", "Remote Start (Keyless Drive)", []),
       cmd("sentry-mode", "Sentry Mode", [ arg("STATE", "enum", { values: ["on","off"] }) ]),
       cmd("valet-mode-on", "Valet Mode On", [ arg("PIN", "pin", {}) ]),
       cmd("valet-mode-off", "Valet Mode Off"),
@@ -166,7 +172,10 @@ var CATEGORIES = [
       cmd("list-keys", "List Enrolled Keys"),
       // FORM_FACTOR is vcsec.KeyFormFactor's own value names (minus the
       // KEY_FORM_FACTOR_ prefix, case-insensitive) - "phone_key" isn't one
-      // of them; this app's own key is enrolled as a cloud_key.
+      // of them. This app's own pairing (helper/src/core.rs) enrolls as
+      // android_device, a phone form factor the vehicle treats as a real
+      // drive-authorizing key (cloud_key would remote-control but not
+      // authorize driving).
       cmd("add-key", "Add Key", [
         arg("PUBLIC_KEY", "string", { placeholder: "path to public_key.pem" }),
         arg("ROLE", "enum", { values: ["owner","driver"] }),
