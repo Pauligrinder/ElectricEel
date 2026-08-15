@@ -62,6 +62,15 @@ Page {
                 text: page.statusText
             }
 
+            BusyIndicator {
+                anchors.horizontalCenter: parent.horizontalCenter
+                // Spins until the first GetConfig reply lands (page.configReady
+                // gates the Save button below) so the disabled Save reads as
+                // "still loading" rather than "broken".
+                running: !page.configReady
+                visible: running
+            }
+
             TextField {
                 id: vinField
                 width: parent.width

@@ -10,6 +10,10 @@ Page {
     property bool pairing: false
     property string pairStatus: ""
     property string keysListOutput: ""
+    // False until the first GetConfig reply lands (onConfigLoaded below).
+    // Gates the Generate Key button: clicking it before the load finished
+    // would run with no knowledge of an already-enrolled key.
+    property bool configReady: false
 
     Connections {
         target: teslaClient
@@ -37,6 +41,7 @@ Page {
             page.keysListOutput = message
         }
         onConfigLoaded: {
+            page.configReady = true
             if (hasKey)
                 page.publicKeyPem = publicKeyPem
         }
@@ -65,10 +70,24 @@ Page {
                 color: Theme.secondaryColor
             }
 
+            BusyIndicator {
+                anchors.horizontalCenter: parent.horizontalCenter
+                // Spins until the first GetConfig reply lands (configReady
+                // gates the Generate Key button) so the disabled button reads
+                // as "still loading" rather than "broken".
+                running: !page.configReady
+                visible: running
+            }
+
             Button {
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: page.generating ? "Generating..." : "Generate Key"
-                enabled: !page.generating
+                // Gated on configReady: clicking Generate Key before the
+                // config loads would run without knowing a key already
+                // exists. Also disabled while pairing - generating during the
+                // in-flight add-key-request would invalidate the session
+                // mid-pairing.
+                enabled: page.configReady && !page.generating && !page.pairing
                 onClicked: {
                     page.generating = true
                     teslaClient.generateKey(false)
