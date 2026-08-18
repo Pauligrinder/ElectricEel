@@ -160,6 +160,11 @@ git push origin v0.2.1
 1. Launch ElectricEel → pull down → **Settings** → enter VIN → Save.
 2. Pull down → **Pair Vehicle** → **Generate Key** → **Pair with Vehicle** →
    tap the NFC card on the center console when the car prompts.
+   Pairing automatically starts phone-key mode whenever the app is running:
+   it scans in the background, holds an authenticated BLE session while the
+   vehicle is nearby, and answers passive UNLOCK/DRIVE challenges. It never
+   proactively unlocks or locks; handle-pull and the vehicle's Walk-Away
+   Door Lock setting remain authoritative.
 3. Start with read-only commands (Diagnostics → Ping, Keys → List Enrolled
    Keys) before actuation commands (Lock/Unlock, Climate, Trunk).
 4. If the core failed to initialize (`helperAvailable` false), `FirstPage`
@@ -204,6 +209,11 @@ default and not what the app is packaged to use.
   re-enrolled key still requires a physical NFC-card tap to drive, re-pair
   and confirm the vehicle's key list shows the key as a phone device, not a
   cloud key.
+- Automatic phone-key protocol handling is unit-tested but still needs a
+  real-car pass after installation: background the app, verify handle-pull
+  unlock, drive without an NFC tap, walk away with the vehicle setting both
+  enabled and disabled, then return after BLE signal loss and verify it
+  reconnects. The pairing page shows live phone-key state and errors.
 - QML files aren't compiled by `mb2`, only reviewed, so runtime QML errors
   are still possible even though the C++/Qt build is clean.
 - `CommandCatalog.js` argument bounds/enum values (STATE on/off, ROLE,

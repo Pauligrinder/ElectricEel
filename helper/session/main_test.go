@@ -349,6 +349,20 @@ func TestPresenceStepDepartsAfterFarTimeout(t *testing.T) {
 	}
 }
 
+// TestPresenceDepartActionDoesNotImplyLock documents phase-1 policy: Depart
+// is only a session-teardown signal. Explicit lock on walk-away was removed
+// so the vehicle's Walk-Away Door Lock setting remains authoritative.
+func TestPresenceDepartActionDoesNotImplyLock(t *testing.T) {
+	if presenceActionDepart == presenceActionNone {
+		t.Fatal("Depart must remain a distinct action for teardown-without-lock")
+	}
+	// Sanity: Arrive still exists and is distinct from Depart (arrival must
+	// never be conflated with an unlock/lock actuation).
+	if presenceActionArrive == presenceActionDepart {
+		t.Fatal("Arrive and Depart must remain distinct")
+	}
+}
+
 // TestParsePresenceArgsDefaults verifies presence-start with no args gets
 // sane hysteresis defaults rather than zero values (a zero nearConfirm, for
 // instance, would disable the arrival debounce entirely).
@@ -427,6 +441,9 @@ func TestDispatchPresenceStopWithoutStartIsSafe(t *testing.T) {
 	resp := s.dispatch(request{ID: "p1", Cmd: "presence-stop"})
 	if !resp.OK {
 		t.Fatalf("expected presence-stop with nothing running to succeed, got: %s", resp.Stderr)
+	}
+	if s.presenceGeneration == 0 {
+		t.Fatal("presence-stop must invalidate any exiting loop generation")
 	}
 }
 

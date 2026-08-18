@@ -14,6 +14,13 @@ import (
 // messages are framed with a 2-byte big-endian length prefix and written in
 // blockLength chunks; inbound notifications are reassembled from the same
 // framing and delivered as datagrams on Receive().
+// InboundObserver is invoked with a copy of each reassembled RX datagram.
+// It must not block: the RX loop calls it synchronously before delivering
+// the same datagram to Receive(), and a slow observer would stall GATT
+// reassembly (and therefore vehicle-command's dispatcher). Prefer
+// non-blocking channel sends with drop-on-full.
+type InboundObserver func([]byte)
+
 type Connection struct {
 	vin     string
 	bus     dbusBus
@@ -42,10 +49,27 @@ type Connection struct {
 	loopDone chan struct{}
 	match    []dbus.MatchOption
 
+	// observerMu protects inboundObserver. Separate from mu so the RX path
+	// can fan out copies without contending with Send.
+	observerMu      sync.Mutex
+	inboundObserver InboundObserver
+
 	// RX reassembly state. Touched only by the rxLoop goroutine (the single
 	// writer), so it needs no lock of its own.
 	rxBuf  []byte
 	lastRx time.Time
+}
+
+// SetInboundObserver registers (or clears, with nil) a tap on inbound
+// datagrams. The observer receives a private copy of each reassembled
+// message; Receive() still gets its own copy, so vehicle-command continues
+// to see every reply. Used by presence-mode passive-entry handling to
+// inspect unsolicited VCSEC AuthenticationRequest messages that the
+// upstream dispatcher would otherwise drop (no matching request handler).
+func (c *Connection) SetInboundObserver(obs InboundObserver) {
+	c.observerMu.Lock()
+	c.inboundObserver = obs
+	c.observerMu.Unlock()
 }
 
 func (c *Connection) Receive() <-chan []byte {
@@ -207,6 +231,16 @@ func (c *Connection) flush() bool {
 	// hand to the consumer.
 	buf := make([]byte, msgLength)
 	copy(buf, c.rxBuf[2:2+msgLength])
+	c.observerMu.Lock()
+	obs := c.inboundObserver
+	c.observerMu.Unlock()
+	if obs != nil {
+		// Private copy so an observer that retains the slice cannot corrupt
+		// the inbox payload (or vice versa).
+		obsCopy := make([]byte, msgLength)
+		copy(obsCopy, buf)
+		obs(obsCopy)
+	}
 	select {
 	case c.inbox <- buf:
 	default:

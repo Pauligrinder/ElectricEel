@@ -70,6 +70,20 @@ Page {
                 color: Theme.secondaryColor
             }
 
+            Label {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.margins: Theme.horizontalPageMargin
+                wrapMode: Text.Wrap
+                text: teslaClient.phoneKeyStatus.length > 0
+                      ? teslaClient.phoneKeyStatus
+                      : "Phone key starting..."
+                font.pixelSize: Theme.fontSizeSmall
+                color: teslaClient.phoneKeyStatus.indexOf("error") >= 0
+                       ? Theme.highlightColor
+                       : Theme.secondaryHighlightColor
+            }
+
             BusyIndicator {
                 anchors.horizontalCenter: parent.horizontalCenter
                 // Spins until the first GetConfig reply lands (configReady

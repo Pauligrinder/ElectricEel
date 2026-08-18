@@ -4,6 +4,7 @@
 #include <QStandardPaths>
 #include <QThread>
 #include <QDir>
+#include <QTimer>
 
 // The cbindgen-generated C header for the in-process Rust core
 // (helper/electriceelcore.h). Wrapped in extern "C" because cbindgen emits a
@@ -39,14 +40,13 @@ QString takeCString(char *ptr)
 CoreWorker::CoreWorker(QObject *parent)
     : QObject(parent)
     , m_core(nullptr)
+    , m_phoneKeyTimer(nullptr)
 {
 }
 
 CoreWorker::~CoreWorker()
 {
     if (m_core) {
-        // Runs on the GUI thread (the worker is deleted there after its
-        // thread stopped), which is safe: nothing touches m_core anymore.
         core_free(m_core);
         m_core = nullptr;
     }
@@ -71,7 +71,50 @@ void CoreWorker::initialize(const QString &binDir, const QString &stateDir, cons
                          : message);
         return;
     }
+    bool active = false;
+    char *phoneKeyError = nullptr;
+    core_start_phone_key(m_core, &active, &phoneKeyError);
+    emit phoneKeyStarted(active, takeCString(phoneKeyError));
+
+    m_phoneKeyTimer = new QTimer(this);
+    m_phoneKeyTimer->setInterval(1000);
+    connect(m_phoneKeyTimer, &QTimer::timeout, this, &CoreWorker::pollPhoneKeyEvents);
+    m_phoneKeyTimer->start();
     emit initialized(true, QString());
+}
+
+void CoreWorker::pollPhoneKeyEvents()
+{
+    if (!m_core)
+        return;
+    for (;;) {
+        bool hasEvent = false;
+        char *kind = nullptr;
+        char *vin = nullptr;
+        char *time = nullptr;
+        char *error = nullptr;
+        const CoreError rc = core_poll_phone_key_event(
+            m_core, &hasEvent, &kind, &vin, &time, &error);
+        if (rc != CoreError::Ok || !hasEvent)
+            return;
+        emit phoneKeyEvent(takeCString(kind), takeCString(vin),
+                           takeCString(time), takeCString(error));
+    }
+}
+
+void CoreWorker::shutdown()
+{
+    if (m_phoneKeyTimer) {
+        m_phoneKeyTimer->stop();
+        delete m_phoneKeyTimer;
+        m_phoneKeyTimer = nullptr;
+    }
+    if (m_core) {
+        // Core::Drop stops presence and closes tesla-session before the
+        // worker thread exits.
+        core_free(m_core);
+        m_core = nullptr;
+    }
 }
 
 void CoreWorker::runCommand(const QString &requestId, const QString &cmd, const QStringList &args)
@@ -140,6 +183,8 @@ void CoreWorker::generateKey(bool force)
         return;
     }
     emit keyGenerated(ok, takeCString(pem), takeCString(errorMessage));
+    if (ok)
+        emit phoneKeyStarted(false, QStringLiteral("Pair this key with the vehicle"));
 }
 
 void CoreWorker::pair()
@@ -160,6 +205,12 @@ void CoreWorker::pair()
         return;
     }
     emit paired(ok, takeCString(out), takeCString(errorMessage));
+    if (ok) {
+        bool active = false;
+        char *startError = nullptr;
+        core_start_phone_key(m_core, &active, &startError);
+        emit phoneKeyStarted(active, takeCString(startError));
+    }
 }
 
 void CoreWorker::setConfig(const QString &vin, const QString &model, const QString &keyName,
@@ -185,6 +236,12 @@ void CoreWorker::setConfig(const QString &vin, const QString &model, const QStri
         return;
     }
     emit configSaved(ok, takeCString(errorMessage));
+    if (ok) {
+        bool active = false;
+        char *startError = nullptr;
+        core_start_phone_key(m_core, &active, &startError);
+        emit phoneKeyStarted(active, takeCString(startError));
+    }
 }
 
 void CoreWorker::refreshConfig()
@@ -232,6 +289,8 @@ TeslaClient::TeslaClient(QObject *parent)
     connect(m_worker, &CoreWorker::paired, this, &TeslaClient::paired);
     connect(m_worker, &CoreWorker::configSaved, this, &TeslaClient::configSaved);
     connect(m_worker, &CoreWorker::configLoaded, this, &TeslaClient::configLoaded);
+    connect(m_worker, &CoreWorker::phoneKeyStarted, this, &TeslaClient::onPhoneKeyStarted);
+    connect(m_worker, &CoreWorker::phoneKeyEvent, this, &TeslaClient::onPhoneKeyEvent);
 
     thread->start();
 
@@ -256,6 +315,7 @@ TeslaClient::~TeslaClient()
     // delete from this thread (no deleteLater, which would need its own loop).
     if (m_worker) {
         QThread *thread = m_worker->thread();
+        QMetaObject::invokeMethod(m_worker, "shutdown", Qt::BlockingQueuedConnection);
         thread->quit();
         thread->wait();
         delete m_worker;
@@ -278,6 +338,11 @@ QString TeslaClient::helperVersion() const
     return m_helperVersion;
 }
 
+QString TeslaClient::phoneKeyStatus() const
+{
+    return m_phoneKeyStatus;
+}
+
 void TeslaClient::setHelperAvailable(bool available)
 {
     if (m_helperAvailable == available)
@@ -291,6 +356,47 @@ void TeslaClient::onInitialized(bool ok, const QString &errorMessage)
     if (!ok)
         qWarning("TeslaClient: core init failed: %s", qPrintable(errorMessage));
     setHelperAvailable(ok);
+}
+
+void TeslaClient::onPhoneKeyStarted(bool active, const QString &errorMessage)
+{
+    const QString status = active
+            ? QStringLiteral("Phone key scanning")
+            : (errorMessage.isEmpty()
+               ? QStringLiteral("Phone key inactive")
+               : errorMessage);
+    if (m_phoneKeyStatus == status)
+        return;
+    m_phoneKeyStatus = status;
+    emit phoneKeyStatusChanged();
+}
+
+void TeslaClient::onPhoneKeyEvent(const QString &kind, const QString &vin,
+                                  const QString &time, const QString &errorMessage)
+{
+    Q_UNUSED(vin)
+    Q_UNUSED(time)
+    QString status;
+    if (kind == QStringLiteral("presence_near"))
+        status = QStringLiteral("Phone key connected");
+    else if (kind == QStringLiteral("presence_far")
+             || kind == QStringLiteral("presence_restarted"))
+        status = QStringLiteral("Phone key scanning");
+    else if (kind == QStringLiteral("presence_auth_ok"))
+        status = QStringLiteral("Phone key authorized");
+    else if (kind == QStringLiteral("presence_stopped"))
+        status = QStringLiteral("Phone key stopped");
+    else if (kind == QStringLiteral("presence_error")
+             || kind == QStringLiteral("presence_auth_failed"))
+        status = errorMessage.isEmpty()
+                ? QStringLiteral("Phone key error")
+                : QStringLiteral("Phone key error: %1").arg(errorMessage);
+    else
+        return;
+    if (m_phoneKeyStatus == status)
+        return;
+    m_phoneKeyStatus = status;
+    emit phoneKeyStatusChanged();
 }
 
 void TeslaClient::runCommand(const QString &requestId, const QString &cmd, const QVariantList &args)
