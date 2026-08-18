@@ -123,25 +123,43 @@ Dialog {
 
     Component {
         id: sliderField
-        Slider {
+        Column {
             property var argSpec
-            label: argSpec ? (argSpec.name + (argSpec.unit ? (" (" + argSpec.unit + ")") : "")) : ""
-            minimumValue: argSpec ? argSpec.min : 0
-            maximumValue: argSpec ? argSpec.max : 100
-            stepSize: argSpec && argSpec.step ? argSpec.step : 1
-            value: argSpec && argSpec.def !== undefined ? argSpec.def : minimumValue
-            valueText: value.toFixed(argSpec && argSpec.step && argSpec.step < 1 ? 1 : 0)
-            // sendSuffix is for values tesla-control wants glued directly to
-            // the number with no space (e.g. "21C", "600s") - distinct from
-            // `unit`, which is display-only text shown in the label (e.g.
-            // "°C") and would be invalid if sent as-is.
-            onValueChanged: {
-                if (argSpec) argSpec.__value = value.toString() + (argSpec.sendSuffix || "")
-                dialog.revalidate()
+            width: parent.width
+            spacing: Theme.paddingSmall
+
+            // Field title on its own row instead of the Slider's built-in
+            // label: Silica lays the built-in label and valueText out on the
+            // same line at the top of the Slider, where a long title runs
+            // straight into the value. A separate Label above the Slider
+            // keeps the two apart no matter how wide the title is.
+            Label {
+                width: parent.width
+                wrapMode: Text.Wrap
+                font.pixelSize: Theme.fontSizeExtraSmall
+                color: Theme.secondaryColor
+                text: argSpec ? (argSpec.name + (argSpec.unit ? (" (" + argSpec.unit + ")") : "")) : ""
             }
-            Component.onCompleted: {
-                if (argSpec) argSpec.__value = value.toString() + (argSpec.sendSuffix || "")
-                dialog.revalidate()
+
+            Slider {
+                width: parent.width
+                minimumValue: argSpec ? argSpec.min : 0
+                maximumValue: argSpec ? argSpec.max : 100
+                stepSize: argSpec && argSpec.step ? argSpec.step : 1
+                value: argSpec && argSpec.def !== undefined ? argSpec.def : minimumValue
+                valueText: value.toFixed(argSpec && argSpec.step && argSpec.step < 1 ? 1 : 0)
+                // sendSuffix is for values tesla-control wants glued directly to
+                // the number with no space (e.g. "21C", "600s") - distinct from
+                // `unit`, which is display-only text shown in the label (e.g.
+                // "°C") and would be invalid if sent as-is.
+                onValueChanged: {
+                    if (argSpec) argSpec.__value = value.toString() + (argSpec.sendSuffix || "")
+                    dialog.revalidate()
+                }
+                Component.onCompleted: {
+                    if (argSpec) argSpec.__value = value.toString() + (argSpec.sendSuffix || "")
+                    dialog.revalidate()
+                }
             }
         }
     }

@@ -80,10 +80,40 @@ Page {
     }
 
     function openArgs(commandDef) {
-        var dialog = pageStack.push(Qt.resolvedUrl("ArgumentDialog.qml"), { commandDef: commandDef })
+        var dialog = pageStack.push(Qt.resolvedUrl("ArgumentDialog.qml"), { commandDef: page.commandWithStateDefaults(commandDef) })
         dialog.accepted.connect(function() {
             execute(commandDef, dialog.values)
         })
+    }
+
+    // Clones a commandDef whose args' `def` values are seeded from the last
+    // status snapshot wherever the catalog marked a `stateDefault` field and
+    // the reading exists and is within the arg's own min/max. The clone is
+    // required because the catalog (CommandCatalog.js) is a shared library
+    // singleton - writing `def` in place would poison every future dialog.
+    // Fallback to the catalog's hardcoded `def` when status isn't loaded.
+    function commandWithStateDefaults(commandDef) {
+        if (!page.vehicleStatus || !commandDef.args || commandDef.args.length === 0)
+            return commandDef
+        var copy = {
+            id: commandDef.id,
+            label: commandDef.label,
+            visibleWhen: commandDef.visibleWhen,
+            args: commandDef.args.map(function(a) {
+                var c = {}
+                for (var k in a)
+                    c[k] = a[k]
+                var cur = page.vehicleStatus[c.stateDefault]
+                if (c.stateDefault && cur !== undefined && cur !== null
+                        && (c.min === undefined || cur >= c.min)
+                        && (c.max === undefined || cur <= c.max)) {
+                    c.def = cur
+                    delete c.__value
+                }
+                return c
+            })
+        }
+        return copy
     }
 
     SilicaListView {

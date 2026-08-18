@@ -140,10 +140,13 @@ function emptyStatus() {
         insideTemp: null,
         outsideTemp: null,
         isClimateOn: false,
+        driverTempSetting: null,
         batteryLevel: null,
         chargingState: "",
         chargePortOpen: false,
         minutesToFullCharge: 0,
+        chargeLimitSoc: null,
+        chargeCurrent: null,
         updatedAt: 0
     }
 }
@@ -180,6 +183,7 @@ function mergeClimateState(status, jsonText) {
         var obj = JSON.parse(jsonText).climateState || {}
         s.insideTemp = obj.insideTempCelsius !== undefined ? obj.insideTempCelsius : null
         s.outsideTemp = obj.outsideTempCelsius !== undefined ? obj.outsideTempCelsius : null
+        s.driverTempSetting = obj.driverTempSetting !== undefined ? obj.driverTempSetting : null
         s.isClimateOn = !!obj.isClimateOn
         s.updatedAt = Date.now()
     } catch (e) {
@@ -213,6 +217,14 @@ function mergeChargeState(status, jsonText) {
         s.chargingState = oneofVariantName(obj.chargingState)
         s.chargePortOpen = !!obj.chargePortDoorOpen
         s.minutesToFullCharge = obj.minutesToFullCharge || 0
+        // chargeLimitSoc is the car's configured charge limit in % (the
+        // value charging-set-limit writes); chargeCurrent is the charging
+        // current setting in A (what charging-set-amps writes), preferring
+        // the "requested" current that persists when unplugged and falling
+        // back to the currently-flowing amps while charging.
+        s.chargeLimitSoc = obj.chargeLimitSoc !== undefined ? obj.chargeLimitSoc : null
+        s.chargeCurrent = obj.chargeCurrentRequest !== undefined ? obj.chargeCurrentRequest
+            : (obj.chargingAmps !== undefined ? obj.chargingAmps : null)
         s.updatedAt = Date.now()
     } catch (e) {
         console.log("VehicleState: charge parse failed:", e, jsonText)
