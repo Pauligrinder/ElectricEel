@@ -52,7 +52,7 @@ spawned by the in-process core over the same stdin/stdout JSON protocol it
 already used.
 
 This is why `helper/src/{lib,core,ffi}.rs` and `app/src/teslaclient.{h,cpp}`
-comments point back to this file: it's the record of *why* the crate is
+comments point back to this file: it's the record of _why_ the crate is
 shaped as a staticlib + C ABI instead of a D-Bus service, not a spec that
 needs re-deriving from the code.
 

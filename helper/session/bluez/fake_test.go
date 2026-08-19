@@ -89,9 +89,11 @@ func (f *fakeBluez) devPath() dbus.ObjectPath {
 func (f *fakeBluez) svcPath() dbus.ObjectPath {
 	return dbus.ObjectPath(string(f.devPath()) + "/service0021")
 }
+
 func (f *fakeBluez) txPath() dbus.ObjectPath {
 	return dbus.ObjectPath(string(f.svcPath()) + "/char0021")
 }
+
 func (f *fakeBluez) rxPath() dbus.ObjectPath {
 	return dbus.ObjectPath(string(f.svcPath()) + "/char0022")
 }

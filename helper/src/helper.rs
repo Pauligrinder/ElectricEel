@@ -82,7 +82,10 @@ impl Helper {
         #[zbus(header)] header: Header<'_>,
     ) -> Result<(bool, String, String), HelperError> {
         self.authorize_sender(&header)?;
-        Ok(self.core.generate_key(force))
+        Ok(match self.core.generate_key(force) {
+            Ok(pubkey) => (true, pubkey, String::new()),
+            Err(err) => (false, String::new(), err.to_string()),
+        })
     }
 
     /// Enrolls the current public key with the vehicle via BLE.
@@ -104,13 +107,16 @@ impl Helper {
         #[zbus(header)] header: Header<'_>,
     ) -> Result<(bool, String), HelperError> {
         self.authorize_sender(&header)?;
-        Ok(self.core.set_config(
+        match self.core.set_config(
             vin,
             model,
             key_name,
             connect_timeout_sec,
             command_timeout_sec,
-        ))
+        ) {
+            Ok(()) => Ok((true, String::new())),
+            Err(msg) => Ok((false, msg.to_string())),
+        }
     }
 
     fn get_config(

@@ -243,20 +243,33 @@ pub unsafe extern "C" fn core_set_config(
     let model = cstr(model).unwrap_or_default();
     let key_name = cstr(key_name).unwrap_or_default();
 
-    let (success, msg) = core.set_config(
+    match core.set_config(
         &vin,
         &model,
         &key_name,
         connect_timeout_sec,
         command_timeout_sec,
-    );
-    if !ok.is_null() {
-        // SAFETY: caller-owned slot.
-        unsafe { *ok = success };
-    }
-    if !error_message.is_null() {
-        // SAFETY: caller-owned slot.
-        unsafe { *error_message = into_cstring(msg) };
+    ) {
+        Ok(()) => {
+            if !ok.is_null() {
+                // SAFETY: caller-owned slot.
+                unsafe { *ok = true };
+            }
+            if !error_message.is_null() {
+                // SAFETY: caller-owned slot.
+                unsafe { *error_message = into_cstring(String::new()) };
+            }
+        }
+        Err(msg) => {
+            if !ok.is_null() {
+                // SAFETY: caller-owned slot.
+                unsafe { *ok = false };
+            }
+            if !error_message.is_null() {
+                // SAFETY: caller-owned slot.
+                unsafe { *error_message = into_cstring(msg.to_string()) };
+            }
+        }
     }
     CoreError::Ok
 }
@@ -278,18 +291,35 @@ pub unsafe extern "C" fn core_generate_key(
     let Some(core) = (unsafe { core.as_ref() }) else {
         return CoreError::BadArg;
     };
-    let (success, pubkey, err) = core.generate_key(force);
-    if !ok.is_null() {
-        // SAFETY: caller-owned slot.
-        unsafe { *ok = success };
-    }
-    if !public_key_pem.is_null() {
-        // SAFETY: caller-owned slot.
-        unsafe { *public_key_pem = into_cstring(pubkey) };
-    }
-    if !error_message.is_null() {
-        // SAFETY: caller-owned slot.
-        unsafe { *error_message = into_cstring(err) };
+    match core.generate_key(force) {
+        Ok(pubkey) => {
+            if !ok.is_null() {
+                // SAFETY: caller-owned slot.
+                unsafe { *ok = true };
+            }
+            if !public_key_pem.is_null() {
+                // SAFETY: caller-owned slot.
+                unsafe { *public_key_pem = into_cstring(pubkey) };
+            }
+            if !error_message.is_null() {
+                // SAFETY: caller-owned slot.
+                unsafe { *error_message = into_cstring(String::new()) };
+            }
+        }
+        Err(err) => {
+            if !ok.is_null() {
+                // SAFETY: caller-owned slot.
+                unsafe { *ok = false };
+            }
+            if !public_key_pem.is_null() {
+                // SAFETY: caller-owned slot.
+                unsafe { *public_key_pem = into_cstring(String::new()) };
+            }
+            if !error_message.is_null() {
+                // SAFETY: caller-owned slot.
+                unsafe { *error_message = into_cstring(err.to_string()) };
+            }
+        }
     }
     CoreError::Ok
 }
@@ -352,12 +382,23 @@ pub unsafe extern "C" fn core_start_phone_key(
     let Some(core) = (unsafe { core.as_ref() }) else {
         return CoreError::BadArg;
     };
-    let (started, error) = core.start_phone_key();
-    if !active.is_null() {
-        unsafe { *active = started };
-    }
-    if !error_message.is_null() {
-        unsafe { *error_message = into_cstring(error) };
+    match core.start_phone_key() {
+        Ok(()) => {
+            if !active.is_null() {
+                unsafe { *active = true };
+            }
+            if !error_message.is_null() {
+                unsafe { *error_message = into_cstring(String::new()) };
+            }
+        }
+        Err(e) => {
+            if !active.is_null() {
+                unsafe { *active = false };
+            }
+            if !error_message.is_null() {
+                unsafe { *error_message = into_cstring(e.to_string()) };
+            }
+        }
     }
     CoreError::Ok
 }

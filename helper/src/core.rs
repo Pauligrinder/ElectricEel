@@ -14,6 +14,7 @@
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
@@ -21,8 +22,8 @@ use std::time::Duration;
 use wait_timeout::ChildExt;
 
 use crate::commands::{is_known_command, is_pin_command};
-use crate::config::Config;
-use crate::error::HelperError;
+use crate::config::{Config, ConfigVersion, VinState};
+use crate::error::{HelperError, OperationError};
 use crate::session_client::{SessionClient, SessionEvent};
 
 /// `GetConfig`'s return payload, in the same order the client (Qt's
@@ -54,7 +55,10 @@ pub struct Core {
     /// enables it) - None means `run()` behaves exactly as one-shot did,
     /// not "session client that always fails over".
     session: Option<SessionClient>,
-    phone_key_started: Mutex<bool>,
+    /// Whether the `BlueZ` proximity/authentication service is currently
+    /// started. `compare_exchange` serializes concurrent `start_phone_key`
+    /// calls; a plain `Mutex<bool>` was overkill for a single flag.
+    phone_key_started: AtomicBool,
 }
 
 impl Core {
@@ -77,20 +81,22 @@ impl Core {
                 config_path.display()
             ))
         })?;
-        // Configs written before automatic phone-key support have no
-        // paired_vin field. Existing key files in those installs came from
-        // the old pairing page, so retain their pairing instead of forcing
-        // every upgraded user through NFC enrollment again.
-        if cfg.paired_vin.is_none() {
-            let has_key = Path::new(&state_dir).join("private_key.pem").is_file()
-                && Path::new(&state_dir).join("public_key.pem").is_file();
-            cfg.paired_vin = Some(if has_key {
-                cfg.vin.clone()
-            } else {
-                String::new()
-            });
+        // Older schema versions are migrated up to CURRENT and persisted at that
+        // version. V0 (pre-phone-key) has no pairing state at all; existing key
+        // files in those installs came from the old pairing page, so retain their
+        // pairing instead of forcing every upgraded user through NFC enrollment
+        // again. Later versions already carry an explicit `vin_state`.
+        if cfg.version < ConfigVersion::CURRENT {
+            if cfg.version == ConfigVersion::V0 {
+                let has_key = Path::new(&state_dir).join("private_key.pem").is_file()
+                    && Path::new(&state_dir).join("public_key.pem").is_file();
+                if has_key {
+                    cfg.vin_state = VinState::Paired;
+                }
+            }
+            cfg.version = ConfigVersion::CURRENT;
             if let Err(e) = cfg.save(&config_path) {
-                eprintln!("Core: could not persist phone-key config migration: {e}");
+                eprintln!("Core: could not persist config migration: {e}");
             }
         }
         Ok(Core {
@@ -99,7 +105,7 @@ impl Core {
             bin_dir,
             state_dir,
             session,
-            phone_key_started: Mutex::new(false),
+            phone_key_started: AtomicBool::new(false),
         })
     }
 
@@ -251,7 +257,7 @@ impl Core {
     /// request (pure crypto, no BLE) so the privileged tesla-keygen binary
     /// isn't exec'd at all. Without a session it falls back to exec'ing
     /// tesla-keygen, the pre-session behavior.
-    pub(crate) fn generate_key(&self, force: bool) -> (bool, String, String) {
+    pub(crate) fn generate_key(&self, force: bool) -> Result<String, OperationError> {
         self.stop_phone_key();
         // Holds the config mutex for the whole call, same as the original -
         // GenerateKey doesn't read Config, but this still serializes
@@ -275,8 +281,10 @@ impl Core {
 
         eprintln!("Core: generate_key(force={force})");
 
-        let (ok, pubkey) = match &self.session {
-            None => generate_key_one_shot(&self.bin_dir, &key_path, &self.public_key_path(), force),
+        let pubkey = match &self.session {
+            None => {
+                generate_key_one_shot(&self.bin_dir, &key_path, &self.public_key_path(), force)?
+            }
             Some(session) => {
                 // Pure crypto, so the hci-vs-bluez no-fallback question
                 // doesn't apply here; still, the session path is preferred
@@ -290,19 +298,19 @@ impl Core {
                     command_timeout_sec,
                     Duration::from_secs(15),
                 ) {
-                    Ok(outcome) => {
-                        if outcome.ok {
-                            // Persist the public half to the file Pair()
-                            // reads from (and the app's pubkey location).
-                            let pubkey = outcome.stdout.trim().to_string();
-                            if let Err(e) = std::fs::write(self.public_key_path(), &pubkey) {
-                                (false, e.to_string())
-                            } else {
-                                (true, pubkey)
-                            }
-                        } else {
-                            (false, outcome.stderr.trim().to_string())
+                    Ok(outcome) if outcome.ok => {
+                        // Persist the public half to the file Pair()
+                        // reads from (and the app's pubkey location).
+                        let pubkey = outcome.stdout.trim().to_string();
+                        if let Err(e) = std::fs::write(self.public_key_path(), &pubkey) {
+                            return Err(OperationError::WritePubkey(e));
                         }
+                        pubkey
+                    }
+                    Ok(outcome) => {
+                        return Err(OperationError::KeygenFailed(
+                            outcome.stderr.trim().to_string(),
+                        ));
                     }
                     Err(e) => {
                         eprintln!(
@@ -313,18 +321,15 @@ impl Core {
                             &key_path,
                             &self.public_key_path(),
                             force,
-                        )
+                        )?
                     }
                 }
             }
         };
 
-        if !ok {
-            return (false, String::new(), pubkey);
-        }
-        cfg.paired_vin = Some(String::new());
+        cfg.vin_state = VinState::Unpaired;
         if let Err(e) = cfg.save(&self.config_path()) {
-            return (false, String::new(), e.to_string());
+            return Err(OperationError::Persist(e));
         }
         // A live persistent session (if any) loaded the private key into
         // memory at connect time - the file on disk just changed under it,
@@ -332,7 +337,7 @@ impl Core {
         if let Some(session) = &self.session {
             session.invalidate();
         }
-        (true, pubkey, String::new())
+        Ok(pubkey)
     }
 
     /// Enrolls the current public key with the vehicle via BLE, requiring
@@ -450,15 +455,14 @@ impl Core {
         }
         {
             let mut cfg = self.cfg.lock().unwrap();
-            cfg.paired_vin = Some(cfg.vin.clone());
+            cfg.vin_state = VinState::Paired;
             cfg.save(&self.config_path()).map_err(|e| {
                 HelperError::SessionUnavailable(format!(
                     "paired key but could not persist phone-key state: {e}"
                 ))
             })?;
         }
-        let (started, start_error) = self.start_phone_key();
-        if !started {
+        if let Err(start_error) = self.start_phone_key() {
             return Ok((
                 false,
                 outcome.stdout,
@@ -470,10 +474,9 @@ impl Core {
 
     /// Starts the background `BlueZ` proximity/authentication service when the
     /// current key is paired to the configured VIN. Idempotent.
-    pub(crate) fn start_phone_key(&self) -> (bool, String) {
-        let mut started = self.phone_key_started.lock().unwrap();
-        if *started {
-            return (true, String::new());
+    pub(crate) fn start_phone_key(&self) -> Result<(), OperationError> {
+        if self.phone_key_started.load(Ordering::SeqCst) {
+            return Ok(());
         }
         let (vin, key_path, connect_timeout_sec, command_timeout_sec, eligible) = {
             let cfg = self.cfg.lock().unwrap();
@@ -483,24 +486,27 @@ impl Core {
                 cfg.connect_timeout_sec,
                 cfg.command_timeout_sec,
                 !cfg.vin.is_empty()
-                    && cfg.paired_vin.as_deref() == Some(cfg.vin.as_str())
+                    && cfg.vin_state == VinState::Paired
                     && self.private_key_path().is_file(),
             )
         };
         if !eligible {
-            return (
-                false,
-                "phone key is waiting for a configured VIN and completed pairing".to_string(),
-            );
+            return Err(OperationError::NotPaired);
         }
         let Some(session) = &self.session else {
-            return (false, "persistent BLE session is unavailable".to_string());
+            return Err(OperationError::NoSession);
         };
         if session.ble_backend() != "bluez" {
-            return (
-                false,
-                "automatic phone key requires the BlueZ backend".to_string(),
-            );
+            return Err(OperationError::RequiresBluez);
+        }
+        // Claim the flag before the (blocking) start so a second concurrent
+        // caller returns Ok instead of starting the service twice.
+        if self
+            .phone_key_started
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
+            return Ok(());
         }
         match session.start_presence(
             &vin,
@@ -509,19 +515,23 @@ impl Core {
             command_timeout_sec,
             Duration::from_secs(10),
         ) {
-            Ok(outcome) if outcome.ok => {
-                *started = true;
-                (true, String::new())
+            Ok(outcome) if outcome.ok => Ok(()),
+            Ok(outcome) => {
+                self.phone_key_started.store(false, Ordering::SeqCst);
+                Err(OperationError::PresenceFailed(
+                    outcome.stderr.trim().to_string(),
+                ))
             }
-            Ok(outcome) => (false, outcome.stderr.trim().to_string()),
-            Err(e) => (false, e.to_string()),
+            Err(e) => {
+                self.phone_key_started.store(false, Ordering::SeqCst);
+                Err(OperationError::PresenceFailed(e.to_string()))
+            }
         }
     }
 
     /// Stops proximity mode and closes its live BLE connection. Idempotent.
     pub(crate) fn stop_phone_key(&self) {
-        let mut started = self.phone_key_started.lock().unwrap();
-        if !*started {
+        if !self.phone_key_started.load(Ordering::SeqCst) {
             return;
         }
         if let Some(session) = &self.session {
@@ -537,25 +547,28 @@ impl Core {
                 session.invalidate();
             }
         }
-        *started = false;
+        self.phone_key_started.store(false, Ordering::SeqCst);
     }
 
     pub(crate) fn poll_phone_key_event(&self) -> Option<SessionEvent> {
         let mut event = self.session.as_ref().and_then(SessionClient::poll_event);
         if event.as_ref().is_some_and(|e| e.kind == "presence_stopped") {
-            {
-                // Drop this guard before start_phone_key(), which takes the
-                // same non-reentrant mutex.
-                *self.phone_key_started.lock().unwrap() = false;
-            }
-            let (restarted, error) = self.start_phone_key();
-            if let Some(event) = &mut event {
-                if restarted {
-                    event.kind = "presence_restarted".to_string();
-                    event.error.clear();
-                } else if !error.is_empty() {
-                    event.kind = "presence_error".to_string();
-                    event.error = error;
+            self.phone_key_started.store(false, Ordering::SeqCst);
+            match self.start_phone_key() {
+                Ok(()) => {
+                    if let Some(event) = &mut event {
+                        event.kind = "presence_restarted".to_string();
+                        event.error.clear();
+                    }
+                }
+                Err(error) => {
+                    if let Some(event) = &mut event {
+                        let msg = error.to_string();
+                        if !msg.is_empty() {
+                            event.kind = "presence_error".to_string();
+                            event.error = msg;
+                        }
+                    }
                 }
             }
         }
@@ -569,20 +582,14 @@ impl Core {
         key_name: &str,
         connect_timeout_sec: i32,
         command_timeout_sec: i32,
-    ) -> (bool, String) {
-        let msg = match crate::config::validate_config(
+    ) -> Result<(), OperationError> {
+        crate::config::validate_config(
             vin,
             model,
             key_name,
             connect_timeout_sec,
             command_timeout_sec,
-        ) {
-            Ok(()) => None,
-            Err(e) => Some(e.to_string()),
-        };
-        if let Some(msg) = msg {
-            return (false, msg);
-        }
+        )?;
 
         self.stop_phone_key();
         let mut cfg = self.cfg.lock().unwrap();
@@ -593,10 +600,10 @@ impl Core {
         cfg.connect_timeout_sec = connect_timeout_sec;
         cfg.command_timeout_sec = command_timeout_sec;
         if vin_changed {
-            cfg.paired_vin = Some(String::new());
+            cfg.vin_state = VinState::Unpaired;
         }
         if let Err(e) = cfg.save(&self.config_path()) {
-            return (false, e.to_string());
+            return Err(OperationError::Persist(e));
         }
         eprintln!(
             "Core: set_config(vin={}, model={:?}, keyName={:?}, connectTimeout={}s, commandTimeout={}s)",
@@ -613,7 +620,7 @@ impl Core {
         if !vin_changed {
             let _ = self.start_phone_key();
         }
-        (true, String::new())
+        Ok(())
     }
 
     pub(crate) fn get_config(&self) -> GetConfigReply {
@@ -652,7 +659,7 @@ fn generate_key_one_shot(
     key_path: &str,
     pubkey_path: &std::path::Path,
     force: bool,
-) -> (bool, String) {
+) -> Result<String, OperationError> {
     let mut args = vec![
         "-keyring-type".to_string(),
         "file".to_string(),
@@ -668,11 +675,13 @@ fn generate_key_one_shot(
 
     let outcome = run_binary(bin_dir, "tesla-keygen", &args, Duration::from_secs(15));
     if !outcome.ok {
-        return (false, outcome.stderr.trim().to_string());
+        return Err(OperationError::KeygenFailed(
+            outcome.stderr.trim().to_string(),
+        ));
     }
     match std::fs::read_to_string(pubkey_path) {
-        Ok(pub_key) => (true, pub_key.trim().to_string()),
-        Err(e) => (false, e.to_string()),
+        Ok(pub_key) => Ok(pub_key.trim().to_string()),
+        Err(e) => Err(OperationError::KeygenFailed(e.to_string())),
     }
 }
 
@@ -838,18 +847,17 @@ mod tests {
         });
 
         match rx.recv_timeout(std::time::Duration::from_secs(5)) {
-            Ok((ok, _pubkey, _err)) => {
+            Ok(Err(_)) => {
                 // No tesla-keygen binary in this test's fake bin_dir, so the
                 // one-shot fallback is expected to fail - what's under test
                 // is that the call returns at all, not that it succeeds.
-                assert!(
-                    !ok,
-                    "unexpected success with no tesla-keygen binary present"
-                );
             }
-            Err(e) => panic!(
-                "generate_key did not return within 5s - looks deadlocked on self.cfg (recv: {e:?})"
-            ),
+            Ok(Ok(pubkey)) => {
+                panic!("unexpected success with no tesla-keygen binary present: {pubkey:?}");
+            }
+            Err(e) => {
+                panic!("generate_key did not return within 5s - looks deadlocked on self.cfg (recv: {e:?})");
+            }
         }
     }
 
@@ -862,9 +870,18 @@ mod tests {
             None,
         )
         .unwrap();
-        let (started, reason) = core.start_phone_key();
-        assert!(!started);
-        assert!(reason.contains("completed pairing"));
+        let result = core.start_phone_key();
+        assert!(
+            result.is_err(),
+            "unpaired core must refuse to start a phone key"
+        );
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("completed pairing"),
+            "reason should point at the missing pairing"
+        );
     }
 
     #[test]
@@ -883,10 +900,14 @@ mod tests {
             None,
         )
         .unwrap();
-        let (started, reason) = core.start_phone_key();
-        assert!(!started);
+        let result = core.start_phone_key();
         assert!(
-            reason.contains("persistent BLE session"),
+            result.is_err(),
+            "no persistent session must still refuse to start"
+        );
+        let reason = result.unwrap_err();
+        assert!(
+            reason.to_string().contains("persistent BLE session"),
             "legacy key should pass pairing eligibility: {reason}"
         );
     }
