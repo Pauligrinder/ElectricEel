@@ -3,7 +3,7 @@ Summary:    Control your Tesla over Bluetooth
 Version:    0.2.5
 Release:    1
 License:    ASL 2.0
-URL:        https://github.com/marconapetti/ElectricEel
+URL:        https://github.com/nappa85/ElectricEel
 Source0:    %{name}-%{version}.tar.bz2
 Requires:   sailfishsilica-qt5 >= 0.10.9
 Requires:   qt5-qtcore
