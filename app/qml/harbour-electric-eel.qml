@@ -1,7 +1,7 @@
 import QtQuick 2.6
 import Sailfish.Silica 1.0
 import harbour.electriceel 1.0
-import "cover"
+import "cover" as CoverDir
 import "pages"
 
 ApplicationWindow
@@ -23,10 +23,8 @@ ApplicationWindow
             teslaClient: teslaClientInstance
         }
     }
-    cover: Component {
-        CoverPage {
-            teslaClient: teslaClientInstance
-        }
+    cover: CoverDir.CoverPage {
+        teslaClient: teslaClientInstance
     }
     allowedOrientations: Orientation.All
 }

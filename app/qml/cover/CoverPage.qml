@@ -1,6 +1,5 @@
 import QtQuick 2.6
 import Sailfish.Silica 1.0
-import org.freedesktop.contextkit 1.0
 import "../js/VehicleState.js" as VState
 
 CoverBackground {
@@ -10,11 +9,6 @@ CoverBackground {
     property string vin: ""
     property string model: ""
     property bool hasKey: false
-
-    ContextProperty {
-        id: bluetoothEnabled
-        key: "Bluetooth.Enabled"
-    }
 
     function phoneKeyStatusIsBluetoothOff(status) {
         return status.indexOf("NotPowered") >= 0
@@ -31,9 +25,7 @@ CoverBackground {
 
     readonly property string connectionStatusText: {
         var status = teslaClient ? teslaClient.phoneKeyStatus : ""
-        var btEnabled = bluetoothEnabled.value
-        if (btEnabled === false || btEnabled === "false"
-                || phoneKeyStatusIsBluetoothOff(status))
+        if (phoneKeyStatusIsBluetoothOff(status))
             return "Bluetooth is turned off"
         if (!isPaired)
             return "Unpaired"
