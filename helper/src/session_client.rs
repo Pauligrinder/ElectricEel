@@ -16,19 +16,21 @@
 //! also writes unsolicited `{"kind": ..., ...}` event lines onto the same
 //! stdout stream, outside any request/response pairing - see
 //! `dispatchPresenceStart` and `presenceLoop` in `helper/session/main.go`.
-//! `run()` below reads and discards these while waiting for the response it
-//! actually asked for; nothing here surfaces them to the app yet.
+//! The stdout reader demultiplexes those events into a bounded side queue so
+//! they cannot accumulate in front of command responses. The C ABI polls that
+//! queue to surface phone-key state to QML.
 //!
 //! Requests are never sent concurrently: the only caller is `Helper::run`,
 //! itself serialized by `ble_sem`, so a single in-flight request at a time
 //! is a precondition here, not something this module enforces on its own.
 
+use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
@@ -56,14 +58,16 @@ struct Response {
     exit_code: i32,
 }
 
-/// An unsolicited presence-loop line - has a "kind" but none of Response's
-/// fields, so it's tried second: a genuine Response will already have
-/// matched the first variant. The field itself is never read; its presence
-/// is what makes this variant match instead of failing to parse at all.
-#[derive(Deserialize)]
-struct Event {
-    #[allow(dead_code)]
-    kind: String,
+/// An unsolicited phone-key event emitted by tesla-session.
+#[derive(Clone, Debug, Deserialize)]
+pub(crate) struct SessionEvent {
+    pub kind: String,
+    #[serde(default)]
+    pub vin: String,
+    #[serde(default)]
+    pub time: String,
+    #[serde(default)]
+    pub error: String,
 }
 
 /// Either shape a line on tesla-session's stdout can take. `run()` waits
@@ -73,8 +77,7 @@ struct Event {
 #[serde(untagged)]
 enum Line {
     Response(Response),
-    #[allow(dead_code)]
-    Event(Event),
+    Event(SessionEvent),
 }
 
 pub(crate) struct RunOutcome {
@@ -120,7 +123,10 @@ struct ChildHandle {
 /// `recv_timeout` in `SessionClient::run` a real read-with-timeout despite
 /// `std::process::ChildStdout` not natively supporting one. EOF or a read
 /// error just ends the thread; the channel closing is how `run` finds out.
-fn spawn_reader(stdout: std::process::ChildStdout) -> mpsc::Receiver<String> {
+fn spawn_reader(
+    stdout: std::process::ChildStdout,
+    events: Arc<Mutex<VecDeque<SessionEvent>>>,
+) -> mpsc::Receiver<String> {
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
         let mut reader = BufReader::new(stdout);
@@ -130,7 +136,14 @@ fn spawn_reader(stdout: std::process::ChildStdout) -> mpsc::Receiver<String> {
             match reader.read_line(&mut line) {
                 Ok(0) | Err(_) => break,
                 Ok(_) => {
-                    if tx.send(line.trim_end().to_string()).is_err() {
+                    let raw = line.trim_end().to_string();
+                    if let Ok(Line::Event(event)) = serde_json::from_str::<Line>(&raw) {
+                        let mut queue = events.lock().unwrap();
+                        if queue.len() == 64 {
+                            queue.pop_front();
+                        }
+                        queue.push_back(event);
+                    } else if tx.send(raw).is_err() {
                         break;
                     }
                 }
@@ -145,6 +158,7 @@ pub struct SessionClient {
     ble_backend: String,
     child: Mutex<Option<ChildHandle>>,
     next_id: AtomicU64,
+    events: Arc<Mutex<VecDeque<SessionEvent>>>,
 }
 
 impl SessionClient {
@@ -155,6 +169,7 @@ impl SessionClient {
             ble_backend: ble_backend.to_string(),
             child: Mutex::new(None),
             next_id: AtomicU64::new(1),
+            events: Arc::new(Mutex::new(VecDeque::new())),
         }
     }
 
@@ -221,7 +236,7 @@ impl SessionClient {
 
         let stdin = child.stdin.take().expect("piped stdin");
         let stdout = child.stdout.take().expect("piped stdout");
-        let rx = spawn_reader(stdout);
+        let rx = spawn_reader(stdout, Arc::clone(&self.events));
         Ok(ChildHandle { child, stdin, rx })
     }
 
@@ -262,51 +277,39 @@ impl SessionClient {
             return Err(SessionError::BrokenPipe);
         }
 
-        // Looped, not a single recv_timeout: with presence mode running, an
-        // Event line can legitimately land between sending this request and
-        // its reply, and must be skipped rather than mistaken for (or
-        // rejected in place of) the Response actually being waited for.
-        // deadline turns the per-line recv_timeout calls into one overall
-        // budget so a stream of events can't extend the wait past `timeout`.
-        let deadline = std::time::Instant::now() + timeout;
-        loop {
-            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
-            if remaining.is_zero() {
-                let handle = guard.take().unwrap();
-                Self::kill(handle);
-                return Err(SessionError::Timeout);
-            }
-            match handle.rx.recv_timeout(remaining) {
-                Ok(raw) => {
-                    let line: Line = match serde_json::from_str(&raw) {
-                        Ok(l) => l,
-                        Err(e) => {
-                            let handle = guard.take().unwrap();
-                            Self::kill(handle);
-                            return Err(SessionError::Decode(e));
-                        }
-                    };
-                    let resp = match line {
-                        Line::Event(_) => continue,
-                        Line::Response(resp) => resp,
-                    };
-                    if resp.id != id {
+        // The reader thread has already diverted Event lines into `events`;
+        // this channel contains only responses (or malformed lines that must
+        // fail the child), so a single timed recv is enough.
+        match handle.rx.recv_timeout(timeout) {
+            Ok(raw) => {
+                let line: Line = match serde_json::from_str(&raw) {
+                    Ok(l) => l,
+                    Err(e) => {
                         let handle = guard.take().unwrap();
                         Self::kill(handle);
-                        return Err(SessionError::IdMismatch);
+                        return Err(SessionError::Decode(e));
                     }
-                    return Ok(RunOutcome {
-                        ok: resp.ok,
-                        stdout: resp.stdout,
-                        stderr: resp.stderr,
-                        exit_code: resp.exit_code,
-                    });
-                }
-                Err(RecvTimeoutError::Timeout | RecvTimeoutError::Disconnected) => {
+                };
+                let resp = match line {
+                    Line::Event(_) => unreachable!("reader diverts events"),
+                    Line::Response(resp) => resp,
+                };
+                if resp.id != id {
                     let handle = guard.take().unwrap();
                     Self::kill(handle);
-                    return Err(SessionError::Timeout);
+                    return Err(SessionError::IdMismatch);
                 }
+                Ok(RunOutcome {
+                    ok: resp.ok,
+                    stdout: resp.stdout,
+                    stderr: resp.stderr,
+                    exit_code: resp.exit_code,
+                })
+            }
+            Err(RecvTimeoutError::Timeout | RecvTimeoutError::Disconnected) => {
+                let handle = guard.take().unwrap();
+                Self::kill(handle);
+                Err(SessionError::Timeout)
             }
         }
     }
@@ -341,6 +344,50 @@ impl SessionClient {
             command_timeout_sec,
             timeout,
         )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn start_presence(
+        &self,
+        vin: &str,
+        key_file: &str,
+        connect_timeout_sec: i32,
+        command_timeout_sec: i32,
+        timeout: Duration,
+    ) -> Result<RunOutcome, SessionError> {
+        self.run(
+            "presence-start",
+            &[],
+            vin,
+            key_file,
+            connect_timeout_sec,
+            command_timeout_sec,
+            timeout,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn stop_presence(
+        &self,
+        vin: &str,
+        key_file: &str,
+        connect_timeout_sec: i32,
+        command_timeout_sec: i32,
+        timeout: Duration,
+    ) -> Result<RunOutcome, SessionError> {
+        self.run(
+            "presence-stop",
+            &[],
+            vin,
+            key_file,
+            connect_timeout_sec,
+            command_timeout_sec,
+            timeout,
+        )
+    }
+
+    pub(crate) fn poll_event(&self) -> Option<SessionEvent> {
+        self.events.lock().unwrap().pop_front()
     }
 }
 
@@ -396,9 +443,13 @@ mod tests {
 
     #[test]
     fn test_line_parses_event_shape_without_response_fields() {
-        let raw = r#"{"kind":"presence_near","vin":"5YJ3E1EA0PF000000"}"#;
+        let raw = r#"{"kind":"presence_error","vin":"5YJ3E1EA0PF000000","time":"2026-08-17T09:00:00Z","error":"radio"}"#;
         match serde_json::from_str::<Line>(raw).expect("valid Event line") {
-            Line::Event(_) => {}
+            Line::Event(event) => {
+                assert_eq!(event.kind, "presence_error");
+                assert_eq!(event.vin, "5YJ3E1EA0PF000000");
+                assert_eq!(event.error, "radio");
+            }
             Line::Response(_) => panic!("Event-shaped line parsed as Response"),
         }
     }

@@ -338,6 +338,68 @@ pub unsafe extern "C" fn core_pair(
     }
 }
 
+/// Starts automatic phone-key presence mode. `active` reports whether the
+/// service is running; an inactive result may carry a caller-freed reason.
+///
+/// # Safety
+/// `core` must be valid; output pointers writable or NULL.
+#[no_mangle]
+pub unsafe extern "C" fn core_start_phone_key(
+    core: *mut Core,
+    active: *mut bool,
+    error_message: *mut *mut c_char,
+) -> CoreError {
+    let Some(core) = (unsafe { core.as_ref() }) else {
+        return CoreError::BadArg;
+    };
+    let (started, error) = core.start_phone_key();
+    if !active.is_null() {
+        unsafe { *active = started };
+    }
+    if !error_message.is_null() {
+        unsafe { *error_message = into_cstring(error) };
+    }
+    CoreError::Ok
+}
+
+/// Pops one queued phone-key event without blocking.
+///
+/// # Safety
+/// `core` must be valid; output pointers writable or NULL. Returned strings
+/// must be released with `core_string_free`.
+#[no_mangle]
+pub unsafe extern "C" fn core_poll_phone_key_event(
+    core: *mut Core,
+    has_event: *mut bool,
+    kind: *mut *mut c_char,
+    vin: *mut *mut c_char,
+    time: *mut *mut c_char,
+    error_message: *mut *mut c_char,
+) -> CoreError {
+    let Some(core) = (unsafe { core.as_ref() }) else {
+        return CoreError::BadArg;
+    };
+    let event = core.poll_phone_key_event();
+    if !has_event.is_null() {
+        unsafe { *has_event = event.is_some() };
+    }
+    if let Some(event) = event {
+        if !kind.is_null() {
+            unsafe { *kind = into_cstring(event.kind) };
+        }
+        if !vin.is_null() {
+            unsafe { *vin = into_cstring(event.vin) };
+        }
+        if !time.is_null() {
+            unsafe { *time = into_cstring(event.time) };
+        }
+        if !error_message.is_null() {
+            unsafe { *error_message = into_cstring(event.error) };
+        }
+    }
+    CoreError::Ok
+}
+
 /// Run a command. `args` is a NULL-terminated array of NUL-terminated UTF-8
 /// strings (an empty array = a single NULL element). Results are written to
 /// the optional output slots (`ok`, `out_stdout`, `out_stderr`,
@@ -563,6 +625,38 @@ mod tests {
             core_string_free(run_stdout);
             core_string_free(run_stderr);
             core_string_free(run_err);
+            core_free(core);
+        }
+    }
+
+    #[test]
+    fn test_phone_key_start_and_empty_event_queue() {
+        let (core, _dir) = tmp_core();
+        assert!(!core.is_null());
+        let mut active = true;
+        let mut error: *mut c_char = ptr::null_mut();
+        let rc = unsafe {
+            core_start_phone_key(core, ptr::addr_of_mut!(active), ptr::addr_of_mut!(error))
+        };
+        assert_eq!(rc, CoreError::Ok);
+        assert!(!active);
+        assert!(!error.is_null());
+
+        let mut has_event = true;
+        let rc = unsafe {
+            core_poll_phone_key_event(
+                core,
+                ptr::addr_of_mut!(has_event),
+                ptr::null_mut(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+            )
+        };
+        assert_eq!(rc, CoreError::Ok);
+        assert!(!has_event);
+        unsafe {
+            core_string_free(error);
             core_free(core);
         }
     }

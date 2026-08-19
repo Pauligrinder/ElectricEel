@@ -130,6 +130,29 @@ enum CoreError core_generate_key(struct Core *core,
 enum CoreError core_pair(struct Core *core, bool *ok, char **stdout_out, char **error_message);
 
 /**
+ * Starts automatic phone-key presence mode. `active` reports whether the
+ * service is running; an inactive result may carry a caller-freed reason.
+ *
+ * # Safety
+ * `core` must be valid; output pointers writable or NULL.
+ */
+enum CoreError core_start_phone_key(struct Core *core, bool *active, char **error_message);
+
+/**
+ * Pops one queued phone-key event without blocking.
+ *
+ * # Safety
+ * `core` must be valid; output pointers writable or NULL. Returned strings
+ * must be released with `core_string_free`.
+ */
+enum CoreError core_poll_phone_key_event(struct Core *core,
+                                         bool *has_event,
+                                         char **kind,
+                                         char **vin,
+                                         char **time,
+                                         char **error_message);
+
+/**
  * Run a command. `args` is a NULL-terminated array of NUL-terminated UTF-8
  * strings (an empty array = a single NULL element). Results are written to
  * the optional output slots (`ok`, `out_stdout`, `out_stderr`,

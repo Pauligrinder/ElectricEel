@@ -87,7 +87,14 @@ type session struct {
 
 	// presenceCancel is non-nil while the presence-maintenance loop (see
 	// presenceLoop) is running; presence-start/presence-stop set/clear it.
-	presenceCancel context.CancelFunc
+	presenceCancel     context.CancelFunc
+	presenceGeneration uint64
+
+	// authCancel / authInbox drive the passive-entry AuthenticationRequest
+	// responder while presence mode holds a live BlueZ session. Cleared by
+	// stopAuthTapLocked (via teardownLocked / presence stop).
+	authCancel context.CancelFunc
+	authInbox  chan []byte
 
 	// writeMu serializes stdout writes: dispatch's replies and the presence
 	// loop's unsolicited events both encode onto enc from different
@@ -104,6 +111,7 @@ func (s *session) teardownLocked() {
 		s.idleTimer.Stop()
 		s.idleTimer = nil
 	}
+	s.stopAuthTapLocked()
 	if s.car != nil {
 		s.car.Disconnect()
 		s.car = nil
@@ -388,12 +396,12 @@ const (
 // (BLE scanning, connecting, locking) so the hysteresis logic is
 // unit-testable without a real adapter.
 //
-// Deliberately does not decide to unlock: the vehicle's own passive-entry
-// check (run locally when the door handle is pulled) is what authorizes
-// unlock, using whatever session is live at that moment - this state
-// machine's job on arrival is only to make sure one *is* live. Departure is
-// the one point it acts on its own initiative, sending the same "lock" an
-// explicit walk-away lock would, mirroring the official app.
+// Deliberately does not decide to unlock or lock: the vehicle's own
+// passive-entry check (handle pull) authorizes unlock using the live
+// session and any AuthenticationResponse this process replies with, and
+// walk-away lock remains the vehicle's own setting. This state machine's
+// job is only to keep an authenticated session up while nearby and release
+// it on departure.
 func presenceStep(cfg presenceConfig, near bool, consecNear int, lastSeen, now time.Time, seen bool, rssi int16) (nextNear bool, nextConsecNear int, nextLastSeen time.Time, action presenceAction) {
 	if seen && rssi >= cfg.nearRSSI {
 		lastSeen = now
@@ -472,8 +480,10 @@ func (s *session) dispatchPresenceStart(req request) response {
 		return response{ID: req.ID, OK: true, Stdout: "presence mode already running\n", ExitCode: 0}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
+	s.presenceGeneration++
+	generation := s.presenceGeneration
 	s.presenceCancel = cancel
-	go s.presenceLoop(ctx, cfg)
+	go s.presenceLoop(ctx, cfg, generation)
 	return response{ID: req.ID, OK: true, Stdout: "presence mode started\n", ExitCode: 0}
 }
 
@@ -481,48 +491,128 @@ func (s *session) dispatchPresenceStop(req request) response {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.stopPresenceLocked()
+	s.teardownLocked()
 	return response{ID: req.ID, OK: true, Stdout: "presence mode stopped\n", ExitCode: 0}
 }
 
 // stopPresenceLocked cancels the presence loop, if running. Safe to call
-// when it isn't. Caller holds mu.
+// when it isn't. Also stops the AuthenticationRequest responder so a later
+// presence-start does not reuse a cancelled auth inbox. Caller holds mu.
 func (s *session) stopPresenceLocked() {
 	if s.presenceCancel != nil {
 		s.presenceCancel()
 		s.presenceCancel = nil
 	}
+	// Invalidates the cancelled loop's deferred cleanup so it cannot clear a
+	// newer presence-start that races ahead before the old goroutine exits.
+	s.presenceGeneration++
+	s.stopAuthTapLocked()
 }
 
-// triggerCommand runs cmd against the (lazily connected) session, the same
-// connect+execute+reset-idle-timer sequence dispatch uses (captureOutput
-// included - a handler's stdout text must not reach the process's real
-// stdout here any more than it may from dispatch, since both share that
-// JSON-lines stream), for callers that aren't answering a stdin request
-// (i.e. presenceLoop's departure action). The command's own stdout/stderr
-// text is discarded; callers report success/failure via the returned error.
-func (s *session) triggerCommand(ctx context.Context, cmd string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.ensureConnectedLocked(ctx, cmd, nil); err != nil {
-		return err
+// ensureAuthTapLocked attaches a non-destructive BlueZ inbound observer and
+// starts the AuthenticationRequest responder if needed. Caller holds mu;
+// s.conn must already be a live *bluez.Connection (presence mode is bluez
+// only). parent is the presence-loop context so the responder stops when
+// presence stops even if teardown hasn't run yet.
+func (s *session) ensureAuthTapLocked(parent context.Context) {
+	bz, ok := s.conn.(*bluez.Connection)
+	if !ok || bz == nil {
+		return
 	}
-	var execErr error
-	captureOutput(func() {
-		execErr = execute(ctx, nil, s.car, []string{cmd})
+	if s.authCancel == nil {
+		inbox := make(chan []byte, 16)
+		s.authInbox = inbox
+		authCtx, cancel := context.WithCancel(parent)
+		s.authCancel = cancel
+		go s.authResponderLoop(authCtx, inbox)
+	}
+	inbox := s.authInbox
+	bz.SetInboundObserver(func(datagram []byte) {
+		select {
+		case inbox <- datagram:
+		default:
+			// Responder behind; drop rather than stall GATT RX.
+		}
 	})
-	s.resetIdleTimerLocked()
-	return execErr
+}
+
+// stopAuthTapLocked clears the BlueZ inbound observer and stops the
+// AuthenticationRequest responder. Safe when neither is active. Caller holds mu.
+func (s *session) stopAuthTapLocked() {
+	if bz, ok := s.conn.(*bluez.Connection); ok && bz != nil {
+		bz.SetInboundObserver(nil)
+	}
+	if s.authCancel != nil {
+		s.authCancel()
+		s.authCancel = nil
+	}
+	s.authInbox = nil
+}
+
+// authResponderLoop consumes observed inbound datagrams, detects VCSEC
+// AuthenticationRequest messages, and replies with a matching
+// AuthenticationResponse over the authenticated session. Holds session.mu
+// across vehicle.Send, matching dispatch(): teardown must not concurrently
+// disconnect the Vehicle while its dispatcher is signing/sending the reply.
+func (s *session) authResponderLoop(ctx context.Context, inbox <-chan []byte) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case datagram, ok := <-inbox:
+			if !ok {
+				return
+			}
+			req, found := parseAuthenticationRequest(datagram)
+			if !found {
+				continue
+			}
+			s.mu.Lock()
+			car := s.car
+			if car == nil {
+				s.mu.Unlock()
+				continue
+			}
+			sendCtx, cancel := context.WithTimeout(ctx, s.commandTimeout)
+			err := sendAuthenticationResponse(sendCtx, car, req.RequestedLevel)
+			cancel()
+			if sessionDroppedError(err) {
+				s.teardownLocked()
+			}
+			s.mu.Unlock()
+			if err == nil {
+				s.emitEvent("presence_auth_ok", nil)
+				continue
+			}
+			s.emitEvent("presence_auth_failed", err)
+		}
+	}
 }
 
 // presenceLoop polls the vehicle's beacon on cfg.scanInterval and drives
 // presenceStep, translating its verdicts into the one BLE side effect that
 // matters: keeping a live authenticated session up while the vehicle is
 // judged nearby (arrival, and every "still near" tick, since idle teardown
-// would otherwise reclaim it out from under a stationary phone), and
-// releasing it with an explicit lock on departure. Runs until ctx is
-// cancelled by stopPresenceLocked.
-func (s *session) presenceLoop(ctx context.Context, cfg presenceConfig) {
-	defer s.emitEvent("presence_stopped", nil)
+// would otherwise reclaim it out from under a stationary phone), answering
+// VCSEC AuthenticationRequest messages for passive unlock/drive, and
+// releasing the session on departure without an explicit lock so the
+// vehicle's Walk-Away Door Lock setting remains authoritative. Runs until
+// ctx is cancelled by stopPresenceLocked.
+func (s *session) presenceLoop(ctx context.Context, cfg presenceConfig, generation uint64) {
+	defer func() {
+		s.mu.Lock()
+		current := s.presenceGeneration == generation
+		if current {
+			s.presenceCancel = nil
+		}
+		s.mu.Unlock()
+		// A cancelled/superseded loop is an intentional lifecycle change;
+		// only an unexpected exit of the current generation should ask the
+		// Rust core to restart presence mode.
+		if current {
+			s.emitEvent("presence_stopped", nil)
+		}
+	}()
 
 	s.mu.Lock()
 	err := s.ensureBluezLocked()
@@ -581,6 +671,10 @@ func (s *session) presenceLoop(ctx context.Context, cfg presenceConfig) {
 			// triggering a second, colliding one (see ensureConnectedLocked's
 			// target doc).
 			connErr := s.ensureConnectedLocked(connCtx, "", result) // general-purpose session, not for one specific command
+			if connErr == nil {
+				s.ensureAuthTapLocked(ctx)
+				s.resetIdleTimerLocked()
+			}
 			s.mu.Unlock()
 			cancel()
 			if connErr != nil {
@@ -592,20 +686,33 @@ func (s *session) presenceLoop(ctx context.Context, cfg presenceConfig) {
 			s.emitEvent("presence_near", nil)
 		case presenceActionStayNear:
 			s.mu.Lock()
-			s.resetIdleTimerLocked()
-			s.mu.Unlock()
+			if s.car == nil {
+				// Session dropped (idle teardown, GATT loss after auth
+				// failure, etc.) while the beacon is still nearby: reconnect
+				// using the Watcher's current Peek target when available.
+				connCtx, cancel := context.WithTimeout(ctx, s.connectTimeout)
+				connErr := s.ensureConnectedLocked(connCtx, "", result)
+				cancel()
+				if connErr == nil {
+					s.ensureAuthTapLocked(ctx)
+					s.resetIdleTimerLocked()
+					s.mu.Unlock()
+					s.emitEvent("presence_near", nil)
+				} else {
+					s.mu.Unlock()
+					s.emitEvent("presence_error", connErr)
+				}
+			} else {
+				s.resetIdleTimerLocked()
+				s.mu.Unlock()
+			}
 		case presenceActionDepart:
-			cmdCtx, cancel := context.WithTimeout(ctx, s.commandTimeout)
-			lockErr := s.triggerCommand(cmdCtx, "lock")
-			cancel()
+			// No explicit lock: vehicle Walk-Away Door Lock (or lack of it)
+			// governs locking once the phone-key session disconnects.
 			s.mu.Lock()
 			s.teardownLocked()
 			s.mu.Unlock()
-			if lockErr != nil {
-				s.emitEvent("presence_lock_failed", lockErr)
-			} else {
-				s.emitEvent("presence_far", nil)
-			}
+			s.emitEvent("presence_far", nil)
 		}
 	}
 }
@@ -689,11 +796,10 @@ func (s *session) dispatch(req request) response {
 // duration of f, so commands_vendor.go's handlers (which fmt.Println
 // straight to them, same as upstream tesla-control) don't collide with
 // this process's own stdout, which is reserved for the JSON response/event
-// stream. Safe only because its two callers - dispatch() and
-// triggerCommand() - both hold session.mu for their entire call, so no two
-// invocations of captureOutput (which swaps process-wide globals) can ever
-// run concurrently; a future caller into execute() that doesn't hold mu
-// would silently break this.
+// stream. Safe only because its sole production caller - dispatch() - holds
+// session.mu for its entire call, so no two invocations of captureOutput
+// (which swaps process-wide globals) can ever run concurrently; a future
+// caller into execute() that doesn't hold mu would silently break this.
 func captureOutput(f func()) (stdout, stderr string) {
 	origOut, origErr := os.Stdout, os.Stderr
 	outR, outW, err := os.Pipe()

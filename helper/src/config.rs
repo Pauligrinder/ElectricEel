@@ -80,6 +80,11 @@ pub(crate) struct Config {
     pub key_name: String,
     pub connect_timeout_sec: i32,
     pub command_timeout_sec: i32,
+    /// VIN for which the current local key completed the NFC pairing flow.
+    /// `None` means a pre-phone-key config file; Core migrates that case
+    /// conservatively when an existing key is present.
+    #[serde(default)]
+    pub paired_vin: Option<String>,
 }
 
 impl Default for Config {
@@ -90,6 +95,7 @@ impl Default for Config {
             key_name: "harbour-electric-eel".to_string(),
             connect_timeout_sec: 20,
             command_timeout_sec: 5,
+            paired_vin: Some(String::new()),
         }
     }
 }
@@ -148,6 +154,12 @@ impl Config {
         if !self.vin.trim().is_empty() && !VIN_RE.is_match(self.vin.trim()) {
             eprintln!("electric-eel: config.json vin fails validation, clearing");
             self.vin = String::new();
+        }
+        if let Some(paired_vin) = &self.paired_vin {
+            if !paired_vin.is_empty() && !VIN_RE.is_match(paired_vin) {
+                eprintln!("electric-eel: config.json paired_vin fails validation, clearing");
+                self.paired_vin = Some(String::new());
+            }
         }
         let model = self.model.trim().to_ascii_lowercase();
         if VALID_MODELS.contains(&model.as_str()) {
@@ -431,6 +443,7 @@ mod tests {
             key_name: "harbour-electric-eel".to_string(),
             connect_timeout_sec: 20,
             command_timeout_sec: 5,
+            paired_vin: Some("5YJ3E1EA0PF000000".to_string()),
         };
         cfg.save(&path).expect("save");
 
