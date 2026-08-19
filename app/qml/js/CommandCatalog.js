@@ -11,6 +11,12 @@
 //
 // arg.type: "none" | "int" | "float" | "string" | "pin" | "enum"
 //
+// arg.stateDefault (optional): name of a VehicleState.js status field whose
+// current value should pre-fill this arg's `def` when the dialog opens (the
+// slider/field starts at what the vehicle reports, not a hardcoded default).
+// CategoryPage.qml clones the arg and applies it - the catalog's own `def`
+// stays untouched as a fallback for when status isn't loaded yet.
+//
 // Toggle pairs (start/stop charging, open/close charge port, climate on/off,
 // lock/unlock, vent/close windows, open/close trunk) carry a `visibleWhen`
 // predicate that CategoryPage evaluates against the dashboard status
@@ -43,7 +49,7 @@ var CATEGORIES = [
       // glued directly onto the number (22C or 72F) - a bare number always
       // failed to parse. See ArgumentDialog.qml's sliderField.
       cmd("climate-set-temp", "Set Temperature", [
-        arg("TEMP", "float", { min: 15, max: 28, step: 0.5, unit: "°C", sendSuffix: "C", def: 21 })
+        arg("TEMP", "float", { min: 15, max: 28, step: 0.5, unit: "°C", sendSuffix: "C", def: 21, stateDefault: "driverTempSetting" })
       ]),
       // SEAT/LEVEL values are commands_vendor.go's own seats/levels map
       // keys verbatim - hyphenated positions, off|low|medium|high levels
@@ -76,10 +82,10 @@ var CATEGORIES = [
       cmd("charge-port-open", "Open Charge Port", [], portClosed),
       cmd("charge-port-close", "Close Charge Port", [], portOpen),
       cmd("charging-set-limit", "Set Charge Limit", [
-        arg("PERCENT", "int", { min: 50, max: 100, unit: "%", def: 80 })
+        arg("PERCENT", "int", { min: 50, max: 100, unit: "%", def: 80, stateDefault: "chargeLimitSoc" })
       ]),
       cmd("charging-set-amps", "Set Charge Current", [
-        arg("AMPS", "int", { min: 1, max: 48, unit: "A", def: 16 })
+        arg("AMPS", "int", { min: 1, max: 48, unit: "A", def: 16, stateDefault: "chargeCurrent" })
       ]),
       cmd("charging-schedule", "Schedule Charging", [
         arg("MINS", "int", { min: 0, max: 1439, unit: "min after midnight", def: 0 })
