@@ -3,7 +3,7 @@ Summary:    Control your Tesla over Bluetooth
 Version:    0.2.5
 Release:    1
 License:    ASL 2.0
-URL:        https://github.com/marconapetti/ElectricEel
+URL:        https://github.com/nappa85/ElectricEel
 Source0:    %{name}-%{version}.tar.bz2
 Requires:   sailfishsilica-qt5 >= 0.10.9
 Requires:   qt5-qtcore
@@ -48,6 +48,7 @@ desktop-file-install --delete-original \
 %changelog
 * Wed Aug 19 2026 Marco Napetti <marco.napetti@proton.me> - 0.2.5-1
 - App cover shows connection status
+- Phone as key
 * Thu Aug 18 2026 Marco Napetti <marco.napetti@proton.me> - 0.2.4-1
 - Fix sliders
 * Thu Aug 15 2026 Marco Napetti <marco.napetti@proton.me> - 0.2.3-1

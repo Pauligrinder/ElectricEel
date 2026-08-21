@@ -19,6 +19,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
+	"electric-eel-session/bluez"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -35,8 +36,6 @@ import (
 	"github.com/teslamotors/vehicle-command/pkg/connector/ble"
 	"github.com/teslamotors/vehicle-command/pkg/protocol"
 	"github.com/teslamotors/vehicle-command/pkg/vehicle"
-
-	"electric-eel-session/bluez"
 )
 
 // writeErr is referenced by a couple of commands_vendor.go's handlers

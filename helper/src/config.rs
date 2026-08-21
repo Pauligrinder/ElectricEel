@@ -65,8 +65,74 @@ impl fmt::Display for ConfigError {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+impl std::error::Error for ConfigError {}
+
+/// Schema version of `config.json`, so a future field change can migrate old
+/// files instead of guessing. `Core::new` runs any pending migrations for
+/// `version < CURRENT` and then rewrites the file at `CURRENT`. Serialized as
+/// its numeric index; an out-of-range value (a newer build's config) is kept
+/// verbatim in `Unknown` so this build never rewrites a file it doesn't
+/// understand.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Serialize, Deserialize)]
+#[serde(from = "u8", into = "u8")]
+pub(crate) enum ConfigVersion {
+    /// Pre-phone-key: no pairing state at all.
+    #[default]
+    V0,
+    /// Phone-key era: `paired_vin: Option<String>`.
+    V1,
+    /// Current: `vin_state: VinState` (and the `version` key itself).
+    V2,
+    /// A version newer than this build knows; carried verbatim so the file
+    /// is never downgraded.
+    Unknown(u8),
+}
+
+impl ConfigVersion {
+    pub(crate) const CURRENT: Self = Self::V2;
+}
+
+impl From<u8> for ConfigVersion {
+    fn from(v: u8) -> Self {
+        match v {
+            0 => Self::V0,
+            1 => Self::V1,
+            2 => Self::V2,
+            v => Self::Unknown(v),
+        }
+    }
+}
+
+impl From<ConfigVersion> for u8 {
+    fn from(v: ConfigVersion) -> u8 {
+        match v {
+            ConfigVersion::V0 => 0,
+            ConfigVersion::V1 => 1,
+            ConfigVersion::V2 => 2,
+            ConfigVersion::Unknown(v) => v,
+        }
+    }
+}
+
+/// Pairing state of the current VIN's local key. `Paired` means the key has
+/// completed the NFC pairing flow with the configured VIN and so is eligible
+/// for automatic phone-key presence; `Unpaired` (the serde default) means it
+/// hasn't. This replaces the old `paired_vin: Option<String>` field, which
+/// stored a duplicate copy of the VIN just to say "this VIN is paired".
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum VinState {
+    #[default]
+    Unpaired,
+    Paired,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub(crate) struct Config {
+    /// Schema version of this file. `Core::new` migrates older files up to
+    /// `ConfigVersion::CURRENT` and rewrites them at that version.
+    #[serde(default)]
+    pub version: ConfigVersion,
     pub vin: String,
     // #[serde(default)]: config.json files written before this field existed
     // (anything pre-0.1.6) have no "model" key. Without a default, serde
@@ -80,23 +146,78 @@ pub(crate) struct Config {
     pub key_name: String,
     pub connect_timeout_sec: i32,
     pub command_timeout_sec: i32,
-    /// VIN for which the current local key completed the NFC pairing flow.
-    /// `None` means a pre-phone-key config file; Core migrates that case
-    /// conservatively when an existing key is present.
+    /// Whether the current VIN's key has completed NFC pairing.
+    /// `Unpaired` is the serde default; older schema versions that predate
+    /// this field are migrated by `Core::new`.
     #[serde(default)]
-    pub paired_vin: Option<String>,
+    pub vin_state: VinState,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Config {
+            version: ConfigVersion::CURRENT,
             vin: String::new(),
             model: String::new(),
             key_name: "harbour-electric-eel".to_string(),
             connect_timeout_sec: 20,
             command_timeout_sec: 5,
-            paired_vin: Some(String::new()),
+            vin_state: VinState::Unpaired,
         }
+    }
+}
+
+/// Deserializes a config, translating legacy schema versions into the
+/// current fields. The `version` key wins when present; otherwise it's
+/// inferred from which fields the file carries:
+/// - `vin_state` present -> the file is already current-shaped (V2);
+/// - `paired_vin` present -> the phone-key era (V1): a value equal to the
+///   configured VIN means paired, anything else unpaired;
+/// - neither -> pre-phone-key (V0), left `Unpaired` for `Core::new` to
+///   decide from key-file presence whether a working key is on disk.
+impl<'de> Deserialize<'de> for Config {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct LegacyConfig {
+            #[serde(default)]
+            version: Option<ConfigVersion>,
+            vin: String,
+            #[serde(default)]
+            model: String,
+            key_name: String,
+            connect_timeout_sec: i32,
+            command_timeout_sec: i32,
+            #[serde(default)]
+            vin_state: Option<VinState>,
+            #[serde(default)]
+            paired_vin: Option<String>,
+        }
+
+        let raw = LegacyConfig::deserialize(deserializer)?;
+        let (vin_state, version) = if let Some(state) = raw.vin_state {
+            (state, raw.version.unwrap_or(ConfigVersion::V2))
+        } else if let Some(v) = raw.paired_vin.as_deref() {
+            let state = if !v.is_empty() && v == raw.vin {
+                VinState::Paired
+            } else {
+                VinState::Unpaired
+            };
+            (state, raw.version.unwrap_or(ConfigVersion::V1))
+        } else {
+            (VinState::Unpaired, raw.version.unwrap_or(ConfigVersion::V0))
+        };
+        Ok(Config {
+            version,
+            vin: raw.vin,
+            model: raw.model,
+            key_name: raw.key_name,
+            connect_timeout_sec: raw.connect_timeout_sec,
+            command_timeout_sec: raw.command_timeout_sec,
+            vin_state,
+        })
     }
 }
 
@@ -154,12 +275,6 @@ impl Config {
         if !self.vin.trim().is_empty() && !VIN_RE.is_match(self.vin.trim()) {
             eprintln!("electric-eel: config.json vin fails validation, clearing");
             self.vin = String::new();
-        }
-        if let Some(paired_vin) = &self.paired_vin {
-            if !paired_vin.is_empty() && !VIN_RE.is_match(paired_vin) {
-                eprintln!("electric-eel: config.json paired_vin fails validation, clearing");
-                self.paired_vin = Some(String::new());
-            }
         }
         let model = self.model.trim().to_ascii_lowercase();
         if VALID_MODELS.contains(&model.as_str()) {
@@ -438,12 +553,13 @@ mod tests {
         let path = dir.join("config.json");
 
         let cfg = Config {
+            version: ConfigVersion::CURRENT,
             vin: "5YJ3E1EA0PF000000".to_string(),
             model: String::new(),
             key_name: "harbour-electric-eel".to_string(),
             connect_timeout_sec: 20,
             command_timeout_sec: 5,
-            paired_vin: Some("5YJ3E1EA0PF000000".to_string()),
+            vin_state: VinState::Paired,
         };
         cfg.save(&path).expect("save");
 
@@ -533,6 +649,110 @@ mod tests {
         assert_eq!(cfg.key_name, "harbour-electric-eel");
         assert_eq!(cfg.connect_timeout_sec, 20);
         assert_eq!(cfg.command_timeout_sec, 5);
+        assert_eq!(
+            cfg.version,
+            ConfigVersion::V0,
+            "a pre-phone-key file with no pairing state is schema V0"
+        );
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_load_translates_legacy_paired_vin() {
+        let dir = std::env::temp_dir().join(format!(
+            "electric-eel-test-legacy-paired-{}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("config.json");
+        let vin = "5YJ3E1EA0PF000000";
+
+        // Legacy field equal to the configured VIN means "paired".
+        fs::write(
+            &path,
+            format!(
+                r#"{{"vin":"{vin}","key_name":"harbour-electric-eel","connect_timeout_sec":20,"command_timeout_sec":5,"paired_vin":"{vin}"}}"#
+            ),
+        )
+        .unwrap();
+        let cfg = Config::load(&path).expect("load");
+        assert_eq!(cfg.vin_state, VinState::Paired);
+        assert_eq!(cfg.version, ConfigVersion::V1);
+
+        // Legacy empty field means "explicitly unpaired".
+        fs::write(
+            &path,
+            format!(
+                r#"{{"vin":"{vin}","key_name":"harbour-electric-eel","connect_timeout_sec":20,"command_timeout_sec":5,"paired_vin":""}}"#
+            ),
+        )
+        .unwrap();
+        let cfg = Config::load(&path).expect("load");
+        assert_eq!(cfg.vin_state, VinState::Unpaired);
+        assert_eq!(cfg.version, ConfigVersion::V1);
+
+        // Legacy field pointing at a different VIN is not paired.
+        fs::write(
+            &path,
+            format!(
+                r#"{{"vin":"{vin}","key_name":"harbour-electric-eel","connect_timeout_sec":20,"command_timeout_sec":5,"paired_vin":"5YJ3E1EA0PF111111"}}"#
+            ),
+        )
+        .unwrap();
+        let cfg = Config::load(&path).expect("load");
+        assert_eq!(cfg.vin_state, VinState::Unpaired);
+        assert_eq!(cfg.version, ConfigVersion::V1);
+
+        // No pairing key at all -> pre-phone-key config (V0); Core::new
+        // decides from key-file presence whether to mark it paired.
+        fs::write(
+            &path,
+            format!(
+                r#"{{"vin":"{vin}","key_name":"harbour-electric-eel","connect_timeout_sec":20,"command_timeout_sec":5}}"#
+            ),
+        )
+        .unwrap();
+        let cfg = Config::load(&path).expect("load");
+        assert_eq!(cfg.vin_state, VinState::Unpaired);
+        assert_eq!(cfg.version, ConfigVersion::V0);
+
+        // Current-format configs carry vin_state; without a version key they
+        // infer V2 and are never migrated.
+        fs::write(
+            &path,
+            format!(
+                r#"{{"vin":"{vin}","key_name":"harbour-electric-eel","connect_timeout_sec":20,"command_timeout_sec":5,"vin_state":"paired"}}"#
+            ),
+        )
+        .unwrap();
+        let cfg = Config::load(&path).expect("load");
+        assert_eq!(cfg.vin_state, VinState::Paired);
+        assert_eq!(cfg.version, ConfigVersion::V2);
+
+        // An explicit version key wins over inference...
+        fs::write(
+            &path,
+            format!(
+                r#"{{"version":1,"vin":"{vin}","key_name":"harbour-electric-eel","connect_timeout_sec":20,"command_timeout_sec":5,"paired_vin":""}}"#
+            ),
+        )
+        .unwrap();
+        let cfg = Config::load(&path).expect("load");
+        assert_eq!(cfg.version, ConfigVersion::V1);
+
+        // ...and an unknown (newer-build) version is preserved, never mapped
+        // onto a known one so a newer file is never rewritten as older.
+        fs::write(
+            &path,
+            format!(
+                r#"{{"version":99,"vin":"{vin}","key_name":"harbour-electric-eel","connect_timeout_sec":20,"command_timeout_sec":5,"vin_state":"paired"}}"#
+            ),
+        )
+        .unwrap();
+        let cfg = Config::load(&path).expect("load");
+        assert_eq!(cfg.version, ConfigVersion::Unknown(99));
+        assert_eq!(cfg.vin_state, VinState::Paired);
 
         fs::remove_dir_all(&dir).ok();
     }
