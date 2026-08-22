@@ -12,7 +12,6 @@
 //! the daemon.
 
 use std::io::Read;
-use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -576,6 +575,32 @@ impl Core {
         event
     }
 
+    /// Called when the device resumes from system suspend (screen off / sleep).
+    /// The `org.bluez` system-bus socket and any live GATT link are typically
+    /// stale after the freezer - the Go child is still alive but its D-Bus
+    /// connection will time out on the next command. Proactively kill the
+    /// idle child so the next `run()` spawns a fresh one with a new bus
+    /// connection instead of waiting for a full `connect_timeout+command_timeout`
+    /// timeout. Idempotent and safe to call even when no child exists or no
+    /// session is configured.
+    pub(crate) fn handle_resume(&self) {
+        eprintln!("Core: handle_resume - device woke from suspend, recycling stale BLE session");
+        // Allow `start_phone_key` to claim the flag again after we killed its
+        // old presenceLoop. Without this a stale `true` would make the restart
+        // a no-op.
+        self.phone_key_started.store(false, Ordering::SeqCst);
+        if let Some(session) = &self.session {
+            session.clear_events();
+            session.invalidate();
+        }
+        // Best-effort restart: if we were paired before suspend we want
+        // presence scanning back immediately, not only after the next user
+        // command recreates the child. Failures are just logged - the next
+        // periodic `poll_phone_key_event` or explicit user action will retry
+        // and `start_phone_key` already emits a descriptive error.
+        let _ = self.start_phone_key();
+    }
+
     pub(crate) fn set_config(
         &self,
         vin: &str,
@@ -726,21 +751,13 @@ pub(crate) fn run_binary(
     timeout: Duration,
 ) -> RunOutcome {
     let path = Path::new(bin_dir).join(name);
-    // this is made unsafe by libc::prctl
-    let child = unsafe {
-        Command::new(&path)
-            .args(args)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .pre_exec(|| {
-                // Linux: send SIGTERM to child when parent dies
-                libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM as usize, 0, 0, 0);
-                Ok(())
-            })
-            .spawn()
-            .inspect_err(|e| eprintln!("Core: failed to spawn {}: {e}", path.display()))
-    };
-    let Ok(mut child) = child else {
+    let Ok(mut child) = Command::new(&path)
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .inspect_err(|e| eprintln!("Core: failed to spawn {}: {e}", path.display()))
+    else {
         return RunOutcome {
             ok: false,
             stdout: String::new(),

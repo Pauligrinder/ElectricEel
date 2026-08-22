@@ -249,8 +249,3 @@ func (c *Connection) flush() bool {
 	c.rxBuf = c.rxBuf[2+msgLength:]
 	return true
 }
-
-func (c *Connection) SetAutoConnect(enabled bool) error {
-	_, err := c.bus.object(bluezService, c.devPath).call(context.Background(), deviceIface+".SetProperty", "AutoConnect", dbus.MakeVariant(enabled))
-	return err
-}

@@ -403,6 +403,24 @@ pub unsafe extern "C" fn core_start_phone_key(
     CoreError::Ok
 }
 
+/// Notifies the core that the device resumed from system suspend.
+///
+/// Kills any idle `tesla-session` child whose `org.bluez` system-bus socket
+/// is likely stale after the freezer, clears queued stale events, and
+/// best-effort restarts phone-key presence if the current config is paired.
+/// Idempotent. Never fails except for a NULL handle.
+///
+/// # Safety
+/// `core` must be a pointer returned by `core_new`, or NULL.
+#[no_mangle]
+pub unsafe extern "C" fn core_handle_resume(core: *mut Core) -> CoreError {
+    let Some(core) = (unsafe { core.as_ref() }) else {
+        return CoreError::BadArg;
+    };
+    core.handle_resume();
+    CoreError::Ok
+}
+
 /// Pops one queued phone-key event without blocking.
 ///
 /// # Safety
@@ -700,5 +718,20 @@ mod tests {
             core_string_free(error);
             core_free(core);
         }
+    }
+
+    #[test]
+    fn test_handle_resume_idempotent() {
+        let (core, _dir) = tmp_core();
+        assert!(!core.is_null());
+        let rc = unsafe { core_handle_resume(core) };
+        assert_eq!(rc, CoreError::Ok);
+        // second call must remain idempotent
+        let rc = unsafe { core_handle_resume(core) };
+        assert_eq!(rc, CoreError::Ok);
+        // null handle is BadArg
+        let rc = unsafe { core_handle_resume(ptr::null_mut()) };
+        assert_eq!(rc, CoreError::BadArg);
+        unsafe { core_free(core) };
     }
 }
