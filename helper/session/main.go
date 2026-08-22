@@ -83,6 +83,7 @@ type session struct {
 	bluez *bluez.Conn
 
 	idleTimer *time.Timer
+	idleDeadline time.Time
 
 	// presenceCancel is non-nil while the presence-maintenance loop (see
 	// presenceLoop) is running; presence-start/presence-stop set/clear it.
@@ -247,7 +248,21 @@ func (s *session) ensureConnectedLocked(ctx context.Context, cmd string, target 
 
 	s.car = car
 	s.conn = conn
+	if s.bleBackend == "bluez" {
+		_ = s.enableAutoConnectLocked()
+	}
 	return nil
+}
+
+func (s *session) enableAutoConnectLocked() error {
+	if s.bluez == nil || s.conn == nil {
+		return nil
+	}
+	bzConn, ok := s.conn.(*bluez.Connection)
+	if !ok || bzConn == nil {
+		return nil
+	}
+	return bzConn.SetAutoConnect(true)
 }
 
 // ensureBluezLocked opens the system-bus connection used for the bluez
@@ -270,14 +285,25 @@ func (s *session) ensureBluezLocked() error {
 // after every command, successful or not - a command that fails still
 // proves the link is alive right now, and a wedged link will surface on
 // the *next* attempt regardless of whether idle teardown ran in between.
+// Uses monotonic time to survive system suspend (wall-clock jumps forward).
 // Caller holds mu.
 func (s *session) resetIdleTimerLocked() {
 	if s.idleTimer != nil {
 		s.idleTimer.Stop()
 	}
+	s.idleDeadline = time.Now().Add(s.idleTimeout)
 	s.idleTimer = time.AfterFunc(s.idleTimeout, func() {
 		s.mu.Lock()
 		defer s.mu.Unlock()
+		if time.Now().Before(s.idleDeadline) {
+			rem := time.Until(s.idleDeadline)
+			s.idleTimer = time.AfterFunc(rem, func() {
+				s.mu.Lock()
+				s.teardownLocked()
+				s.mu.Unlock()
+			})
+			return
+		}
 		s.teardownLocked()
 	})
 }

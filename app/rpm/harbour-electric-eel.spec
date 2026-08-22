@@ -1,6 +1,6 @@
 Name:       harbour-electric-eel
 Summary:    Control your Tesla over Bluetooth
-Version:    0.2.6
+Version:    0.2.7
 Release:    1
 License:    ASL 2.0
 URL:        https://github.com/nappa85/ElectricEel
@@ -46,6 +46,8 @@ desktop-file-install --delete-original \
 %{_datadir}/icons/hicolor/*/apps/%{name}.png
 
 %changelog
+* Thu Aug 18 2026 Marco Napetti <marco.napetti@proton.me> - 0.2.7-1
+- Enable BlueZ AutoConnect
 * Thu Aug 18 2026 Marco Napetti <marco.napetti@proton.me> - 0.2.6-1
 - Ensure child process is killed with parent
 * Thu Aug 18 2026 Marco Napetti <marco.napetti@proton.me> - 0.2.5-1
