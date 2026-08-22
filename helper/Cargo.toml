@@ -1,6 +1,6 @@
 [package]
 name = "electric-eel-core"
-version = "0.2.5"
+version = "0.2.6"
 edition = "2021"
 description = "In-process BLE control core for harbour-electric-eel"
 
@@ -25,6 +25,7 @@ required-features = ["dbus"]
 pedantic = "warn"
 
 [dependencies]
+libc = "0.2"
 procfs = { version = "0.18.0", default-features = false, optional = true }
 regex = "1"
 serde = { version = "1", features = ["derive"] }

@@ -12,6 +12,7 @@
 //! the daemon.
 
 use std::io::Read;
+use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -725,13 +726,21 @@ pub(crate) fn run_binary(
     timeout: Duration,
 ) -> RunOutcome {
     let path = Path::new(bin_dir).join(name);
-    let Ok(mut child) = Command::new(&path)
-        .args(args)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .inspect_err(|e| eprintln!("Core: failed to spawn {}: {e}", path.display()))
-    else {
+    // this is made unsafe by libc::prctl
+    let child = unsafe {
+        Command::new(&path)
+            .args(args)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .pre_exec(|| {
+                // Linux: send SIGTERM to child when parent dies
+                libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM as usize, 0, 0, 0);
+                Ok(())
+            })
+            .spawn()
+            .inspect_err(|e| eprintln!("Core: failed to spawn {}: {e}", path.display()))
+    };
+    let Ok(mut child) = child else {
         return RunOutcome {
             ok: false,
             stdout: String::new(),

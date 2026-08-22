@@ -26,6 +26,7 @@
 
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Write};
+use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -211,28 +212,36 @@ impl SessionClient {
         connect_timeout_sec: i32,
         command_timeout_sec: i32,
     ) -> Result<ChildHandle, SessionError> {
-        let mut child = Command::new(&self.bin_path)
-            .arg("-vin")
-            .arg(vin)
-            .arg("-key-file")
-            .arg(key_file)
-            .arg("-ble-backend")
-            .arg(&self.ble_backend)
-            .arg("-connect-timeout")
-            .arg(format!("{connect_timeout_sec}s"))
-            .arg("-command-timeout")
-            .arg(format!("{command_timeout_sec}s"))
-            .arg("-idle-timeout")
-            .arg(format!("{IDLE_TIMEOUT_SEC}s"))
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            // Inherited, not discarded: tesla-session's own startup
-            // failures (bad flags, an unexpected panic) should land in
-            // the app's own journal tag, same place run_binary's captured
-            // tesla-control stderr effectively ends up via Run()'s reply.
-            .stderr(Stdio::inherit())
-            .spawn()
-            .map_err(SessionError::Spawn)?;
+        // this is made unsafe by libc::prctl
+        let mut child = unsafe {
+            Command::new(&self.bin_path)
+                .arg("-vin")
+                .arg(vin)
+                .arg("-key-file")
+                .arg(key_file)
+                .arg("-ble-backend")
+                .arg(&self.ble_backend)
+                .arg("-connect-timeout")
+                .arg(format!("{connect_timeout_sec}s"))
+                .arg("-command-timeout")
+                .arg(format!("{command_timeout_sec}s"))
+                .arg("-idle-timeout")
+                .arg(format!("{IDLE_TIMEOUT_SEC}s"))
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                // Inherited, not discarded: tesla-session's own startup
+                // failures (bad flags, an unexpected panic) should land in
+                // the app's own journal tag, same place run_binary's captured
+                // tesla-control stderr effectively ends up via Run()'s reply.
+                .stderr(Stdio::inherit())
+                .pre_exec(|| {
+                    // Linux: send SIGTERM to child when parent dies
+                    libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM as usize, 0, 0, 0);
+                    Ok(())
+                })
+                .spawn()
+                .map_err(SessionError::Spawn)?
+        };
 
         let stdin = child.stdin.take().expect("piped stdin");
         let stdout = child.stdout.take().expect("piped stdout");
