@@ -139,6 +139,19 @@ enum CoreError core_pair(struct Core *core, bool *ok, char **stdout_out, char **
 enum CoreError core_start_phone_key(struct Core *core, bool *active, char **error_message);
 
 /**
+ * Notifies the core that the device resumed from system suspend.
+ *
+ * Kills any idle `tesla-session` child whose `org.bluez` system-bus socket
+ * is likely stale after the freezer, clears queued stale events, and
+ * best-effort restarts phone-key presence if the current config is paired.
+ * Idempotent. Never fails except for a NULL handle.
+ *
+ * # Safety
+ * `core` must be a pointer returned by `core_new`, or NULL.
+ */
+enum CoreError core_handle_resume(struct Core *core);
+
+/**
  * Pops one queued phone-key event without blocking.
  *
  * # Safety

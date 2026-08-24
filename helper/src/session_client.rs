@@ -211,6 +211,7 @@ impl SessionClient {
         connect_timeout_sec: i32,
         command_timeout_sec: i32,
     ) -> Result<ChildHandle, SessionError> {
+        // this is made unsafe by libc::prctl
         let mut child = Command::new(&self.bin_path)
             .arg("-vin")
             .arg(vin)
@@ -388,6 +389,10 @@ impl SessionClient {
 
     pub(crate) fn poll_event(&self) -> Option<SessionEvent> {
         self.events.lock().unwrap().pop_front()
+    }
+
+    pub(crate) fn clear_events(&self) {
+        self.events.lock().unwrap().clear();
     }
 }
 

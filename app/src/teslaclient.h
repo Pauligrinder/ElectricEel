@@ -30,6 +30,7 @@ public slots:
                    int connectTimeoutSec, int commandTimeoutSec);
     void refreshConfig();
     void pollPhoneKeyEvents();
+    void handleResume();
     void shutdown();
 
 signals:
@@ -108,6 +109,7 @@ private slots:
     void onPhoneKeyStarted(bool active, const QString &errorMessage);
     void onPhoneKeyEvent(const QString &kind, const QString &vin,
                          const QString &time, const QString &errorMessage);
+    void onApplicationStateChanged(Qt::ApplicationState state);
 
 private:
     void setHelperAvailable(bool available);
@@ -116,6 +118,7 @@ private:
     bool m_helperAvailable;
     QString m_helperVersion;
     QString m_phoneKeyStatus;
+    bool m_suspended = false;
 };
 
 #endif // TESLACLIENT_H

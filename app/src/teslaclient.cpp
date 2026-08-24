@@ -1,6 +1,7 @@
 #include "teslaclient.h"
 
 #include <QDebug>
+#include <QGuiApplication>
 #include <QStandardPaths>
 #include <QThread>
 #include <QDir>
@@ -100,6 +101,28 @@ void CoreWorker::pollPhoneKeyEvents()
         emit phoneKeyEvent(takeCString(kind), takeCString(vin),
                            takeCString(time), takeCString(error));
     }
+}
+
+void CoreWorker::handleResume()
+{
+    if (!m_core)
+        return;
+    qDebug() << "CoreWorker::handleResume: recycling stale BLE session after wake";
+    const CoreError rc = core_handle_resume(m_core);
+    if (rc != CoreError::Ok) {
+        qWarning() << "core_handle_resume failed" << rc;
+        emit phoneKeyStarted(false, QStringLiteral("Resume failed"));
+        return;
+    }
+    // core_handle_resume already invalidated the child and best-effort
+    // restarted presence, but we query the resulting state so the UI's
+    // phoneKeyStatus property updates immediately instead of waiting for
+    // the next 1s poll.
+    bool active = false;
+    char *err = nullptr;
+    const CoreError src = core_start_phone_key(m_core, &active, &err);
+    Q_UNUSED(src);
+    emit phoneKeyStarted(active, takeCString(err));
 }
 
 void CoreWorker::shutdown()
@@ -272,6 +295,7 @@ TeslaClient::TeslaClient(QObject *parent)
     : QObject(parent)
     , m_worker(nullptr)
     , m_helperAvailable(false)
+    , m_suspended(QGuiApplication::applicationState() == Qt::ApplicationSuspended)
 {
     // The worker lives on its own thread so the blocking C ABI calls
     // (core_run/core_pair: up to connect+command+10s, and Pair adds a 95s
@@ -291,6 +315,16 @@ TeslaClient::TeslaClient(QObject *parent)
     connect(m_worker, &CoreWorker::configLoaded, this, &TeslaClient::configLoaded);
     connect(m_worker, &CoreWorker::phoneKeyStarted, this, &TeslaClient::onPhoneKeyStarted);
     connect(m_worker, &CoreWorker::phoneKeyEvent, this, &TeslaClient::onPhoneKeyEvent);
+
+    // Device suspend (screen off / freezer) leaves the Go child's
+    // org.bluez SystemBus socket stale. The next BLE command would then
+    // block for the full connect+command timeout before SessionClient
+    // kills the child. Detect the Suspended->Active transition and
+    // proactively recycle the child so the next command spawns fresh.
+    // Inactive/Hidden (cover, app switcher) is intentionally ignored:
+    // phone-key scanning must keep running while the app is backgrounded.
+    connect(qApp, &QGuiApplication::applicationStateChanged,
+            this, &TeslaClient::onApplicationStateChanged);
 
     thread->start();
 
@@ -389,14 +423,37 @@ void TeslaClient::onPhoneKeyEvent(const QString &kind, const QString &vin,
     else if (kind == QStringLiteral("presence_error")
              || kind == QStringLiteral("presence_auth_failed"))
         status = errorMessage.isEmpty()
-                ? QStringLiteral("Phone key error")
-                : QStringLiteral("Phone key error: %1").arg(errorMessage);
+                 ? QStringLiteral("Phone key error")
+                 : QStringLiteral("Phone key error: %1").arg(errorMessage);
     else
         return;
     if (m_phoneKeyStatus == status)
         return;
     m_phoneKeyStatus = status;
     emit phoneKeyStatusChanged();
+}
+
+void TeslaClient::onApplicationStateChanged(Qt::ApplicationState state)
+{
+    // Only a prior Suspended that later becomes Active is a real device
+    // wake (freezer). Hidden/Inactive are the normal cover/switcher
+    // background where phone-key must stay alive - those must NOT recycle
+    // the session. Use a latched flag so Suspended->Hidden->Active still
+    // triggers after a wake that passes through Hidden.
+    if (state == Qt::ApplicationSuspended) {
+        m_suspended = true;
+        qDebug() << "TeslaClient: system suspended, will recycle BLE session on resume";
+        return;
+    }
+    if (state == Qt::ApplicationActive && m_suspended) {
+        m_suspended = false;
+        qDebug() << "TeslaClient: resume from suspend, recycling BLE session";
+        QMetaObject::invokeMethod(m_worker, "handleResume", Qt::QueuedConnection);
+        return;
+    }
+    if (state == Qt::ApplicationActive) {
+        m_suspended = false;
+    }
 }
 
 void TeslaClient::runCommand(const QString &requestId, const QString &cmd, const QVariantList &args)
