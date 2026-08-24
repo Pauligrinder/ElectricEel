@@ -85,7 +85,7 @@ func TestSessionDomainsScopesBodyControllerState(t *testing.T) {
 		{"lock", nil},
 		{"unlock", nil},
 		{"add-key-request", nil}, // skips StartSession entirely - see commandsWithoutSession
-		{"", nil},
+		{"", []protocol.Domain{protocol.DomainVCSEC}}, // presence mode: VCSEC only
 		{"not-a-real-command", nil},
 	}
 	for _, c := range cases {
@@ -375,6 +375,15 @@ func TestParsePresenceArgsDefaults(t *testing.T) {
 	if cfg != want {
 		t.Errorf("parsePresenceArgs(nil) = %+v, want defaults %+v", cfg, want)
 	}
+	if cfg.nearRSSI != -90 || cfg.nearConfirm != 1 {
+		t.Errorf("defaults nearRSSI=%d nearConfirm=%d, want -90 / 1 (connect on first live beacon)", cfg.nearRSSI, cfg.nearConfirm)
+	}
+	if cfg.farTimeout != 15*time.Second {
+		t.Errorf("default farTimeout = %v, want 15s", cfg.farTimeout)
+	}
+	if cfg.scanInterval != 2*time.Second {
+		t.Errorf("default scanInterval = %v, want 2s", cfg.scanInterval)
+	}
 }
 
 // TestParsePresenceArgsOverrides checks each flag actually reaches the
@@ -400,6 +409,41 @@ func TestParsePresenceArgsOverrides(t *testing.T) {
 func TestParsePresenceArgsRejectsUnknownFlag(t *testing.T) {
 	if _, err := parsePresenceArgs([]string{"-near-rssi-typo", "-80"}); err == nil {
 		t.Fatal("expected an error for an unrecognized flag")
+	}
+}
+
+// TestConnectBackoffDoubles verifies failed presence connects back off
+// exponentially so a flaky link cannot hammer bluetoothd.
+func TestConnectBackoffDoubles(t *testing.T) {
+	s := &session{}
+	now := time.Now()
+	s.scheduleConnectBackoffLocked()
+	first := s.connectBackoffUntil
+	if !s.connectBackoffActive(now) {
+		t.Fatal("expected backoff to be active immediately after scheduling")
+	}
+	s.scheduleConnectBackoffLocked()
+	second := s.connectBackoffUntil
+	if !second.After(first) {
+		t.Errorf("second backoff %v should be after first %v", second, first)
+	}
+	s.clearConnectBackoffLocked()
+	if s.connectBackoffActive(now) {
+		t.Error("backoff should be cleared after successful connect")
+	}
+}
+
+// TestEnqueueAuthDatagramKeepsLatest verifies the auth inbox drops the oldest
+// item when full so a handle-pull AuthenticationRequest is not lost.
+func TestEnqueueAuthDatagramKeepsLatest(t *testing.T) {
+	inbox := make(chan []byte, 2)
+	enqueueAuthDatagram(inbox, []byte("first"))
+	enqueueAuthDatagram(inbox, []byte("second"))
+	enqueueAuthDatagram(inbox, []byte("third"))
+	got1 := <-inbox
+	got2 := <-inbox
+	if string(got1) != "second" || string(got2) != "third" {
+		t.Errorf("drop-oldest queue = %q, %q; want second, third", got1, got2)
 	}
 }
 

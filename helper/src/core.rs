@@ -491,12 +491,15 @@ impl Core {
             )
         };
         if !eligible {
+            crate::keylog::log("core", "phone-key start refused: not paired");
             return Err(OperationError::NotPaired);
         }
         let Some(session) = &self.session else {
+            crate::keylog::log("core", "phone-key start refused: no session client");
             return Err(OperationError::NoSession);
         };
         if session.ble_backend() != "bluez" {
+            crate::keylog::log("core", "phone-key start refused: requires bluez");
             return Err(OperationError::RequiresBluez);
         }
         // Claim the flag before the (blocking) start so a second concurrent
@@ -508,6 +511,10 @@ impl Core {
         {
             return Ok(());
         }
+        crate::keylog::log(
+            "core",
+            &format!("phone-key start vin={vin} connect={connect_timeout_sec}s"),
+        );
         match session.start_presence(
             &vin,
             &key_path,
@@ -515,15 +522,23 @@ impl Core {
             command_timeout_sec,
             Duration::from_secs(10),
         ) {
-            Ok(outcome) if outcome.ok => Ok(()),
+            Ok(outcome) if outcome.ok => {
+                crate::keylog::log("core", "phone-key presence started");
+                Ok(())
+            }
             Ok(outcome) => {
                 self.phone_key_started.store(false, Ordering::SeqCst);
+                crate::keylog::log(
+                    "core",
+                    &format!("phone-key start failed: {}", outcome.stderr.trim()),
+                );
                 Err(OperationError::PresenceFailed(
                     outcome.stderr.trim().to_string(),
                 ))
             }
             Err(e) => {
                 self.phone_key_started.store(false, Ordering::SeqCst);
+                crate::keylog::log("core", &format!("phone-key start error: {e}"));
                 Err(OperationError::PresenceFailed(e.to_string()))
             }
         }
@@ -534,6 +549,7 @@ impl Core {
         if !self.phone_key_started.load(Ordering::SeqCst) {
             return;
         }
+        crate::keylog::log("core", "phone-key stop");
         if let Some(session) = &self.session {
             let cfg = self.cfg.lock().unwrap();
             let result = session.stop_presence(
@@ -552,6 +568,20 @@ impl Core {
 
     pub(crate) fn poll_phone_key_event(&self) -> Option<SessionEvent> {
         let mut event = self.session.as_ref().and_then(SessionClient::poll_event);
+        if let Some(event) = &event {
+            crate::keylog::log(
+                "core",
+                &format!(
+                    "event kind={} err={}",
+                    event.kind,
+                    if event.error.is_empty() {
+                        "-"
+                    } else {
+                        &event.error
+                    }
+                ),
+            );
+        }
         if event.as_ref().is_some_and(|e| e.kind == "presence_stopped") {
             self.phone_key_started.store(false, Ordering::SeqCst);
             match self.start_phone_key() {
@@ -584,6 +614,7 @@ impl Core {
     /// timeout. Idempotent and safe to call even when no child exists or no
     /// session is configured.
     pub(crate) fn handle_resume(&self) {
+        crate::keylog::log("core", "resume from suspend - recycling BLE session");
         eprintln!("Core: handle_resume - device woke from suspend, recycling stale BLE session");
         // Allow `start_phone_key` to claim the flag again after we killed its
         // old presenceLoop. Without this a stale `true` would make the restart

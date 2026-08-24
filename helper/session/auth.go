@@ -24,6 +24,19 @@ const (
 	authLevelDrive  = 2
 )
 
+func authLevelName(level int) string {
+	switch level {
+	case authLevelNone:
+		return "NONE"
+	case authLevelUnlock:
+		return "UNLOCK"
+	case authLevelDrive:
+		return "DRIVE"
+	default:
+		return fmt.Sprintf("LEVEL_%d", level)
+	}
+}
+
 // authenticationRequest is the subset of VCSEC.AuthenticationRequest we need
 // for passive entry: the level the vehicle is asking the phone key to grant.
 type authenticationRequest struct {

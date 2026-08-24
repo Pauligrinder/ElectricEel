@@ -211,8 +211,9 @@ impl SessionClient {
         connect_timeout_sec: i32,
         command_timeout_sec: i32,
     ) -> Result<ChildHandle, SessionError> {
-        // this is made unsafe by libc::prctl
-        let mut child = Command::new(&self.bin_path)
+        let log_dir = crate::keylog::log_dir();
+        let mut command = Command::new(&self.bin_path);
+        command
             .arg("-vin")
             .arg(vin)
             .arg("-key-file")
@@ -225,15 +226,29 @@ impl SessionClient {
             .arg(format!("{command_timeout_sec}s"))
             .arg("-idle-timeout")
             .arg(format!("{IDLE_TIMEOUT_SEC}s"))
+            .arg("-log-dir")
+            .arg(&log_dir)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             // Inherited, not discarded: tesla-session's own startup
             // failures (bad flags, an unexpected panic) should land in
             // the app's own journal tag, same place run_binary's captured
             // tesla-control stderr effectively ends up via Run()'s reply.
-            .stderr(Stdio::inherit())
-            .spawn()
-            .map_err(SessionError::Spawn)?;
+            .stderr(Stdio::inherit());
+        // Linux: SIGTERM the child if the app dies, so a killed UI cannot
+        // leak tesla-session holding the BLE radio. prctl is Linux-only.
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::unix::process::CommandExt;
+            // SAFETY: pre_exec runs in the child after fork, before exec.
+            unsafe {
+                command.pre_exec(|| {
+                    libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM as usize, 0, 0, 0);
+                    Ok(())
+                });
+            }
+        }
+        let mut child = command.spawn().map_err(SessionError::Spawn)?;
 
         let stdin = child.stdin.take().expect("piped stdin");
         let stdout = child.stdout.take().expect("piped stdout");

@@ -307,6 +307,7 @@ name = "electric-eel-core"
 version = "0.2.8"
 dependencies = [
  "cbindgen",
+ "libc",
  "procfs",
  "regex",
  "serde",

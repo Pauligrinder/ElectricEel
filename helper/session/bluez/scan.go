@@ -25,6 +25,10 @@ type ScanResult struct {
 	Path      dbus.ObjectPath
 	LocalName string
 	RSSI      int16
+	// HasRSSI is true when BlueZ reported an RSSI property on this snapshot.
+	// Cached Device1 objects linger after the vehicle stops advertising, but
+	// without a fresh RSSI; presence polling must not treat those as live.
+	HasRSSI bool
 }
 
 // vehicleBeaconName returns the advertising local name the vehicle exposes
@@ -186,8 +190,12 @@ func ensurePowered(ctx context.Context, bus dbusBus, adapterPath dbus.ObjectPath
 
 func setDiscoveryFilter(ctx context.Context, bus dbusBus, adapterPath dbus.ObjectPath) error {
 	filter := map[string]dbus.Variant{
-		"Transport":     dbus.MakeVariant("le"),
-		"DuplicateData": dbus.MakeVariant(false),
+		"Transport": dbus.MakeVariant("le"),
+		// DuplicateData=true asks BlueZ to emit RSSI updates on every
+		// advertisement instead of collapsing them. Presence polling needs
+		// those updates; the default (false) leaves a stale RSSI on a
+		// cached device and looks like the car is still nearby.
+		"DuplicateData": dbus.MakeVariant(true),
 	}
 	_, err := bus.object(bluezService, adapterPath).call(ctx, adapterIface+".SetDiscoveryFilter", filter)
 	return err
@@ -195,7 +203,24 @@ func setDiscoveryFilter(ctx context.Context, bus dbusBus, adapterPath dbus.Objec
 
 func startDiscovery(ctx context.Context, bus dbusBus, adapterPath dbus.ObjectPath) error {
 	_, err := bus.object(bluezService, adapterPath).call(ctx, adapterIface+".StartDiscovery")
+	if err != nil && isDiscoveryInProgress(err) {
+		// Another caller (typically presenceLoop's Watcher) already holds
+		// discovery open. Treat as success so manual commands don't fight
+		// the phone-key scanner.
+		return nil
+	}
 	return err
+}
+
+// isDiscoveryInProgress reports whether err is BlueZ's "discovery already
+// active" condition, which is benign when two code paths share one adapter.
+func isDiscoveryInProgress(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	return strings.Contains(s, "InProgress") ||
+		strings.Contains(s, "already in progress")
 }
 
 func stopDiscovery(ctx context.Context, bus dbusBus, adapterPath dbus.ObjectPath) {
@@ -222,6 +247,7 @@ func findBeacon(ctx context.Context, bus dbusBus, adapterPath dbus.ObjectPath, n
 		result := &ScanResult{Path: path, LocalName: devName}
 		if rssi, ok := variantInt16(dev["RSSI"]); ok {
 			result.RSSI = rssi
+			result.HasRSSI = true
 		}
 		return result, nil
 	}

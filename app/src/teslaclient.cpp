@@ -297,6 +297,17 @@ TeslaClient::TeslaClient(QObject *parent)
     , m_helperAvailable(false)
     , m_suspended(QGuiApplication::applicationState() == Qt::ApplicationSuspended)
 {
+    // Phone-key logs land in Documents/ElectricEel so File Browser can open
+    // them without digging through Sailjail app data. tesla-session inherits
+    // this via ELECTRIC_EEL_LOG_DIR.
+    const QString documents = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+    const QString logDir = documents.isEmpty()
+            ? QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + QStringLiteral("/logs")
+            : documents + QStringLiteral("/ElectricEel");
+    QDir().mkpath(logDir);
+    qputenv("ELECTRIC_EEL_LOG_DIR", logDir.toUtf8());
+    qDebug() << "TeslaClient: phone-key logs ->" << logDir;
+
     // The worker lives on its own thread so the blocking C ABI calls
     // (core_run/core_pair: up to connect+command+10s, and Pair adds a 95s
     // allowance covering tesla-session's 90s post-add-key-request grace
@@ -414,7 +425,8 @@ void TeslaClient::onPhoneKeyEvent(const QString &kind, const QString &vin,
     if (kind == QStringLiteral("presence_near"))
         status = QStringLiteral("Phone key connected");
     else if (kind == QStringLiteral("presence_far")
-             || kind == QStringLiteral("presence_restarted"))
+             || kind == QStringLiteral("presence_restarted")
+             || kind == QStringLiteral("presence_disconnected"))
         status = QStringLiteral("Phone key scanning");
     else if (kind == QStringLiteral("presence_auth_ok"))
         status = QStringLiteral("Phone key authorized");

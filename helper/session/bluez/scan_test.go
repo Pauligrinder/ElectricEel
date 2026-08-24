@@ -2,6 +2,7 @@ package bluez
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -52,6 +53,9 @@ func TestScanFindsVehicleBeacon(t *testing.T) {
 	}
 	if res.RSSI != -55 {
 		t.Errorf("res.RSSI = %d, want -55", res.RSSI)
+	}
+	if !res.HasRSSI {
+		t.Error("expected HasRSSI=true when fake reports RSSI")
 	}
 	if bus.discovering {
 		t.Error("expected discovery to be stopped after scan returned")
@@ -144,6 +148,37 @@ func TestScanIgnoresOtherDevices(t *testing.T) {
 
 	if _, err := scan(ctx, bus, "", vin); err == nil {
 		t.Fatal("expected scan not to match a non-vehicle device name")
+	}
+}
+
+func TestFindBeaconReportsMissingRSSI(t *testing.T) {
+	bus := newFakeBluez()
+	vin := "5YJ3E1EA0PF000000"
+	bus.dev = &fakeDevice{path: bus.devPath(), name: vehicleBeaconName(vin), omitRSSI: true}
+	bus.deviceVisible = true
+
+	res, err := findBeacon(context.Background(), bus, dbus.ObjectPath("/org/bluez/hci0"), vehicleBeaconName(vin))
+	if err != nil {
+		t.Fatalf("findBeacon: %v", err)
+	}
+	if res == nil {
+		t.Fatal("expected cached device to still be found")
+	}
+	if res.HasRSSI {
+		t.Fatal("expected HasRSSI=false when BlueZ omits RSSI")
+	}
+}
+
+func TestStartDiscoveryToleratesAlreadyInProgress(t *testing.T) {
+	if !isDiscoveryInProgress(errors.New("org.bluez.Error.InProgress")) {
+		t.Fatal("expected InProgress error to be recognized")
+	}
+	bus := newFakeBluez()
+	bus.discovering = true
+	ctx := context.Background()
+	adapterPath := dbus.ObjectPath("/org/bluez/hci0")
+	if err := startDiscovery(ctx, bus, adapterPath); err != nil {
+		t.Fatalf("startDiscovery with already discovering should succeed: %v", err)
 	}
 }
 
