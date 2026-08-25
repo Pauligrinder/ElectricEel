@@ -53,6 +53,7 @@ desktop-file-install --delete-original \
 * Thu Aug 22 2026 Marco Napetti <marco.napetti@proton.me> - 0.2.6-1
 - Ensure child process is killed with parent
 * Thu Aug 18 2026 Marco Napetti <marco.napetti@proton.me> - 0.2.5-1
+- App cover shows connection status
 - Phone as key
 * Thu Aug 18 2026 Marco Napetti <marco.napetti@proton.me> - 0.2.4-1
 - Fix sliders
