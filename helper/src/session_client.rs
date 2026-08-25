@@ -256,11 +256,32 @@ impl SessionClient {
         Ok(ChildHandle { child, stdin, rx })
     }
 
-    /// Kills the given handle outright rather than dropping it - Child's
-    /// Drop impl does not send a signal, so an abandoned handle would
-    /// otherwise leak a running tesla-session (and its BLE session) for
-    /// every timeout/error, not just close our end of the pipe.
+    /// Kills the given handle. On Unix, sends SIGTERM first so tesla-session's
+    /// signal handler can stop discovery and disconnect GATT cleanly before
+    /// exit - an immediate SIGKILL (Child::kill) leaves org.bluez discovery
+    /// running and has been observed to destabilize Sailfish's bluetoothd.
+    /// Waits up to 5s for exit, then SIGKILL if still alive.
     fn kill(mut handle: ChildHandle) {
+        #[cfg(unix)]
+        {
+            use std::time::Duration;
+            const SIGTERM: i32 = 15;
+            let pid = handle.child.id();
+            // SAFETY: kill(2) with SIGTERM is the standard graceful-shutdown
+            // signal; pid comes from our own child process.
+            let term_sent = unsafe { libc::kill(pid as i32, SIGTERM) == 0 };
+            if term_sent {
+                let deadline = Duration::from_secs(5);
+                let start = std::time::Instant::now();
+                while start.elapsed() < deadline {
+                    match handle.child.try_wait() {
+                        Ok(Some(_)) => return,
+                        Ok(None) => std::thread::sleep(Duration::from_millis(100)),
+                        Err(_) => break,
+                    }
+                }
+            }
+        }
         let _ = handle.child.kill();
         let _ = handle.child.wait();
     }
