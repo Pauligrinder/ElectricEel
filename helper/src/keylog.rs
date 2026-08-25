@@ -28,7 +28,9 @@ pub(crate) fn log_dir() -> PathBuf {
 /// Append one line to today's `phone-key-YYYY-MM-DD.log`. Never panics.
 pub(crate) fn log(tag: &str, message: &str) {
     let dir = log_dir();
-    let _guard = LOG_MU.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _guard = LOG_MU
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let _ = fs::create_dir_all(&dir);
     prune_old_logs(&dir);
     let day = local_day_string();
