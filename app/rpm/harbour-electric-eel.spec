@@ -46,7 +46,7 @@ desktop-file-install --delete-original \
 %{_datadir}/icons/hicolor/*/apps/%{name}.png
 
 %changelog
-* Wed Aug 26 2026 Pauli Kettunen <pauli.kettunen@sarkain.fi> - 0.2.9-1
+* Wed Aug 26 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.9-1
 - Stabilize phone-key GATT reconnect and VCSEC presence
 * Thu Aug 22 2026 Marco Napetti <marco.napetti@proton.me> - 0.2.8-1
 - Restart session on wakeup
