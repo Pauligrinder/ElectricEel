@@ -206,8 +206,15 @@ void CoreWorker::generateKey(bool force)
         return;
     }
     emit keyGenerated(ok, takeCString(pem), takeCString(errorMessage));
-    if (ok)
-        emit phoneKeyStarted(false, QStringLiteral("Pair this key with the vehicle"));
+    if (ok) {
+        // Reuse of an existing enrolled key leaves vin_state paired, so
+        // presence can keep running. A newly generated key is unpaired
+        // until NFC enrollment; start_phone_key then returns the reason.
+        bool active = false;
+        char *startError = nullptr;
+        core_start_phone_key(m_core, &active, &startError);
+        emit phoneKeyStarted(active, takeCString(startError));
+    }
 }
 
 void CoreWorker::pair()

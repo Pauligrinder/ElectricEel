@@ -29,8 +29,13 @@ type fakeBluez struct {
 	stoppedNotify     bool
 	failLargeWrites   bool  // fail WriteValue when the chunk exceeds 20 bytes (ATT MTU 23)
 	startDiscoveryErr error // when set, StartDiscovery returns this error
-	autoConnect       bool
-	trusted           bool
+	connectErr        error // when set, Device1.Connect returns this error
+	setPoweredErr     error // when set, Properties.Set(Powered) returns this error
+	// extraAdapters are additional Adapter1 objects keyed by id ("hci1").
+	// The value is the Powered flag. Used to test powered-adapter preference.
+	extraAdapters map[string]bool
+	autoConnect   bool
+	trusted       bool
 
 	writes       [][]byte
 	calls        []string
@@ -107,8 +112,19 @@ func (f *fakeBluez) managedObjects() map[dbus.ObjectPath]map[string]map[string]d
 	f.managedCalls++
 	m := map[dbus.ObjectPath]map[string]map[string]dbus.Variant{
 		dbus.ObjectPath("/org/bluez/" + f.adapterID): {
-			adapterIface: {"Powered": dbus.MakeVariant(f.powered)},
+			adapterIface: {
+				"Powered":     dbus.MakeVariant(f.powered),
+				"Discovering": dbus.MakeVariant(f.discovering),
+			},
 		},
+	}
+	for id, powered := range f.extraAdapters {
+		m[dbus.ObjectPath("/org/bluez/"+id)] = map[string]map[string]dbus.Variant{
+			adapterIface: {
+				"Powered":     dbus.MakeVariant(powered),
+				"Discovering": dbus.MakeVariant(false),
+			},
+		}
 	}
 	visible := f.deviceVisible
 	if f.deviceAppearCall > 0 && f.managedCalls >= f.deviceAppearCall {
@@ -170,6 +186,9 @@ func (fc *fakeCaller) call(ctx context.Context, method string, args ...interface
 		fc.b.discovering = false
 		return nil, nil
 	case deviceIface + ".Connect":
+		if fc.b.connectErr != nil {
+			return nil, fc.b.connectErr
+		}
 		if fc.b.dev == nil || !fc.b.deviceVisible {
 			return nil, errors.New("org.bluez.Error.Failed: no such device")
 		}
@@ -210,6 +229,8 @@ func (fc *fakeCaller) getProp(ctx context.Context, iface, prop string) (dbus.Var
 	switch prop {
 	case "Powered":
 		return dbus.MakeVariant(fc.b.powered), nil
+	case "Discovering":
+		return dbus.MakeVariant(fc.b.discovering), nil
 	case "Power":
 		return dbus.Variant{}, fmt.Errorf("org.freedesktop.DBus.Error.InvalidArgs: No such property '%s'", prop)
 	case "ServicesResolved":
@@ -227,6 +248,9 @@ func (fc *fakeCaller) getProp(ctx context.Context, iface, prop string) (dbus.Var
 func (fc *fakeCaller) setProp(ctx context.Context, iface, prop string, value interface{}) error {
 	switch prop {
 	case "Powered":
+		if fc.b.setPoweredErr != nil {
+			return fc.b.setPoweredErr
+		}
 		b, ok := value.(bool)
 		if !ok {
 			return fmt.Errorf("Powered: expected bool, got %T", value)
