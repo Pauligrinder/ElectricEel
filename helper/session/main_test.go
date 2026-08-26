@@ -391,6 +391,39 @@ func TestPresenceLiveNearRejectsWeakAndCachedBeacons(t *testing.T) {
 	}
 }
 
+func TestPresencePaceIsNoopWhenIntervalElapsed(t *testing.T) {
+	ctx := context.Background()
+	started := time.Now().Add(-time.Second)
+	begin := time.Now()
+	presencePace(ctx, started, 50*time.Millisecond)
+	if time.Since(begin) > 30*time.Millisecond {
+		t.Fatal("pace after the interval has elapsed should return immediately")
+	}
+}
+
+func TestPresencePaceWaitsOutTheInterval(t *testing.T) {
+	ctx := context.Background()
+	started := time.Now()
+	presencePace(ctx, started, 80*time.Millisecond)
+	if elapsed := time.Since(started); elapsed < 80*time.Millisecond {
+		t.Fatalf("pace returned after %v, want >= 80ms", elapsed)
+	}
+}
+
+func TestPresencePaceStopsOnCancel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		cancel()
+	}()
+	started := time.Now()
+	presencePace(ctx, started, time.Second)
+	if elapsed := time.Since(started); elapsed > 200*time.Millisecond {
+		t.Fatalf("pace ignored cancel: waited %v", elapsed)
+	}
+}
+
 // TestPresenceStepExistingGATTCountsAsArrival covers a leftover authenticated
 // session (manual command) so presence attaches the auth tap without waiting
 // for a fresh advertisement.
