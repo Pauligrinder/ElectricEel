@@ -125,17 +125,20 @@ func (w *Watcher) Peek(ctx context.Context) (*ScanResult, error) {
 	return findBeacon(ctx, w.bus, w.adapterPath, w.name)
 }
 
-// Wait polls until the vehicle beacon is visible or ctx is done. Unlike
-// Peek (one snapshot) this is what a dashboard refresh's scan() does:
-// keep looking until the advertisement shows up. Discovery is left
-// running. A timeout with no beacon is (nil, nil), not an error.
+// Wait polls until a live advertisement (Device1 with RSSI) appears or ctx
+// is done. A cached Device1 without RSSI is not "found": BlueZ keeps those
+// objects after ads stop, and treating them as a hit made the presence loop
+// return immediately and spin GetManagedObjects. Unlike Peek (one snapshot)
+// this is what a dashboard refresh's scan() does: keep looking until the
+// advertisement shows up. Discovery is left running. A timeout with no live
+// beacon is (nil, nil), not an error.
 func (w *Watcher) Wait(ctx context.Context) (*ScanResult, error) {
 	for {
 		result, err := w.Peek(ctx)
 		if err != nil {
 			return nil, err
 		}
-		if result != nil {
+		if result != nil && result.HasRSSI {
 			return result, nil
 		}
 		select {

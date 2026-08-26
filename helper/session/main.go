@@ -630,6 +630,23 @@ func presenceLiveNear(live bool, rssi, nearRSSI int16) bool {
 	return live && rssi >= nearRSSI
 }
 
+// presencePace waits until interval has elapsed since started, so a Wait that
+// returned immediately (vehicle already advertising) cannot spin
+// GetManagedObjects in a tight loop. A Wait that already blocked for the
+// full interval is a no-op. Returns early if ctx is cancelled.
+func presencePace(ctx context.Context, started time.Time, interval time.Duration) {
+	remaining := interval - time.Since(started)
+	if remaining <= 0 {
+		return
+	}
+	t := time.NewTimer(remaining)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+	case <-t.C:
+	}
+}
+
 // event is an unsolicited JSON line the presence loop pushes to the Rust
 // core outside the request/response cycle - distinguished from response by
 // its "kind" field (response never sets one) so the reader can tell the two
@@ -882,10 +899,6 @@ func (s *session) runPresenceWatcher(ctx context.Context, cfg presenceConfig, wa
 		consecNear     int
 		lastSeen       time.Time
 		peekErrors     int
-		lastLog        time.Time
-		lastLive       bool
-		lastRSSI       int16
-		lastGATT       bool
 		linkDownStreak int
 	)
 
@@ -981,10 +994,6 @@ func (s *session) runPresenceWatcher(ctx context.Context, cfg presenceConfig, wa
 			}
 
 			now := time.Now()
-			if now.Sub(lastLog) >= 30*time.Second || !lastGATT {
-				keylog("presence", "tick live=false rssi=0 near=true gatt=true known=false action=stay")
-				lastLog, lastLive, lastRSSI, lastGATT = now, false, 0, true
-			}
 			s.mu.Lock()
 			if s.car != nil {
 				if s.vcsecPrimeDueLocked(now) {
@@ -1012,68 +1021,67 @@ func (s *session) runPresenceWatcher(ctx context.Context, cfg presenceConfig, wa
 			if peekErrors >= 5 && !restartWatcher() {
 				return
 			}
-			continue
-		}
-		peekErrors = 0
+		} else {
+			peekErrors = 0
 
-		live := result != nil && result.HasRSSI
-		var rssi int16
-		if live {
-			rssi = result.RSSI
-		}
-		if result != nil {
-			s.mu.Lock()
-			s.lastBeacon = result
-			s.mu.Unlock()
-		}
-
-		var action presenceAction
-		near, consecNear, lastSeen, action = presenceStep(cfg, near, consecNear, lastSeen, now, live, rssi, false)
-
-		if action != presenceActionNone || live != lastLive || rssi != lastRSSI || lastGATT || now.Sub(lastLog) >= 30*time.Second {
-			keylog("presence", "tick live=%v rssi=%d near=%v gatt=false known=%v action=%s",
-				live, rssi, near, result != nil, presenceActionName(action))
-			lastLog, lastLive, lastRSSI, lastGATT = now, live, rssi, false
-		}
-
-		switch action {
-		case presenceActionArrive, presenceActionStayNear:
-			if !presenceLiveNear(live, rssi, cfg.nearRSSI) {
-				continue
+			live := result != nil && result.HasRSSI
+			var rssi int16
+			if live {
+				rssi = result.RSSI
 			}
-			s.mu.Lock()
-			inBackoff := s.connectBackoffActive(now)
-			target := s.connectTargetLocked(result)
-			s.mu.Unlock()
-			if inBackoff || target == nil {
-				continue
+			if result != nil {
+				s.mu.Lock()
+				s.lastBeacon = result
+				s.mu.Unlock()
 			}
-			connCtx, cancel := context.WithTimeout(ctx, s.connectTimeout)
-			s.mu.Lock()
-			connErr := s.ensureConnectedLocked(connCtx, "", target)
-			if connErr == nil {
+
+			var action presenceAction
+			near, consecNear, lastSeen, action = presenceStep(cfg, near, consecNear, lastSeen, now, live, rssi, false)
+
+			if action == presenceActionArrive || action == presenceActionDepart {
+				keylog("presence", "tick live=%v rssi=%d near=%v gatt=false known=%v action=%s",
+					live, rssi, near, result != nil, presenceActionName(action))
+			}
+
+			switch action {
+			case presenceActionArrive, presenceActionStayNear:
+				if presenceLiveNear(live, rssi, cfg.nearRSSI) {
+					s.mu.Lock()
+					inBackoff := s.connectBackoffActive(now)
+					target := s.connectTargetLocked(result)
+					s.mu.Unlock()
+					if !inBackoff && target != nil {
+						connCtx, connCancel := context.WithTimeout(ctx, s.connectTimeout)
+						s.mu.Lock()
+						connErr := s.ensureConnectedLocked(connCtx, "", target)
+						if connErr == nil {
+							s.clearConnectBackoffLocked()
+							s.ensureAuthTapLocked(ctx)
+							s.primeVCSECLocked(connCtx)
+							s.resetIdleTimerLocked()
+						} else {
+							s.scheduleConnectBackoffLocked()
+						}
+						s.mu.Unlock()
+						connCancel()
+						if connErr != nil {
+							near, consecNear = false, 0
+							s.emitEvent("presence_error", connErr)
+						} else {
+							s.emitEvent("presence_near", nil)
+						}
+					}
+				}
+			case presenceActionDepart:
+				s.mu.Lock()
 				s.clearConnectBackoffLocked()
-				s.ensureAuthTapLocked(ctx)
-				s.primeVCSECLocked(connCtx)
-				s.resetIdleTimerLocked()
-			} else {
-				s.scheduleConnectBackoffLocked()
+				s.teardownLocked()
+				s.mu.Unlock()
+				s.emitEvent("presence_far", nil)
 			}
-			s.mu.Unlock()
-			cancel()
-			if connErr != nil {
-				near, consecNear = false, 0
-				s.emitEvent("presence_error", connErr)
-				continue
-			}
-			s.emitEvent("presence_near", nil)
-		case presenceActionDepart:
-			s.mu.Lock()
-			s.clearConnectBackoffLocked()
-			s.teardownLocked()
-			s.mu.Unlock()
-			s.emitEvent("presence_far", nil)
 		}
+
+		presencePace(ctx, now, cfg.scanInterval)
 	}
 }
 

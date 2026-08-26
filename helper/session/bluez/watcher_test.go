@@ -163,6 +163,31 @@ func TestWatcherWaitFindsDelayedBeacon(t *testing.T) {
 	}
 }
 
+func TestWatcherWaitIgnoresCachedDeviceWithoutRSSI(t *testing.T) {
+	bus := newFakeBluez()
+	vin := "5YJ3E1EA0PF000000"
+	bus.dev = &fakeDevice{path: bus.devPath(), name: vehicleBeaconName(vin), omitRSSI: true}
+	bus.deviceVisible = true
+
+	wctx, wcancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer wcancel()
+	w, err := newWatcher(wctx, bus, "", vin)
+	if err != nil {
+		t.Fatalf("newWatcher: %v", err)
+	}
+	defer w.Stop(wctx)
+
+	waitCtx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer cancel()
+	res, err := w.Wait(waitCtx)
+	if err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	if res != nil {
+		t.Fatalf("Wait should not return a cached Device1 without RSSI, got %+v", res)
+	}
+}
+
 func TestWatcherWaitTimeoutIsNotAnError(t *testing.T) {
 	bus := newFakeBluez()
 	vin := "5YJ3E1EA0PF000000"
