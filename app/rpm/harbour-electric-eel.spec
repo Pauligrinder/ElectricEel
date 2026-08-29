@@ -48,6 +48,7 @@ desktop-file-install --delete-original \
 %changelog
 * Sat Aug 29 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.14-1
 - Keep phone-key VCSEC session when dashboard state times out on a sleeping car
+- Cover actions: cycle lock/trunk/frunk/climate/charge port, then run
 * Sat Aug 29 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.13-1
 - Stop GATT connect timeouts on stale BlueZ RSSI and live discovery
 * Sat Aug 29 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.12-1
