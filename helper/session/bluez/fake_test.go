@@ -40,6 +40,7 @@ type fakeBluez struct {
 	writes         [][]byte
 	calls          []string
 	sig            chan *dbus.Signal
+	listeners      []chan *dbus.Signal
 	matches        int
 	addMatchErrAt  int
 	removedMatches int
@@ -49,6 +50,7 @@ type fakeBluez struct {
 type fakeDevice struct {
 	path     dbus.ObjectPath
 	name     string
+	alias    string
 	rssi     int16
 	omitRSSI bool // when true, RSSI property is absent (BlueZ cache after ads stop)
 }
@@ -66,6 +68,29 @@ func (f *fakeBluez) object(dest string, path dbus.ObjectPath) dbusCaller {
 }
 
 func (f *fakeBluez) signals() <-chan *dbus.Signal { return f.sig }
+
+func (f *fakeBluez) attachSignals() (<-chan *dbus.Signal, func()) {
+	ch := make(chan *dbus.Signal, 16)
+	f.listeners = append(f.listeners, ch)
+	return ch, func() {
+		for i, existing := range f.listeners {
+			if existing == ch {
+				f.listeners = append(f.listeners[:i], f.listeners[i+1:]...)
+				return
+			}
+		}
+	}
+}
+
+func (f *fakeBluez) emit(sig *dbus.Signal) {
+	select {
+	case f.sig <- sig:
+	default:
+	}
+	for _, ch := range f.listeners {
+		ch <- sig
+	}
+}
 
 func (f *fakeBluez) addMatch(_ ...dbus.MatchOption) error {
 	f.matches++
@@ -87,17 +112,20 @@ func (f *fakeBluez) advertiseAdded() {
 	}
 	f.deviceVisible = true
 	props := map[string]dbus.Variant{"Name": dbus.MakeVariant(f.dev.name)}
+	if f.dev.alias != "" {
+		props["Alias"] = dbus.MakeVariant(f.dev.alias)
+	}
 	if !f.dev.omitRSSI {
 		props["RSSI"] = dbus.MakeVariant(f.dev.rssi)
 	}
-	f.sig <- &dbus.Signal{
+	f.emit(&dbus.Signal{
 		Name: objMgrIface + ".InterfacesAdded",
 		Path: "/",
 		Body: []interface{}{
 			f.dev.path,
 			map[string]map[string]dbus.Variant{deviceIface: props},
 		},
-	}
+	})
 }
 
 // advertiseRSSI simulates the fresh Device1 RSSI update emitted for each
@@ -108,20 +136,28 @@ func (f *fakeBluez) advertiseRSSI(rssi int16) {
 	}
 	f.dev.rssi = rssi
 	f.deviceVisible = true
-	f.sig <- &dbus.Signal{
+	f.advertiseProps(map[string]dbus.Variant{"RSSI": dbus.MakeVariant(rssi)})
+}
+
+func (f *fakeBluez) advertiseProps(changed map[string]dbus.Variant) {
+	if f.dev == nil {
+		return
+	}
+	f.deviceVisible = true
+	f.emit(&dbus.Signal{
 		Name: propsIface + ".PropertiesChanged",
 		Path: f.dev.path,
 		Body: []interface{}{
 			deviceIface,
-			map[string]dbus.Variant{"RSSI": dbus.MakeVariant(rssi)},
+			changed,
 			[]string{},
 		},
-	}
+	})
 }
 
 func (f *fakeBluez) discoveryChanged(discovering bool) {
 	f.discovering = discovering
-	f.sig <- &dbus.Signal{
+	f.emit(&dbus.Signal{
 		Name: propsIface + ".PropertiesChanged",
 		Path: dbus.ObjectPath("/org/bluez/" + f.adapterID),
 		Body: []interface{}{
@@ -129,13 +165,13 @@ func (f *fakeBluez) discoveryChanged(discovering bool) {
 			map[string]dbus.Variant{"Discovering": dbus.MakeVariant(discovering)},
 			[]string{},
 		},
-	}
+	})
 }
 
 // notify simulates an org.bluez GattCharacteristic1 PropertiesChanged signal
 // carrying a notification Value.
 func (f *fakeBluez) notify(path dbus.ObjectPath, value []byte) {
-	f.sig <- &dbus.Signal{
+	f.emit(&dbus.Signal{
 		Name: propsIface + ".PropertiesChanged",
 		Path: path,
 		Body: []interface{}{
@@ -143,7 +179,7 @@ func (f *fakeBluez) notify(path dbus.ObjectPath, value []byte) {
 			map[string]dbus.Variant{"Value": dbus.MakeVariant(value)},
 			[]string{},
 		},
-	}
+	})
 }
 
 // devPath returns the device object path used by default fixtures.
@@ -198,6 +234,9 @@ func (f *fakeBluez) managedObjects() map[dbus.ObjectPath]map[string]map[string]d
 			"ServicesResolved": dbus.MakeVariant(f.servicesResolved),
 			"Trusted":          dbus.MakeVariant(f.trusted),
 			"AutoConnect":      dbus.MakeVariant(f.autoConnect),
+		}
+		if f.dev.alias != "" {
+			props["Alias"] = dbus.MakeVariant(f.dev.alias)
 		}
 		if !f.dev.omitRSSI {
 			props["RSSI"] = dbus.MakeVariant(f.dev.rssi)
@@ -302,6 +341,11 @@ func (fc *fakeCaller) getProp(ctx context.Context, iface, prop string) (dbus.Var
 		return dbus.MakeVariant(fc.b.trusted), nil
 	case "AutoConnect":
 		return dbus.MakeVariant(fc.b.autoConnect), nil
+	case "RSSI":
+		if fc.b.dev == nil || fc.b.dev.omitRSSI {
+			return dbus.Variant{}, fmt.Errorf("org.freedesktop.DBus.Error.InvalidArgs: No such property 'RSSI'")
+		}
+		return dbus.MakeVariant(fc.b.dev.rssi), nil
 	}
 	return dbus.Variant{}, fmt.Errorf("unexpected property %q", prop)
 }

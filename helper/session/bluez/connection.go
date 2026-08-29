@@ -37,16 +37,13 @@ type Connection struct {
 	closeOnce sync.Once
 	done      chan struct{}
 	// loopDone is closed by rxLoop when it returns. Close() waits on it
-	// before returning: rxLoop reads directly off the dbusBus's single
-	// process-lifetime signal channel (shared by every Connection created
-	// from the same bluez.Conn, see bluez.go's adaptConn), so without this
-	// wait a caller that tears down and immediately reconnects (idle
-	// timeout followed by a fresh command, or presenceLoop's arrival
-	// reconnect) could start a new rxLoop that races the outgoing one for
-	// that same channel, occasionally losing a signal to the goroutine
-	// that's on its way out. nil (left unset) when no rxLoop was ever
-	// started, e.g. connection_test.go's newTestConnection - Close() must
-	// not block forever waiting for a close that will never come.
+	// before returning: rxLoop reads the dbusBus process-lifetime signal
+	// channel (shared by every Connection from the same bluez.Conn). The
+	// phone-key Watcher uses attachSignals() so it does not compete for
+	// this channel. Without this wait a caller that tears down and
+	// immediately reconnects could start a new rxLoop that races the
+	// outgoing one. nil when no rxLoop was ever started, e.g.
+	// connection_test.go's newTestConnection.
 	loopDone    chan struct{}
 	match       []dbus.MatchOption
 	deviceMatch []dbus.MatchOption
