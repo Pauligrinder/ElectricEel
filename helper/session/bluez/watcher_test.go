@@ -66,6 +66,9 @@ func TestWatcherStartsDiscoveryOnceAndStopStopsIt(t *testing.T) {
 	if !bus.discovering {
 		t.Error("expected newWatcher to start discovery")
 	}
+	if bus.matches != 2 {
+		t.Errorf("signal matches = %d, want 2", bus.matches)
+	}
 
 	for i := 0; i < 5; i++ {
 		if _, err := w.Peek(ctx); err != nil {
@@ -79,6 +82,42 @@ func TestWatcherStartsDiscoveryOnceAndStopStopsIt(t *testing.T) {
 	w.Stop(ctx)
 	if bus.discovering {
 		t.Error("expected Stop to stop discovery")
+	}
+	if bus.removedMatches != 2 {
+		t.Errorf("removed signal matches = %d, want 2", bus.removedMatches)
+	}
+}
+
+func TestWatcherCleansUpFirstMatchWhenSecondMatchFails(t *testing.T) {
+	bus := newFakeBluez()
+	bus.addMatchErrAt = 2
+	vin := "5YJ3E1EA0PF000000"
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if _, err := newWatcher(ctx, bus, "", vin); err == nil {
+		t.Fatal("newWatcher succeeded despite signal-match failure")
+	}
+	if bus.removedMatches != 1 {
+		t.Errorf("removed signal matches = %d, want 1", bus.removedMatches)
+	}
+	if bus.discovering {
+		t.Fatal("discovery started after signal-match failure")
+	}
+}
+
+func TestWatcherCleansUpMatchesWhenDiscoveryStartFails(t *testing.T) {
+	bus := newFakeBluez()
+	bus.startDiscoveryErr = context.DeadlineExceeded
+	vin := "5YJ3E1EA0PF000000"
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if _, err := newWatcher(ctx, bus, "", vin); err == nil {
+		t.Fatal("newWatcher succeeded despite discovery-start failure")
+	}
+	if bus.removedMatches != 2 {
+		t.Errorf("removed signal matches = %d, want 2", bus.removedMatches)
 	}
 }
 
@@ -140,7 +179,6 @@ func TestWatcherWaitFindsDelayedBeacon(t *testing.T) {
 	vin := "5YJ3E1EA0PF000000"
 	bus.dev = &fakeDevice{path: bus.devPath(), name: vehicleBeaconName(vin), rssi: -50}
 	bus.deviceVisible = false
-	bus.deviceAppearCall = 3
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
@@ -151,6 +189,10 @@ func TestWatcherWaitFindsDelayedBeacon(t *testing.T) {
 	}
 	defer w.Stop(ctx)
 
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		bus.advertiseAdded()
+	}()
 	res, err := w.Wait(ctx)
 	if err != nil {
 		t.Fatalf("Wait: %v", err)
@@ -160,6 +202,30 @@ func TestWatcherWaitFindsDelayedBeacon(t *testing.T) {
 	}
 	if res.RSSI != -50 {
 		t.Errorf("res.RSSI = %d, want -50", res.RSSI)
+	}
+}
+
+func TestWatcherWaitUsesRSSIUpdateForCachedTarget(t *testing.T) {
+	bus := newFakeBluez()
+	vin := "5YJ3E1EA0PF000000"
+	bus.dev = &fakeDevice{path: bus.devPath(), name: vehicleBeaconName(vin), omitRSSI: true}
+	bus.deviceVisible = true
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	w, err := newWatcher(ctx, bus, "", vin)
+	if err != nil {
+		t.Fatalf("newWatcher: %v", err)
+	}
+	defer w.Stop(ctx)
+
+	bus.advertiseRSSI(-62)
+	res, err := w.Wait(ctx)
+	if err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	if res == nil || res.Path != bus.dev.path || res.RSSI != -62 || !res.HasRSSI {
+		t.Fatalf("Wait returned %+v, want fresh RSSI update for cached target", res)
 	}
 }
 
@@ -210,6 +276,61 @@ func TestWatcherWaitTimeoutIsNotAnError(t *testing.T) {
 	}
 	if res != nil {
 		t.Fatalf("Wait should return nil when no beacon appears, got %+v", res)
+	}
+}
+
+func TestWatcherWaitDoesNotPollManagedObjects(t *testing.T) {
+	bus := newFakeBluez()
+	vin := "5YJ3E1EA0PF000000"
+	bus.dev = &fakeDevice{path: bus.devPath(), name: vehicleBeaconName(vin)}
+	bus.deviceVisible = false
+
+	wctx, wcancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer wcancel()
+	w, err := newWatcher(wctx, bus, "", vin)
+	if err != nil {
+		t.Fatalf("newWatcher: %v", err)
+	}
+	defer w.Stop(wctx)
+	initialCalls := bus.managedCalls
+
+	waitCtx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	defer cancel()
+	if res, err := w.Wait(waitCtx); err != nil || res != nil {
+		t.Fatalf("Wait = (%+v, %v), want (nil, nil)", res, err)
+	}
+	if bus.managedCalls != initialCalls {
+		t.Errorf("GetManagedObjects calls during idle Wait = %d, want 0", bus.managedCalls-initialCalls)
+	}
+}
+
+func TestWatcherWaitRestartsDroppedDiscoverySignal(t *testing.T) {
+	bus := newFakeBluez()
+	vin := "5YJ3E1EA0PF000000"
+	bus.dev = &fakeDevice{path: bus.devPath(), name: vehicleBeaconName(vin)}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	w, err := newWatcher(ctx, bus, "", vin)
+	if err != nil {
+		t.Fatalf("newWatcher: %v", err)
+	}
+	defer w.Stop(ctx)
+
+	bus.discoveryChanged(false)
+	bus.advertiseAdded()
+	res, err := w.Wait(ctx)
+	if err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	if res == nil {
+		t.Fatal("Wait did not return the advertisement after restarting discovery")
+	}
+	if !bus.discovering {
+		t.Fatal("Wait did not restart dropped discovery")
+	}
+	if n := countCalls(bus.calls, adapterIface+".StartDiscovery"); n != 2 {
+		t.Errorf("StartDiscovery called %d times, want 2", n)
 	}
 }
 

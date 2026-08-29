@@ -37,11 +37,13 @@ type fakeBluez struct {
 	autoConnect   bool
 	trusted       bool
 
-	writes       [][]byte
-	calls        []string
-	sig          chan *dbus.Signal
-	matches      int
-	removedMatch bool
+	writes         [][]byte
+	calls          []string
+	sig            chan *dbus.Signal
+	matches        int
+	addMatchErrAt  int
+	removedMatches int
+	removedMatch   bool
 }
 
 type fakeDevice struct {
@@ -65,10 +67,69 @@ func (f *fakeBluez) object(dest string, path dbus.ObjectPath) dbusCaller {
 
 func (f *fakeBluez) signals() <-chan *dbus.Signal { return f.sig }
 
-func (f *fakeBluez) addMatch(_ ...dbus.MatchOption) error { f.matches++; return nil }
+func (f *fakeBluez) addMatch(_ ...dbus.MatchOption) error {
+	f.matches++
+	if f.addMatchErrAt == f.matches {
+		return errors.New("org.freedesktop.DBus.Error.MatchRuleInvalid")
+	}
+	return nil
+}
 func (f *fakeBluez) removeMatch(_ ...dbus.MatchOption) error {
 	f.removedMatch = true
+	f.removedMatches++
 	return nil
+}
+
+// advertiseAdded simulates BlueZ materializing a newly discovered Device1.
+func (f *fakeBluez) advertiseAdded() {
+	if f.dev == nil {
+		return
+	}
+	f.deviceVisible = true
+	props := map[string]dbus.Variant{"Name": dbus.MakeVariant(f.dev.name)}
+	if !f.dev.omitRSSI {
+		props["RSSI"] = dbus.MakeVariant(f.dev.rssi)
+	}
+	f.sig <- &dbus.Signal{
+		Name: objMgrIface + ".InterfacesAdded",
+		Path: "/",
+		Body: []interface{}{
+			f.dev.path,
+			map[string]map[string]dbus.Variant{deviceIface: props},
+		},
+	}
+}
+
+// advertiseRSSI simulates the fresh Device1 RSSI update emitted for each
+// advertisement when DuplicateData is enabled.
+func (f *fakeBluez) advertiseRSSI(rssi int16) {
+	if f.dev == nil {
+		return
+	}
+	f.dev.rssi = rssi
+	f.deviceVisible = true
+	f.sig <- &dbus.Signal{
+		Name: propsIface + ".PropertiesChanged",
+		Path: f.dev.path,
+		Body: []interface{}{
+			deviceIface,
+			map[string]dbus.Variant{"RSSI": dbus.MakeVariant(rssi)},
+			[]string{},
+		},
+	}
+}
+
+func (f *fakeBluez) discoveryChanged(discovering bool) {
+	f.discovering = discovering
+	f.sig <- &dbus.Signal{
+		Name: propsIface + ".PropertiesChanged",
+		Path: dbus.ObjectPath("/org/bluez/" + f.adapterID),
+		Body: []interface{}{
+			adapterIface,
+			map[string]dbus.Variant{"Discovering": dbus.MakeVariant(discovering)},
+			[]string{},
+		},
+	}
 }
 
 // notify simulates an org.bluez GattCharacteristic1 PropertiesChanged signal

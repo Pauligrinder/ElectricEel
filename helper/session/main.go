@@ -95,7 +95,7 @@ type session struct {
 	authCancel context.CancelFunc
 	authInbox  chan []byte
 
-	// lastBeacon is the most recent Watcher.Peek() result while presence mode
+	// lastBeacon is the most recent Watcher advertisement while presence mode
 	// runs. Manual commands reuse it as a connect target so they never start
 	// a colliding one-shot scan while the phone-key Watcher already holds
 	// discovery open. Cleared by stopPresenceLocked.
@@ -1009,9 +1009,8 @@ func (s *session) runPresenceWatcher(ctx context.Context, cfg presenceConfig, wa
 		linkDownStreak = 0
 
 		now := time.Now()
-		// Wait (not a single Peek) so the first advertisement is caught
-		// the same way refresh's scan() does, and so we do not sit idle
-		// for scanInterval before even looking.
+		// Wait on BlueZ advertisement signals so arrival stays immediate
+		// without repeatedly enumerating the full D-Bus object tree.
 		waitCtx, cancel := context.WithTimeout(ctx, cfg.scanInterval)
 		result, err := watcher.Wait(waitCtx)
 		cancel()
