@@ -12,12 +12,9 @@ import (
 	"github.com/teslamotors/vehicle-command/pkg/connector/ble"
 )
 
-// pollInterval is how often GetManagedObjects is re-read while waiting for a
-// beacon. The car advertises every 20-150ms, so a 100ms poll notices it
-// within a connect timeout. Polling (rather than subscribing to
-// org.bluez signals) keeps the scan loop deterministic and trivially
-// testable; the signal-based path is only required later, for GATT
-// notifications, where events cannot be polled.
+// pollInterval is how often one-shot scans and GATT setup re-read BlueZ
+// state. The long-running phone-key watcher uses D-Bus signals instead, so
+// an absent vehicle does not wake the process ten times per second.
 const pollInterval = 100 * time.Millisecond
 
 // ScanResult describes a discovered vehicle beacon. Path is the org.bluez
@@ -90,11 +87,15 @@ type Watcher struct {
 	bus         dbusBus
 	adapterPath dbus.ObjectPath
 	name        string
+	devicePath  dbus.ObjectPath
+	pending     *ScanResult
+	ifaceMatch  []dbus.MatchOption
+	propsMatch  []dbus.MatchOption
 }
 
-// newWatcher starts discovery on adapterID (or the first available adapter)
-// and returns a Watcher ready for repeated Peek calls. Callers must call
-// Stop when done to turn discovery back off.
+// newWatcher subscribes before starting discovery so no first advertisement
+// can be missed, then seeds its target from one object-tree snapshot. Callers
+// must call Stop when done to remove the matches and turn discovery back off.
 func newWatcher(ctx context.Context, bus dbusBus, adapterID, vin string) (*Watcher, error) {
 	adapterPath, err := findAdapter(ctx, bus, adapterID)
 	if err != nil {
@@ -104,10 +105,49 @@ func newWatcher(ctx context.Context, bus dbusBus, adapterID, vin string) (*Watch
 		return nil, err
 	}
 	_ = setDiscoveryFilter(ctx, bus, adapterPath)
+	ifaceMatch := []dbus.MatchOption{
+		dbus.WithMatchSender(bluezService),
+		dbus.WithMatchInterface(objMgrIface),
+		dbus.WithMatchMember("InterfacesAdded"),
+		dbus.WithMatchObjectPath("/"),
+	}
+	propsMatch := []dbus.MatchOption{
+		dbus.WithMatchSender(bluezService),
+		dbus.WithMatchInterface(propsIface),
+		dbus.WithMatchMember("PropertiesChanged"),
+		dbus.WithMatchPathNamespace(adapterPath),
+	}
+	if err := bus.addMatch(ifaceMatch...); err != nil {
+		return nil, fmt.Errorf("bluez: subscribe to discovered devices: %w", err)
+	}
+	if err := bus.addMatch(propsMatch...); err != nil {
+		_ = bus.removeMatch(ifaceMatch...)
+		return nil, fmt.Errorf("bluez: subscribe to advertisement updates: %w", err)
+	}
 	if err := startDiscovery(ctx, bus, adapterPath); err != nil {
+		_ = bus.removeMatch(propsMatch...)
+		_ = bus.removeMatch(ifaceMatch...)
 		return nil, fmt.Errorf("bluez: start discovery: %w", err)
 	}
-	return &Watcher{bus: bus, adapterPath: adapterPath, name: vehicleBeaconName(vin)}, nil
+	w := &Watcher{
+		bus:         bus,
+		adapterPath: adapterPath,
+		name:        vehicleBeaconName(vin),
+		ifaceMatch:  ifaceMatch,
+		propsMatch:  propsMatch,
+	}
+	initial, err := findBeacon(ctx, bus, adapterPath, w.name)
+	if err != nil {
+		w.Stop(context.Background())
+		return nil, err
+	}
+	if initial != nil {
+		w.devicePath = initial.Path
+		if initial.HasRSSI {
+			w.pending = initial
+		}
+	}
+	return w, nil
 }
 
 // Peek returns the vehicle's current beacon snapshot, or (nil, nil) if it
@@ -125,28 +165,110 @@ func (w *Watcher) Peek(ctx context.Context) (*ScanResult, error) {
 	return findBeacon(ctx, w.bus, w.adapterPath, w.name)
 }
 
-// Wait polls until a live advertisement (Device1 with RSSI) appears or ctx
-// is done. A cached Device1 without RSSI is not "found": BlueZ keeps those
-// objects after ads stop, and treating them as a hit made the presence loop
-// return immediately and spin GetManagedObjects. Unlike Peek (one snapshot)
-// this is what a dashboard refresh's scan() does: keep looking until the
-// advertisement shows up. Discovery is left running. A timeout with no live
+// Wait blocks on BlueZ signals until a fresh advertisement appears or ctx is
+// done. A cached Device1 without a new RSSI is not "found": BlueZ keeps those
+// objects after ads stop. Discovery is left running. A timeout with no live
 // beacon is (nil, nil), not an error.
 func (w *Watcher) Wait(ctx context.Context) (*ScanResult, error) {
+	if err := w.ensureDiscovering(ctx); err != nil {
+		return nil, err
+	}
+	if w.pending != nil {
+		result := w.pending
+		w.pending = nil
+		return result, nil
+	}
 	for {
-		result, err := w.Peek(ctx)
-		if err != nil {
-			return nil, err
-		}
-		if result != nil && result.HasRSSI {
-			return result, nil
-		}
 		select {
 		case <-ctx.Done():
 			return nil, nil
-		case <-time.After(pollInterval):
+		case sig := <-w.bus.signals():
+			result, restart, ok := w.handleSignal(sig)
+			if restart {
+				if err := w.ensureDiscovering(ctx); err != nil {
+					return nil, err
+				}
+			}
+			if ok {
+				return result, nil
+			}
 		}
 	}
+}
+
+// handleSignal extracts a fresh target advertisement and notices when BlueZ
+// drops discovery. Its booleans are restartDiscovery and resultAvailable.
+func (w *Watcher) handleSignal(sig *dbus.Signal) (*ScanResult, bool, bool) {
+	if sig == nil {
+		return nil, false, false
+	}
+	switch sig.Name {
+	case objMgrIface + ".InterfacesAdded":
+		if len(sig.Body) < 2 {
+			return nil, false, false
+		}
+		path, ok := sig.Body[0].(dbus.ObjectPath)
+		if !ok || !strings.HasPrefix(string(path), string(w.adapterPath)+"/dev_") {
+			return nil, false, false
+		}
+		ifaces, ok := sig.Body[1].(map[string]map[string]dbus.Variant)
+		if !ok {
+			return nil, false, false
+		}
+		props, ok := ifaces[deviceIface]
+		if !ok {
+			return nil, false, false
+		}
+		return w.resultFromDeviceProperties(path, props)
+
+	case propsIface + ".PropertiesChanged":
+		if len(sig.Body) < 2 {
+			return nil, false, false
+		}
+		iface, ok := sig.Body[0].(string)
+		if !ok {
+			return nil, false, false
+		}
+		changed, ok := sig.Body[1].(map[string]dbus.Variant)
+		if !ok {
+			return nil, false, false
+		}
+		if iface == adapterIface && sig.Path == w.adapterPath {
+			if discovering, ok := variantBool(changed["Discovering"]); ok && !discovering {
+				return nil, true, false
+			}
+			return nil, false, false
+		}
+		if iface != deviceIface {
+			return nil, false, false
+		}
+		return w.resultFromDeviceProperties(sig.Path, changed)
+	}
+	return nil, false, false
+}
+
+func (w *Watcher) resultFromDeviceProperties(path dbus.ObjectPath, props map[string]dbus.Variant) (*ScanResult, bool, bool) {
+	name, hasName := variantString(props["Name"])
+	switch {
+	case hasName && name != w.name:
+		if path == w.devicePath {
+			w.devicePath = ""
+		}
+		return nil, false, false
+	case hasName:
+		w.devicePath = path
+	case path != w.devicePath:
+		return nil, false, false
+	}
+
+	rssi, hasRSSI := variantInt16(props["RSSI"])
+	if !hasRSSI {
+		return nil, false, false
+	}
+	if !hasName {
+		name = w.name
+	}
+	return &ScanResult{Path: path, LocalName: name, RSSI: rssi, HasRSSI: true}, false, true
 }
 
 // ensureDiscovering powers the adapter and starts LE discovery if BlueZ
@@ -164,9 +286,12 @@ func (w *Watcher) ensureDiscovering(ctx context.Context) error {
 	return startDiscovery(ctx, w.bus, w.adapterPath)
 }
 
-// Stop turns discovery back off. Safe to call once; a Peek after Stop simply
-// stops seeing new devices as BlueZ's cache goes stale.
+// Stop removes this watcher's signal subscriptions and turns discovery off.
+// Safe to call once; a Peek after Stop simply stops seeing new devices as
+// BlueZ's cache goes stale.
 func (w *Watcher) Stop(ctx context.Context) {
+	_ = w.bus.removeMatch(w.propsMatch...)
+	_ = w.bus.removeMatch(w.ifaceMatch...)
 	stopDiscovery(ctx, w.bus, w.adapterPath)
 }
 
