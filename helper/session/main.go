@@ -235,7 +235,7 @@ func (s *session) ensureConnectedLocked(ctx context.Context, cmd string, target 
 			// started VCSEC.
 			if len(domains) > 0 {
 				keylog("connect", "StartSession additional domains=%v", domains)
-				if err := s.car.StartSession(ctx, domains); err != nil {
+				if err := s.startSessionUnlocked(ctx, s.car, domains); err != nil {
 					keylog("connect", "StartSession additional failed: %v", err)
 					return err
 				}
@@ -298,11 +298,7 @@ func (s *session) ensureConnectedLocked(ctx context.Context, cmd string, target 
 	s.conn = conn
 	if !commandsWithoutSession[cmd] {
 		s.ensureAuthTapLocked(context.Background())
-		domains := sessionDomains(cmd)
-		keylog("connect", "StartSession domains=%v", domains)
-		if err := car.StartSession(connCtx, domains); err != nil {
-			s.teardownLocked()
-			keylog("connect", "StartSession failed: %v", err)
+		if err := s.handshakeLocked(connCtx, car, cmd); err != nil {
 			return err
 		}
 	}
@@ -311,6 +307,72 @@ func (s *session) ensureConnectedLocked(ctx context.Context, cmd string, target 
 	}
 	keylog("connect", "ready cmd=%q", cmd)
 	return nil
+}
+
+func onlyVCSEC(domains []protocol.Domain) bool {
+	return len(domains) == 1 && domains[0] == protocol.DomainVCSEC
+}
+
+func (s *session) presenceActiveLocked() bool {
+	return s.presenceCancel != nil
+}
+
+// keepPresenceSessionOnHandshakeError is true when a command's extra-domain
+// StartSession (typically infotainment) failed but the phone-key VCSEC
+// session must stay up. Presence's own VCSEC failure still tears down.
+func keepPresenceSessionOnHandshakeError(presenceActive bool, cmd string) bool {
+	return presenceActive && cmd != ""
+}
+
+// handshakeLocked brings up the domains cmd needs. Presence always starts
+// with VCSEC (the sleeping car answers that). A dashboard `state` used to
+// StartSession(infotainment) only, hold mu for the full connect timeout
+// against a sleeping car, then teardown — which dropped the DRIVE
+// AuthenticationRequest the vehicle sends as soon as the phone-key link is
+// up (see 2026-08-29 phone-key log).
+func (s *session) handshakeLocked(ctx context.Context, car *vehicle.Vehicle, cmd string) error {
+	domains := sessionDomains(cmd)
+	if s.presenceActiveLocked() {
+		keylog("connect", "StartSession domains=[DOMAIN_VEHICLE_SECURITY] (presence)")
+		if err := car.StartSession(ctx, []protocol.Domain{protocol.DomainVCSEC}); err != nil {
+			s.teardownLocked()
+			keylog("connect", "StartSession failed: %v", err)
+			return err
+		}
+		if len(domains) == 0 || onlyVCSEC(domains) {
+			return nil
+		}
+		keylog("connect", "StartSession additional domains=%v", domains)
+		if err := s.startSessionUnlocked(ctx, car, domains); err != nil {
+			if keepPresenceSessionOnHandshakeError(true, cmd) {
+				keylog("connect", "StartSession %v failed (keeping presence session): %v", domains, err)
+				return err
+			}
+			s.teardownLocked()
+			keylog("connect", "StartSession failed: %v", err)
+			return err
+		}
+		return nil
+	}
+	keylog("connect", "StartSession domains=%v", domains)
+	if err := car.StartSession(ctx, domains); err != nil {
+		s.teardownLocked()
+		keylog("connect", "StartSession failed: %v", err)
+		return err
+	}
+	return nil
+}
+
+// startSessionUnlocked drops mu for a blocking StartSession so the auth
+// responder can answer VCSEC AuthenticationRequest. Caller holds mu.
+func (s *session) startSessionUnlocked(ctx context.Context, car *vehicle.Vehicle, domains []protocol.Domain) error {
+	s.mu.Unlock()
+	err := car.StartSession(ctx, domains)
+	s.mu.Lock()
+	if s.car != car && err == nil {
+		return fmt.Errorf("session replaced during StartSession")
+	}
+	return err
 }
 
 // enableTrustedLocked marks the vehicle Trusted so reconnects do not prompt.
