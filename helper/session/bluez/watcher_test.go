@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/godbus/dbus"
 )
 
 func TestWatcherPeekTracksBeaconVisibility(t *testing.T) {
@@ -299,8 +301,8 @@ func TestWatcherWaitDoesNotPollManagedObjects(t *testing.T) {
 	if res, err := w.Wait(waitCtx); err != nil || res != nil {
 		t.Fatalf("Wait = (%+v, %v), want (nil, nil)", res, err)
 	}
-	if bus.managedCalls != initialCalls {
-		t.Errorf("GetManagedObjects calls during idle Wait = %d, want 0", bus.managedCalls-initialCalls)
+	if extra := bus.managedCalls - initialCalls; extra > 1 {
+		t.Errorf("GetManagedObjects calls during idle Wait = %d, want at most 1 timeout snapshot", extra)
 	}
 }
 
@@ -331,6 +333,107 @@ func TestWatcherWaitRestartsDroppedDiscoverySignal(t *testing.T) {
 	}
 	if n := countCalls(bus.calls, adapterIface+".StartDiscovery"); n != 2 {
 		t.Errorf("StartDiscovery called %d times, want 2", n)
+	}
+}
+
+func TestWatcherWaitMatchesAliasWhenNameIsAddress(t *testing.T) {
+	bus := newFakeBluez()
+	vin := "5YJ3E1EA0PF000000"
+	bus.dev = &fakeDevice{
+		path:  bus.devPath(),
+		name:  "AA:BB:CC:DD:EE:FF",
+		alias: vehicleBeaconName(vin),
+		rssi:  -48,
+	}
+	bus.deviceVisible = false
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	w, err := newWatcher(ctx, bus, "", vin)
+	if err != nil {
+		t.Fatalf("newWatcher: %v", err)
+	}
+	defer w.Stop(ctx)
+
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		bus.advertiseAdded()
+	}()
+	res, err := w.Wait(ctx)
+	if err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	if res == nil || res.RSSI != -48 || res.LocalName != vehicleBeaconName(vin) {
+		t.Fatalf("Wait = %+v, want Alias-matched Tesla beacon", res)
+	}
+}
+
+func TestWatcherWaitFetchesRSSIWhenAdvertisementOmitsIt(t *testing.T) {
+	bus := newFakeBluez()
+	vin := "5YJ3E1EA0PF000000"
+	bus.dev = &fakeDevice{path: bus.devPath(), name: vehicleBeaconName(vin), omitRSSI: true}
+	bus.deviceVisible = true
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	w, err := newWatcher(ctx, bus, "", vin)
+	if err != nil {
+		t.Fatalf("newWatcher: %v", err)
+	}
+	defer w.Stop(ctx)
+
+	bus.dev.omitRSSI = false
+	bus.dev.rssi = -64
+	bus.advertiseProps(map[string]dbus.Variant{
+		"ManufacturerData": dbus.MakeVariant("ad"),
+	})
+	res, err := w.Wait(ctx)
+	if err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	if res == nil || res.RSSI != -64 || !res.HasRSSI {
+		t.Fatalf("Wait = %+v, want RSSI fetched after ManufacturerData-only signal", res)
+	}
+}
+
+func TestWatcherWaitDoesNotShareConnectionSignalChannel(t *testing.T) {
+	bus := newFakeBluez()
+	vin := "5YJ3E1EA0PF000000"
+	bus.dev = &fakeDevice{path: bus.devPath(), name: vehicleBeaconName(vin), rssi: -50}
+	bus.deviceVisible = false
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	w, err := newWatcher(ctx, bus, "", vin)
+	if err != nil {
+		t.Fatalf("newWatcher: %v", err)
+	}
+	defer w.Stop(ctx)
+
+	// Consume the process-lifetime channel the way Connection.rxLoop does.
+	// Wait must still see the advertisement on its own listener.
+	thiefDone := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-thiefDone:
+				return
+			case <-bus.signals():
+			}
+		}
+	}()
+	defer close(thiefDone)
+
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		bus.advertiseAdded()
+	}()
+	res, err := w.Wait(ctx)
+	if err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	if res == nil || res.RSSI != -50 {
+		t.Fatalf("Wait = %+v, want advertisement despite rxLoop stealing from signals()", res)
 	}
 }
 

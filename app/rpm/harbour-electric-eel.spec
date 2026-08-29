@@ -1,6 +1,6 @@
 Name:       harbour-electric-eel
 Summary:    Control your Tesla over Bluetooth
-Version:    0.2.11
+Version:    0.2.12
 Release:    1
 License:    ASL 2.0
 URL:        https://github.com/nappa85/ElectricEel
@@ -46,6 +46,9 @@ desktop-file-install --delete-original \
 %{_datadir}/icons/hicolor/*/apps/%{name}.png
 
 %changelog
+* Sat Aug 29 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.12-1
+- Fix signal-driven phone-key scanning (shared D-Bus channel and advertisement parsing)
+- Fix the Rust CI gate (formatting and pedantic clippy lints)
 * Sat Aug 29 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.11-1
 - Drive phone-key scanning from BlueZ signals to save battery
 * Wed Aug 26 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.10-1
