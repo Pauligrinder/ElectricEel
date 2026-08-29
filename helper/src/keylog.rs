@@ -28,7 +28,9 @@ pub(crate) fn log_dir() -> PathBuf {
 /// Append one line to today's `phone-key-YYYY-MM-DD.log`. Never panics.
 pub(crate) fn log(tag: &str, message: &str) {
     let dir = log_dir();
-    let _guard = LOG_MU.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _guard = LOG_MU
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let _ = fs::create_dir_all(&dir);
     prune_old_logs(&dir);
     let day = local_day_string();
@@ -49,14 +51,14 @@ fn local_stamp() -> String {
     // only format into a stack buffer here; LOG_MU serializes file writes.
     unsafe {
         let mut ts: libc::time_t = 0;
-        libc::time(&mut ts);
+        libc::time(&raw mut ts);
         let mut tm: libc::tm = std::mem::zeroed();
-        libc::localtime_r(&ts, &mut tm);
+        libc::localtime_r(&raw const ts, &raw mut tm);
         let mut tv = libc::timeval {
             tv_sec: 0,
             tv_usec: 0,
         };
-        libc::gettimeofday(&mut tv, std::ptr::null_mut());
+        libc::gettimeofday(&raw mut tv, std::ptr::null_mut());
         let ms = u32::try_from(tv.tv_usec / 1000).unwrap_or(0);
         format!(
             "{:02}:{:02}:{:02}.{:03}",
@@ -69,9 +71,9 @@ fn local_day_string() -> String {
     // SAFETY: see local_stamp.
     unsafe {
         let mut ts: libc::time_t = 0;
-        libc::time(&mut ts);
+        libc::time(&raw mut ts);
         let mut tm: libc::tm = std::mem::zeroed();
-        libc::localtime_r(&ts, &mut tm);
+        libc::localtime_r(&raw const ts, &raw mut tm);
         format!(
             "{:04}-{:02}-{:02}",
             tm.tm_year + 1900,
