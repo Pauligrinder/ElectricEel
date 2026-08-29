@@ -135,6 +135,19 @@ func TestPresenceKeepsSessionWhenCommandNeedsInfotainment(t *testing.T) {
 	}
 }
 
+func TestPresenceOmitsAdditionalHandshake(t *testing.T) {
+	if got := additionalHandshakeDomains(true, "state"); got != nil {
+		t.Fatalf("presence must not handshake extra domains for state, got %v", got)
+	}
+	if got := additionalHandshakeDomains(true, "body-controller-state"); got != nil {
+		t.Fatalf("presence must not re-handshake VCSEC for body-controller-state, got %v", got)
+	}
+	want := []protocol.Domain{protocol.DomainInfotainment}
+	if got := additionalHandshakeDomains(false, "state"); !reflect.DeepEqual(got, want) {
+		t.Fatalf("without presence, state still handshakes infotainment, got %v", got)
+	}
+}
+
 func TestCommandsWithoutSessionSkipsStartSession(t *testing.T) {
 	if !commandsWithoutSession["add-key-request"] {
 		t.Error(`commandsWithoutSession["add-key-request"] = false, want true`)

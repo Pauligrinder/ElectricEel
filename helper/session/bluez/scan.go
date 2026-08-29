@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/godbus/dbus"
@@ -88,6 +89,7 @@ type Watcher struct {
 	adapterPath dbus.ObjectPath
 	name        string
 	devicePath  dbus.ObjectPath
+	mu          sync.Mutex
 	paused      bool
 	sigs        <-chan *dbus.Signal
 	detachSigs  func()
@@ -329,21 +331,28 @@ func isAdvertisementUpdate(props map[string]dbus.Variant) bool {
 // Pause stops LE discovery so Device.Connect is not aborted by a live
 // scan. Resume lets the next Wait/Peek start discovery again.
 func (w *Watcher) Pause() {
+	w.mu.Lock()
 	w.paused = true
+	w.mu.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	stopDiscovery(ctx, w.bus, w.adapterPath)
 }
 
 func (w *Watcher) Resume() {
+	w.mu.Lock()
 	w.paused = false
+	w.mu.Unlock()
 }
 
 // ensureDiscovering powers the adapter and starts LE discovery if BlueZ
 // is not already scanning. Safe to call on every Peek: a live discovery
 // session is a no-op.
 func (w *Watcher) ensureDiscovering(ctx context.Context) error {
-	if w.paused {
+	w.mu.Lock()
+	paused := w.paused
+	w.mu.Unlock()
+	if paused {
 		return nil
 	}
 	if err := ensurePowered(ctx, w.bus, w.adapterPath); err != nil {
