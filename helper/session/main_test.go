@@ -109,6 +109,32 @@ func TestSessionDomainsScopesBodyControllerState(t *testing.T) {
 // StartSession succeeding (it sends an unauthenticated, self-identifying
 // message directly), so it must skip StartSession rather than request a
 // narrower one.
+func TestOnlyVCSEC(t *testing.T) {
+	if !onlyVCSEC([]protocol.Domain{protocol.DomainVCSEC}) {
+		t.Fatal("VCSEC-only slice must be onlyVCSEC")
+	}
+	if onlyVCSEC([]protocol.Domain{protocol.DomainInfotainment}) {
+		t.Fatal("infotainment must not be onlyVCSEC")
+	}
+	if onlyVCSEC(nil) {
+		t.Fatal("nil (all domains) must not be onlyVCSEC")
+	}
+}
+
+func TestPresenceKeepsSessionWhenCommandNeedsInfotainment(t *testing.T) {
+	// A live presence session must survive a failed infotainment handshake
+	// (sleeping car). Tearing down is what dropped the DRIVE auth request.
+	if !keepPresenceSessionOnHandshakeError(true, "state") {
+		t.Fatal("presence + state must keep the VCSEC session")
+	}
+	if keepPresenceSessionOnHandshakeError(true, "") {
+		t.Fatal("presence's own VCSEC handshake failure must still teardown")
+	}
+	if keepPresenceSessionOnHandshakeError(false, "state") {
+		t.Fatal("without presence, a failed state handshake still tears down")
+	}
+}
+
 func TestCommandsWithoutSessionSkipsStartSession(t *testing.T) {
 	if !commandsWithoutSession["add-key-request"] {
 		t.Error(`commandsWithoutSession["add-key-request"] = false, want true`)
