@@ -1007,6 +1007,7 @@ func (s *session) runPresenceWatcher(ctx context.Context, cfg presenceConfig, wa
 			continue
 		}
 		linkDownStreak = 0
+		watcher.Resume()
 
 		now := time.Now()
 		// Wait on BlueZ advertisement signals so arrival stays immediate
@@ -1050,6 +1051,9 @@ func (s *session) runPresenceWatcher(ctx context.Context, cfg presenceConfig, wa
 					target := s.connectTargetLocked(result)
 					s.mu.Unlock()
 					if !inBackoff && target != nil {
+						// Discovery during Device.Connect is the Sailfish
+						// le-connection-abort / deadline-exceeded path.
+						watcher.Pause()
 						connCtx, connCancel := context.WithTimeout(ctx, s.connectTimeout)
 						s.mu.Lock()
 						connErr := s.ensureConnectedLocked(connCtx, "", target)
@@ -1064,6 +1068,7 @@ func (s *session) runPresenceWatcher(ctx context.Context, cfg presenceConfig, wa
 						s.mu.Unlock()
 						connCancel()
 						if connErr != nil {
+							watcher.Resume()
 							near, consecNear = false, 0
 							s.emitEvent("presence_error", connErr)
 						} else {

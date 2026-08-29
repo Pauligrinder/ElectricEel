@@ -71,6 +71,14 @@ func tryConnect(ctx context.Context, bus dbusBus, adapterID, vin string, target 
 	// connection when the scanner is still running. Presence's Watcher
 	// restarts discovery on the next Peek if this attempt fails.
 	stopDiscovery(ctx, bus, adapterPath)
+	// StopDiscovery is asynchronous on Sailfish bluetoothd. Connecting
+	// in the same tick leaves the scanner running and Device.Connect
+	// blocks until the presence deadline ("GATT timeout").
+	select {
+	case <-ctx.Done():
+		return nil, true, ctx.Err()
+	case <-time.After(150 * time.Millisecond):
+	}
 	if err := connectDevice(ctx, bus, devPath); err != nil {
 		abortDeviceConnect(bus, devPath)
 		return nil, true, err

@@ -301,8 +301,8 @@ func TestWatcherWaitDoesNotPollManagedObjects(t *testing.T) {
 	if res, err := w.Wait(waitCtx); err != nil || res != nil {
 		t.Fatalf("Wait = (%+v, %v), want (nil, nil)", res, err)
 	}
-	if extra := bus.managedCalls - initialCalls; extra > 1 {
-		t.Errorf("GetManagedObjects calls during idle Wait = %d, want at most 1 timeout snapshot", extra)
+	if extra := bus.managedCalls - initialCalls; extra != 0 {
+		t.Errorf("GetManagedObjects calls during idle Wait = %d, want 0", extra)
 	}
 }
 
@@ -333,6 +333,94 @@ func TestWatcherWaitRestartsDroppedDiscoverySignal(t *testing.T) {
 	}
 	if n := countCalls(bus.calls, adapterIface+".StartDiscovery"); n != 2 {
 		t.Errorf("StartDiscovery called %d times, want 2", n)
+	}
+}
+
+func TestWatcherWaitIgnoresCachedRSSIUntilFreshSignal(t *testing.T) {
+	bus := newFakeBluez()
+	vin := "5YJ3E1EA0PF000000"
+	bus.dev = &fakeDevice{path: bus.devPath(), name: vehicleBeaconName(vin), rssi: -55}
+	bus.deviceVisible = true
+
+	wctx, wcancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer wcancel()
+	w, err := newWatcher(wctx, bus, "", vin)
+	if err != nil {
+		t.Fatalf("newWatcher: %v", err)
+	}
+	defer w.Stop(wctx)
+
+	waitCtx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer cancel()
+	res, err := w.Wait(waitCtx)
+	if err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	if res != nil {
+		t.Fatalf("Wait returned cached RSSI %+v; that triggers a GATT connect to a stale Device1", res)
+	}
+}
+
+func TestWatcherWaitIgnoresNonAdvertisementPropertyChange(t *testing.T) {
+	bus := newFakeBluez()
+	vin := "5YJ3E1EA0PF000000"
+	bus.dev = &fakeDevice{path: bus.devPath(), name: vehicleBeaconName(vin), rssi: -55}
+	bus.deviceVisible = true
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	w, err := newWatcher(ctx, bus, "", vin)
+	if err != nil {
+		t.Fatalf("newWatcher: %v", err)
+	}
+	defer w.Stop(ctx)
+
+	bus.advertiseProps(map[string]dbus.Variant{"Connected": dbus.MakeVariant(false)})
+	waitCtx, waitCancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer waitCancel()
+	res, err := w.Wait(waitCtx)
+	if err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	if res != nil {
+		t.Fatalf("Wait treated Connected change as a live beacon: %+v", res)
+	}
+}
+
+func TestWatcherPauseStopsDiscovery(t *testing.T) {
+	bus := newFakeBluez()
+	vin := "5YJ3E1EA0PF000000"
+	bus.dev = &fakeDevice{path: bus.devPath(), name: vehicleBeaconName(vin)}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	w, err := newWatcher(ctx, bus, "", vin)
+	if err != nil {
+		t.Fatalf("newWatcher: %v", err)
+	}
+	defer w.Stop(ctx)
+	if !bus.discovering {
+		t.Fatal("expected discovery after newWatcher")
+	}
+
+	w.Pause()
+	if bus.discovering {
+		t.Fatal("Pause must stop discovery before Device.Connect")
+	}
+	bus.discovering = false
+	if _, err := w.Peek(ctx); err != nil {
+		t.Fatalf("Peek while paused: %v", err)
+	}
+	if bus.discovering {
+		t.Fatal("Peek must not restart discovery while paused")
+	}
+
+	w.Resume()
+	if _, err := w.Peek(ctx); err != nil {
+		t.Fatalf("Peek after Resume: %v", err)
+	}
+	if !bus.discovering {
+		t.Fatal("Resume+Peek must restart discovery")
 	}
 }
 
