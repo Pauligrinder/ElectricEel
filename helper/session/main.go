@@ -101,6 +101,10 @@ type session struct {
 	// discovery open. Cleared by stopPresenceLocked.
 	lastBeacon *bluez.ScanResult
 
+	// watcher is the live presence scanner. Dashboard connects pause it so
+	// Device.Connect is not aborted by a discovery session they did not start.
+	watcher *bluez.Watcher
+
 	// connectBackoffUntil gates presence-mode reconnect attempts after a
 	// failed connect, so a flaky link can't hammer bluetoothd in a tight loop.
 	connectBackoffUntil time.Time
@@ -226,14 +230,12 @@ func (s *session) ensureConnectedLocked(ctx context.Context, cmd string, target 
 	if s.car != nil {
 		if !commandsWithoutSession[cmd] {
 			s.ensureAuthTapLocked(context.Background())
-			domains := sessionDomains(cmd)
-			// nil means "all domains" (lock/unlock/etc.). Those can use the
-			// live VCSEC session as-is; re-handshaking infotainment here
-			// would fail against a sleeping car and block RKE. A command
-			// that names a domain (state → infotainment, body-controller-
-			// state → VCSEC) still needs that handshake if presence only
-			// started VCSEC.
-			if len(domains) > 0 {
+			// Presence holds VCSEC for phone-key. A dashboard `state` used
+			// to StartSession(infotainment) here; the vehicle drops the
+			// whole GATT link when that handshake is asked of a sleeping
+			// (and often even an awake) car, which is the connect-then-
+			// immediate-drop loop in the 2026-08-29 phone-key log.
+			if domains := additionalHandshakeDomains(s.presenceActiveLocked(), cmd); len(domains) > 0 {
 				keylog("connect", "StartSession additional domains=%v", domains)
 				if err := s.startSessionUnlocked(ctx, s.car, domains); err != nil {
 					keylog("connect", "StartSession additional failed: %v", err)
@@ -243,6 +245,8 @@ func (s *session) ensureConnectedLocked(ctx context.Context, cmd string, target 
 		}
 		return nil
 	}
+
+	s.pauseDiscoveryLocked()
 
 	skey, err := protocol.LoadPrivateKey(s.keyFile)
 	if err != nil {
@@ -317,6 +321,22 @@ func (s *session) presenceActiveLocked() bool {
 	return s.presenceCancel != nil
 }
 
+func (s *session) pauseDiscoveryLocked() {
+	if s.watcher != nil {
+		s.watcher.Pause()
+	}
+}
+
+// additionalHandshakeDomains is the extra StartSession a live session still
+// needs for cmd. Presence never adds domains: infotainment SessionInfo
+// tears down the GATT link that phone-key just opened.
+func additionalHandshakeDomains(presenceActive bool, cmd string) []protocol.Domain {
+	if presenceActive {
+		return nil
+	}
+	return sessionDomains(cmd)
+}
+
 // keepPresenceSessionOnHandshakeError is true when a command's extra-domain
 // StartSession (typically infotainment) failed but the phone-key VCSEC
 // session must stay up. Presence's own VCSEC failure still tears down.
@@ -325,29 +345,14 @@ func keepPresenceSessionOnHandshakeError(presenceActive bool, cmd string) bool {
 }
 
 // handshakeLocked brings up the domains cmd needs. Presence always starts
-// with VCSEC (the sleeping car answers that). A dashboard `state` used to
-// StartSession(infotainment) only, hold mu for the full connect timeout
-// against a sleeping car, then teardown — which dropped the DRIVE
-// AuthenticationRequest the vehicle sends as soon as the phone-key link is
-// up (see 2026-08-29 phone-key log).
+// VCSEC only. Asking infotainment (dashboard `state`) while the phone-key
+// link is up is what dropped GATT immediately after connect in the
+// 2026-08-29 phone-key log.
 func (s *session) handshakeLocked(ctx context.Context, car *vehicle.Vehicle, cmd string) error {
 	domains := sessionDomains(cmd)
 	if s.presenceActiveLocked() {
 		keylog("connect", "StartSession domains=[DOMAIN_VEHICLE_SECURITY] (presence)")
 		if err := car.StartSession(ctx, []protocol.Domain{protocol.DomainVCSEC}); err != nil {
-			s.teardownLocked()
-			keylog("connect", "StartSession failed: %v", err)
-			return err
-		}
-		if len(domains) == 0 || onlyVCSEC(domains) {
-			return nil
-		}
-		keylog("connect", "StartSession additional domains=%v", domains)
-		if err := s.startSessionUnlocked(ctx, car, domains); err != nil {
-			if keepPresenceSessionOnHandshakeError(true, cmd) {
-				keylog("connect", "StartSession %v failed (keeping presence session): %v", domains, err)
-				return err
-			}
 			s.teardownLocked()
 			keylog("connect", "StartSession failed: %v", err)
 			return err
@@ -964,6 +969,17 @@ func (s *session) runPresenceWatcher(ctx context.Context, cfg presenceConfig, wa
 		linkDownStreak int
 	)
 
+	s.mu.Lock()
+	s.watcher = watcher
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		if s.watcher == watcher {
+			s.watcher = nil
+		}
+		s.mu.Unlock()
+	}()
+
 	restartWatcher := func() bool {
 		keylog("presence", "restarting watcher after peek errors")
 		watcher.Stop(context.Background())
@@ -975,6 +991,9 @@ func (s *session) runPresenceWatcher(ctx context.Context, cfg presenceConfig, wa
 			return false
 		}
 		watcher = newWatcher
+		s.mu.Lock()
+		s.watcher = newWatcher
+		s.mu.Unlock()
 		peekErrors = 0
 		return true
 	}
