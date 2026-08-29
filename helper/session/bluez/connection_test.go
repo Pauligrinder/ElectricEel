@@ -324,6 +324,7 @@ func TestDroppedClosesOnDeviceDisconnectSignal(t *testing.T) {
 	c := cc.(*Connection)
 	defer c.Close()
 
+	bus.connected = false
 	bus.sig <- &dbus.Signal{
 		Name: propsIface + ".PropertiesChanged",
 		Path: bus.devPath(),
@@ -337,5 +338,89 @@ func TestDroppedClosesOnDeviceDisconnectSignal(t *testing.T) {
 	case <-c.Dropped():
 	case <-time.After(time.Second):
 		t.Fatal("expected Dropped() after Connected=false signal")
+	}
+}
+
+func TestDroppedIgnoresStaleDisconnectWhileStillConnected(t *testing.T) {
+	bus := newFakeBluez()
+	vin := "5YJ3E1EA0PF000000"
+	bus.dev = &fakeDevice{path: bus.devPath(), name: vehicleBeaconName(vin), rssi: -55}
+	bus.deviceVisible = true
+	bus.servicesResolved = true
+	bus.gattReady = true
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	cc, err := connect(ctx, bus, "hci0", vin, &ScanResult{Path: bus.dev.path, HasRSSI: true, RSSI: -55})
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	c := cc.(*Connection)
+	defer c.Close()
+
+	// Leftover Connected=false from the previous Close, while BlueZ still
+	// reports this Device1 as Connected. Presence used to tear down here.
+	bus.sig <- &dbus.Signal{
+		Name: propsIface + ".PropertiesChanged",
+		Path: bus.devPath(),
+		Body: []interface{}{
+			deviceIface,
+			map[string]dbus.Variant{"Connected": dbus.MakeVariant(false)},
+			[]string{},
+		},
+	}
+	select {
+	case <-c.Dropped():
+		t.Fatal("Dropped() must not close while Device1.Connected is still true")
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	bus.connected = false
+	bus.sig <- &dbus.Signal{
+		Name: propsIface + ".PropertiesChanged",
+		Path: bus.devPath(),
+		Body: []interface{}{
+			deviceIface,
+			map[string]dbus.Variant{"Connected": dbus.MakeVariant(false)},
+			[]string{},
+		},
+	}
+	select {
+	case <-c.Dropped():
+	case <-time.After(time.Second):
+		t.Fatal("expected Dropped() after a confirmed disconnect")
+	}
+}
+
+func TestDrainSignalsDropsBufferedDisconnect(t *testing.T) {
+	bus := newFakeBluez()
+	vin := "5YJ3E1EA0PF000000"
+	bus.dev = &fakeDevice{path: bus.devPath(), name: vehicleBeaconName(vin), rssi: -55}
+	bus.deviceVisible = true
+	bus.servicesResolved = true
+	bus.gattReady = true
+	bus.sig <- &dbus.Signal{
+		Name: propsIface + ".PropertiesChanged",
+		Path: bus.devPath(),
+		Body: []interface{}{
+			deviceIface,
+			map[string]dbus.Variant{"Connected": dbus.MakeVariant(false)},
+			[]string{},
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	cc, err := connect(ctx, bus, "hci0", vin, &ScanResult{Path: bus.dev.path, HasRSSI: true, RSSI: -55})
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	c := cc.(*Connection)
+	defer c.Close()
+
+	select {
+	case <-c.Dropped():
+		t.Fatal("buffered Connected=false from before Connect must not close Dropped")
+	case <-time.After(200 * time.Millisecond):
 	}
 }
