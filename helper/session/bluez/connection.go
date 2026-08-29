@@ -2,7 +2,6 @@ package bluez
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
 
@@ -58,6 +57,12 @@ type Connection struct {
 	// authenticated session instead of sitting on a zombie Connection.
 	dropped     chan struct{}
 	droppedOnce sync.Once
+	dropMu      sync.Mutex
+	// dropArmed is false until this Connection has a live Device.Connect.
+	// A leftover PropertiesChanged Connected=false from the previous
+	// Close/Disconnect sits on the shared bus.signals() buffer and would
+	// otherwise close Dropped on a session that just finished StartSession.
+	dropArmed bool
 
 	// RX reassembly state. Touched only by the rxLoop goroutine (the single
 	// writer), so it needs no lock of its own.
@@ -102,17 +107,21 @@ func (c *Connection) notifyDropped() {
 	c.droppedOnce.Do(func() { close(c.dropped) })
 }
 
+func (c *Connection) armDropped() {
+	c.dropMu.Lock()
+	c.dropArmed = true
+	c.dropMu.Unlock()
+}
+
+func (c *Connection) isDropArmed() bool {
+	c.dropMu.Lock()
+	defer c.dropMu.Unlock()
+	return c.dropArmed
+}
+
 // DeviceConnected reports whether BlueZ still considers the GATT link up.
 func (c *Connection) DeviceConnected(ctx context.Context) (bool, error) {
-	v, err := c.bus.object(bluezService, c.devPath).getProp(ctx, deviceIface, "Connected")
-	if err != nil {
-		return false, err
-	}
-	connected, ok := variantBool(v)
-	if !ok {
-		return false, fmt.Errorf("bluez: decode device Connected: got %T", v.Value())
-	}
-	return connected, nil
+	return deviceConnected(ctx, c.bus, c.devPath)
 }
 
 // SetTrusted marks the vehicle as a trusted BlueZ device so reconnects do
@@ -203,6 +212,12 @@ func (c *Connection) Close() {
 		// Best-effort: the link is going away regardless.
 		_, _ = c.bus.object(bluezService, c.rxPath).call(ctx, gattChrIface+".StopNotify")
 		_, _ = c.bus.object(bluezService, c.devPath).call(ctx, deviceIface+".Disconnect")
+		// Device.Disconnect returns before the HCI link is gone. Connecting
+		// in that window is the 0.2.15 on/off loop: the late Connected=false
+		// lands on the new session and presence tears it down.
+		waitCtx, waitCancel := context.WithTimeout(context.Background(), time.Second)
+		waitDeviceDisconnected(waitCtx, c.bus, c.devPath)
+		waitCancel()
 		_ = c.bus.removeMatch(c.match...)
 		if len(c.deviceMatch) > 0 {
 			_ = c.bus.removeMatch(c.deviceMatch...)
@@ -273,9 +288,23 @@ func (c *Connection) handleDeviceSignal(sig *dbus.Signal) {
 		return
 	}
 	connected, ok := variantBool(v)
-	if ok && !connected {
-		c.notifyDropped()
+	if !ok {
+		return
 	}
+	if connected {
+		c.armDropped()
+		return
+	}
+	if !c.isDropArmed() {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	still, err := c.DeviceConnected(ctx)
+	cancel()
+	if err == nil && still {
+		return
+	}
+	c.notifyDropped()
 }
 
 // rx appends inbound bytes to the reassembly buffer and flushes any complete

@@ -71,6 +71,13 @@ func tryConnect(ctx context.Context, bus dbusBus, adapterID, vin string, target 
 	// connection when the scanner is still running. Presence's Watcher
 	// restarts discovery on the next Peek if this attempt fails.
 	stopDiscovery(ctx, bus, adapterPath)
+	// A leftover Connected=true (previous Close still in HCI, or BlueZ
+	// AutoConnect) must go down before we Connect, or the old Disconnect
+	// completes on top of the new link.
+	if already, err := deviceConnected(ctx, bus, devPath); err == nil && already {
+		abortDeviceConnect(bus, devPath)
+		waitDeviceDisconnected(ctx, bus, devPath)
+	}
 	// StopDiscovery is asynchronous on Sailfish bluetoothd. Connecting
 	// in the same tick leaves the scanner running and Device.Connect
 	// blocks until the presence deadline ("GATT timeout").
@@ -136,8 +143,47 @@ func tryConnect(ctx context.Context, bus dbusBus, adapterID, vin string, target 
 		deviceMatch: deviceMatch,
 		dropped:     make(chan struct{}),
 	}
+	drainSignals(bus)
+	c.armDropped()
 	go c.rxLoop()
 	return c, false, nil
+}
+
+func deviceConnected(ctx context.Context, bus dbusBus, devPath dbus.ObjectPath) (bool, error) {
+	v, err := bus.object(bluezService, devPath).getProp(ctx, deviceIface, "Connected")
+	if err != nil {
+		return false, err
+	}
+	connected, ok := variantBool(v)
+	if !ok {
+		return false, fmt.Errorf("bluez: decode device Connected: got %T", v.Value())
+	}
+	return connected, nil
+}
+
+func waitDeviceDisconnected(ctx context.Context, bus dbusBus, devPath dbus.ObjectPath) {
+	for {
+		connected, err := deviceConnected(ctx, bus, devPath)
+		if err != nil || !connected {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+}
+
+func drainSignals(bus dbusBus) {
+	ch := bus.signals()
+	for {
+		select {
+		case <-ch:
+		default:
+			return
+		}
+	}
 }
 
 // findDevice locates the scanned-for device in the object tree.
