@@ -88,7 +88,7 @@ type Watcher struct {
 	adapterPath dbus.ObjectPath
 	name        string
 	devicePath  dbus.ObjectPath
-	pending     *ScanResult
+	paused      bool
 	sigs        <-chan *dbus.Signal
 	detachSigs  func()
 	ifaceMatch  []dbus.MatchOption
@@ -152,10 +152,11 @@ func newWatcher(ctx context.Context, bus dbusBus, adapterID, vin string) (*Watch
 		return nil, err
 	}
 	if initial != nil {
+		// Remember the path so later RSSI-only signals match, but do not
+		// treat a leftover RSSI as live. BlueZ keeps Device1 objects (and
+		// often the last RSSI) after ads stop; connecting to that cache
+		// is what made GATT time out while the car stayed disconnected.
 		w.devicePath = initial.Path
-		if initial.HasRSSI {
-			w.pending = initial
-		}
 	}
 	return w, nil
 }
@@ -176,32 +177,17 @@ func (w *Watcher) Peek(ctx context.Context) (*ScanResult, error) {
 }
 
 // Wait blocks on BlueZ signals until a fresh advertisement appears or ctx is
-// done. A cached Device1 without a new RSSI is not "found": BlueZ keeps those
-// objects after ads stop. Discovery is left running. A timeout with no live
-// beacon is (nil, nil), not an error.
+// done. A cached Device1 RSSI is not "found": BlueZ keeps those objects after
+// ads stop, and connecting to them times out GATT. Discovery is left running.
+// A timeout with no live beacon is (nil, nil), not an error.
 func (w *Watcher) Wait(ctx context.Context) (*ScanResult, error) {
 	if err := w.ensureDiscovering(ctx); err != nil {
 		return nil, err
 	}
-	if w.pending != nil {
-		result := w.pending
-		w.pending = nil
-		return result, nil
-	}
 	for {
 		select {
 		case <-ctx.Done():
-			if ctx.Err() != context.DeadlineExceeded {
-				return nil, nil
-			}
-			// ctx is already dead; the snapshot needs its own deadline.
-			// Signals are the fast path. One tree walk on timeout still
-			// sees a live beacon if BlueZ omitted RSSI from the last
-			// PropertiesChanged (ManufacturerData-only updates).
-			snapCtx, snapCancel := context.WithTimeout(context.Background(), time.Second)
-			result, err := w.liveSnapshot(snapCtx)
-			snapCancel()
-			return result, err
+			return nil, nil
 		case sig := <-w.sigs:
 			result, restart, ok := w.handleSignal(ctx, sig)
 			if restart {
@@ -305,10 +291,10 @@ func (w *Watcher) resultFromDeviceProperties(ctx context.Context, path dbus.Obje
 	}
 
 	rssi, hasRSSI := variantInt16(props["RSSI"])
-	if !hasRSSI {
+	if !hasRSSI && isAdvertisementUpdate(props) {
 		// DuplicateData updates frequently carry ManufacturerData /
-		// ServiceData without RSSI in the same dict. Read the live
-		// property instead of ignoring a real advertisement.
+		// ServiceData without RSSI in the same dict. Only fetch RSSI
+		// for those; Trusted/Connected noise must not revive a stale cache.
 		rssi, hasRSSI = w.readRSSI(ctx, path)
 	}
 	if !hasRSSI {
@@ -328,22 +314,38 @@ func (w *Watcher) readRSSI(ctx context.Context, path dbus.ObjectPath) (int16, bo
 	return variantInt16(v)
 }
 
-func (w *Watcher) liveSnapshot(ctx context.Context) (*ScanResult, error) {
-	result, err := findBeacon(ctx, w.bus, w.adapterPath, w.name)
-	if err != nil {
-		return nil, err
+func isAdvertisementUpdate(props map[string]dbus.Variant) bool {
+	if _, ok := variantInt16(props["RSSI"]); ok {
+		return true
 	}
-	if result == nil || !result.HasRSSI {
-		return nil, nil
+	for _, key := range []string{"ManufacturerData", "ServiceData", "AdvertisingFlags", "TxPower"} {
+		if _, ok := props[key]; ok {
+			return true
+		}
 	}
-	w.devicePath = result.Path
-	return result, nil
+	return false
+}
+
+// Pause stops LE discovery so Device.Connect is not aborted by a live
+// scan. Resume lets the next Wait/Peek start discovery again.
+func (w *Watcher) Pause() {
+	w.paused = true
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	stopDiscovery(ctx, w.bus, w.adapterPath)
+}
+
+func (w *Watcher) Resume() {
+	w.paused = false
 }
 
 // ensureDiscovering powers the adapter and starts LE discovery if BlueZ
 // is not already scanning. Safe to call on every Peek: a live discovery
 // session is a no-op.
 func (w *Watcher) ensureDiscovering(ctx context.Context) error {
+	if w.paused {
+		return nil
+	}
 	if err := ensurePowered(ctx, w.bus, w.adapterPath); err != nil {
 		return err
 	}
