@@ -470,9 +470,11 @@ func TestPresenceLiveNearRejectsWeakAndCachedBeacons(t *testing.T) {
 	if presenceLiveNear(true, -97, -90) {
 		t.Fatal("weak live RSSI must not start GATT")
 	}
+
 	if presenceLiveNear(true, teslaMinConnectRSSI, -100) {
 		t.Fatal("Tesla Android skips RSSI <= -95 even if nearRSSI is weaker")
 	}
+
 	if presenceLiveNear(false, 0, -90) {
 		t.Fatal("cached Device1 without RSSI must not start GATT")
 	}
@@ -645,8 +647,10 @@ func TestConnectBackoffDoublesAfterExpiry(t *testing.T) {
 	s := &session{}
 	s.scheduleConnectBackoffLocked()
 	first := s.connectBackoff
+
 	if first != reconnectQuietAfterError {
 		t.Fatalf("first backoff = %v, want %v (Tesla DELAY_AFTER_ERROR)", first, reconnectQuietAfterError)
+
 	}
 	s.connectBackoffUntil = time.Now().Add(-time.Millisecond)
 	s.scheduleConnectBackoffLocked()

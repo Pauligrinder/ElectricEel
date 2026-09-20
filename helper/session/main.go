@@ -2,10 +2,9 @@
 // connecting, running one command, and exiting (paying a full BLE
 // connect+StartSession handshake every time), it holds a live
 // *vehicle.Vehicle across many commands and only reconnects after a period
-// of inactivity. It's spoken to over stdin/stdout by the in-process Rust
-// control core, which falls back to spawning tesla-control directly
-// (today's behavior) if this process is unreachable or misbehaves - see
-// helper/src/session_client.rs.
+// of inactivity. It's spoken to over a private Unix-domain socket by the
+// in-process Rust control core - see helper/src/session_client.rs and
+// serve.go for the tagged JSON-lines framing.
 //
 // Every command still goes through commands_vendor.go's execute() and
 // commands map, unmodified - this file only changes when the BLE
@@ -13,7 +12,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -48,18 +46,46 @@ func writeErr(format string, a ...interface{}) {
 }
 
 type request struct {
+	Type string   `json:"type"`
 	ID   string   `json:"id"`
 	Cmd  string   `json:"cmd"`
 	Args []string `json:"args"`
 }
 
 type response struct {
+	Type     string `json:"type"`
 	ID       string `json:"id"`
 	OK       bool   `json:"ok"`
 	Stdout   string `json:"stdout"`
 	Stderr   string `json:"stderr"`
 	ExitCode int    `json:"exit_code"`
 }
+
+// protocolVersion is the parent/child framing contract. The parent kills
+// and respawns on mismatch instead of parsing frames it doesn't
+// understand. Bump when the frame shapes below change.
+const protocolVersion = 1
+
+// helloFrame is the first line the child sends after dialing: it proves
+// the peer speaks this protocol version before any command flows.
+type helloFrame struct {
+	Type       string `json:"type"`
+	Version    int    `json:"v"`
+	BLEBackend string `json:"ble_backend"`
+}
+
+// heartbeatFrame is sent every heartbeatInterval while the child is alive,
+// including mid-command: it doubles as liveness proof (a wedged child that
+// can't even tick is dead by definition) and as parent-death detection
+// (the write fails once the parent is gone, even if no command is running).
+type heartbeatFrame struct {
+	Type string `json:"type"`
+	Unix int64  `json:"unix"`
+}
+
+// heartbeatInterval between heartbeat frames. The parent's frame timeout
+// is a multiple of this (see Rust SessionClient::frame_timeout).
+const heartbeatInterval = 10 * time.Second
 
 // session owns the (possibly absent) live vehicle connection. All access is
 // serialized by mu - the caller (the in-process Rust core, via its own
@@ -96,6 +122,7 @@ type session struct {
 	authInbox  chan []byte
 
 	// lastBeacon is the most recent Watcher advertisement while presence mode
+
 	// runs. Manual commands reuse it as a connect target so they never start
 	// a colliding one-shot scan while the phone-key Watcher already holds
 	// discovery open. Cleared by stopPresenceLocked.
@@ -132,8 +159,10 @@ func (s *session) teardownLocked() {
 		s.idleTimer = nil
 	}
 	s.stopAuthTapLocked()
+
 	hadLink := s.car != nil || s.conn != nil
 	if hadLink {
+
 		keylog("link", "teardown session")
 	}
 	if s.car != nil {
@@ -144,6 +173,7 @@ func (s *session) teardownLocked() {
 		s.conn.Close()
 		s.conn = nil
 	}
+
 	s.lastBeacon = nil
 	s.lastVCSECPrime = time.Time{}
 	// Tesla Android waits DELAY_AFTER_NORMAL_DISCONNECT (500ms) before
@@ -152,6 +182,7 @@ func (s *session) teardownLocked() {
 	if hadLink {
 		s.scheduleReconnectQuietLocked(reconnectQuietAfterDrop)
 	}
+
 }
 
 // closeBluezLocked releases the system-bus connection held for the bluez
@@ -236,6 +267,7 @@ func (s *session) ensureConnectedLocked(ctx context.Context, cmd string, target 
 	if s.car != nil {
 		if !commandsWithoutSession[cmd] {
 			s.ensureAuthTapLocked(context.Background())
+
 			// Presence holds VCSEC for phone-key. A dashboard `state` used
 			// to StartSession(infotainment) here; the vehicle drops the
 			// whole GATT link when that handshake is asked of a sleeping
@@ -244,6 +276,7 @@ func (s *session) ensureConnectedLocked(ctx context.Context, cmd string, target 
 			if domains := additionalHandshakeDomains(s.presenceActiveLocked(), cmd); len(domains) > 0 {
 				keylog("connect", "StartSession additional domains=%v", domains)
 				if err := s.startSessionUnlocked(ctx, s.car, domains); err != nil {
+
 					keylog("connect", "StartSession additional failed: %v", err)
 					return err
 				}
@@ -279,7 +312,7 @@ func (s *session) ensureConnectedLocked(ctx context.Context, cmd string, target 
 	} else {
 		// Default: upstream go-ble raw HCI. The only path that calls
 		// InitAdapterWithID - which brings the controller down and binds an
-		// exclusive HCI user channel (see KNOWN_ISSUES.md). This is exactly
+		// exclusive HCI user channel (see docs/limitations.md). This is exactly
 		// the behavior the bluez backend exists to avoid.
 		if err := ble.InitAdapterWithID(s.adapterID); err != nil {
 			return err
@@ -308,7 +341,9 @@ func (s *session) ensureConnectedLocked(ctx context.Context, cmd string, target 
 	s.conn = conn
 	if !commandsWithoutSession[cmd] {
 		s.ensureAuthTapLocked(context.Background())
+
 		if err := s.handshakeLocked(connCtx, car, cmd); err != nil {
+
 			return err
 		}
 	}
@@ -398,10 +433,12 @@ func (s *session) enableTrustedLocked() {
 		return
 	}
 	if err := bzConn.SetTrusted(true); err != nil {
+
 		keylog("link", "SetTrusted failed: %s", bluez.DBusDetail(err))
 	}
 	if err := bzConn.SetAutoConnect(false); err != nil {
 		keylog("link", "SetAutoConnect(false) failed: %s", bluez.DBusDetail(err))
+
 	}
 }
 
@@ -490,12 +527,15 @@ func (s *session) scheduleReconnectQuietLocked(d time.Duration) {
 // scheduleConnectBackoffLocked sets a reconnect quiet period after a failed
 // presence connect. First wait matches Tesla's 2s error delay; then it
 // doubles up to one minute so a hung Connect cannot hammer bluetoothd.
+
 // Caller holds mu.
 func (s *session) scheduleConnectBackoffLocked() {
 	const maxBackoff = time.Minute
 	backoff := s.connectBackoff * 2
+
 	if backoff < reconnectQuietAfterError {
 		backoff = reconnectQuietAfterError
+
 	}
 	if backoff > maxBackoff {
 		backoff = maxBackoff
@@ -718,6 +758,7 @@ func presenceStep(cfg presenceConfig, near bool, consecNear int, lastSeen, now t
 // RSSI must not connect: BlueZ keeps Device1 objects forever, and connecting
 // at -97 dBm wedges bluetoothd (deadline exceeded / le-connection-abort-by-local).
 func presenceLiveNear(live bool, rssi, nearRSSI int16) bool {
+
 	if !live {
 		return false
 	}
@@ -744,6 +785,7 @@ func presencePace(ctx context.Context, started time.Time, interval time.Duration
 	case <-ctx.Done():
 	case <-t.C:
 	}
+
 }
 
 // event is an unsolicited JSON line the presence loop pushes to the Rust
@@ -770,7 +812,7 @@ func (s *session) emitEvent(kind string, err error) {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 	if s.enc != nil {
-		_ = s.enc.Encode(e)
+		_ = s.enc.Encode(taggedEvent{Type: "event", event: e})
 	}
 }
 
@@ -783,10 +825,13 @@ func (s *session) emitPresenceDisconnectedLocked(err error) {
 	s.emitEvent("presence_disconnected", err)
 }
 
-// writeResponse serializes resp to stdout, synchronized with emitEvent so
-// the two goroutines that write to the process's single JSON-lines stdout
-// (the request loop and the presence loop) never interleave partial writes.
+// writeResponse serializes resp to the parent socket, synchronized with
+// emitEvent so the goroutines writing to the single JSON-lines connection
+// (the request loop, the presence loop, the heartbeat loop) never
+// interleave partial writes.
+
 func (s *session) writeResponse(resp response) {
+	resp.Type = "response"
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 	if s.enc != nil {
@@ -798,7 +843,7 @@ func (s *session) writeResponse(resp response) {
 // loop. Requires the bluez backend: the raw-HCI backend's InitAdapterWithID
 // takes exclusive control of the controller for GATT connects, which is
 // incompatible with also running continuous org.bluez discovery for
-// proximity polling (see KNOWN_ISSUES.md).
+// proximity polling (see docs/limitations.md).
 func (s *session) dispatchPresenceStart(req request) response {
 	cfg, err := parsePresenceArgs(req.Args)
 	if err != nil {
@@ -994,10 +1039,11 @@ func (s *session) presenceLoop(ctx context.Context, cfg presenceConfig, generati
 
 func (s *session) runPresenceWatcher(ctx context.Context, cfg presenceConfig, watcher *bluez.Watcher) {
 	var (
-		near           bool
-		consecNear     int
-		lastSeen       time.Time
-		peekErrors     int
+		near       bool
+		consecNear int
+		lastSeen   time.Time
+		peekErrors int
+
 		linkDownStreak int
 	)
 
@@ -1023,9 +1069,11 @@ func (s *session) runPresenceWatcher(ctx context.Context, cfg presenceConfig, wa
 			return false
 		}
 		watcher = newWatcher
+
 		s.mu.Lock()
 		s.watcher = newWatcher
 		s.mu.Unlock()
+
 		peekErrors = 0
 		return true
 	}
@@ -1039,6 +1087,7 @@ func (s *session) runPresenceWatcher(ctx context.Context, cfg presenceConfig, wa
 		var bzConn *bluez.Connection
 		if bz, ok := s.conn.(*bluez.Connection); ok {
 			bzConn = bz
+
 		}
 		gattUp := s.car != nil
 		if bzConn != nil {
@@ -1196,6 +1245,7 @@ func (s *session) runPresenceWatcher(ctx context.Context, cfg presenceConfig, wa
 				s.mu.Unlock()
 				s.emitEvent("presence_far", nil)
 			}
+
 		}
 
 		presencePace(ctx, now, cfg.scanInterval)
@@ -1237,6 +1287,12 @@ func (s *session) dispatch(req request) response {
 		return s.dispatchPresenceStart(req)
 	case "presence-stop":
 		return s.dispatchPresenceStop(req)
+	case "navigate":
+		// BLE navigation share: signed nav action over the live session.
+		// dispatchNavigate manages session.mu itself (connect, then
+		// execute under lock), like dispatchPresenceStart does — do NOT
+		// lock here, sync.Mutex is not reentrant.
+		return s.dispatchNavigate(req)
 	}
 
 	s.mu.Lock()
@@ -1371,6 +1427,8 @@ func main() {
 		commandTimeout time.Duration
 		idleTimeout    time.Duration
 		logDir         string
+
+		socketPath string
 	)
 	flag.StringVar(&vin, "vin", "", "Vehicle Identification Number (required)")
 	flag.StringVar(&keyFile, "key-file", "", "Private key file (required)")
@@ -1380,10 +1438,17 @@ func main() {
 	flag.DurationVar(&commandTimeout, "command-timeout", 5*time.Second, "Timeout for each command sent to the vehicle")
 	flag.DurationVar(&idleTimeout, "idle-timeout", 90*time.Second, "Tear down the BLE session after this much inactivity")
 	flag.StringVar(&logDir, "log-dir", "", "Directory for daily phone-key logs (default: $ELECTRIC_EEL_LOG_DIR or ~/Documents/ElectricEel)")
+
+	flag.StringVar(&socketPath, "socket-path", "", "Parent Unix-socket path to dial (required)")
+
 	flag.Parse()
 
 	if vin == "" || keyFile == "" {
 		fmt.Fprintln(os.Stderr, "tesla-session: -vin and -key-file are required")
+		os.Exit(2)
+	}
+	if socketPath == "" {
+		fmt.Fprintln(os.Stderr, "tesla-session: -socket-path is required")
 		os.Exit(2)
 	}
 	if bleBackend != "hci" && bleBackend != "bluez" {
@@ -1404,7 +1469,7 @@ func main() {
 		commandTimeout: commandTimeout,
 		idleTimeout:    idleTimeout,
 	}
-	s.enc = json.NewEncoder(os.Stdout)
+	s.enc = nil // set by serveConn once the parent socket is up
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
@@ -1419,25 +1484,7 @@ func main() {
 		os.Exit(0)
 	}()
 
-	scanner := bufio.NewScanner(os.Stdin)
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	for scanner.Scan() {
-		line := scanner.Bytes()
-		if len(line) == 0 {
-			continue
-		}
-		var req request
-		if err := json.Unmarshal(line, &req); err != nil {
-			s.writeResponse(response{OK: false, Stderr: fmt.Sprintf("tesla-session: malformed request: %s", err), ExitCode: 1})
-			continue
-		}
-		s.writeResponse(s.dispatch(req))
-	}
+	s.serveConn(dialParent(socketPath))
+	os.Exit(0)
 
-	keylog("session", "stdin closed - shutting down")
-	s.mu.Lock()
-	s.stopPresenceLocked()
-	s.teardownLocked()
-	s.closeBluezLocked()
-	s.mu.Unlock()
 }

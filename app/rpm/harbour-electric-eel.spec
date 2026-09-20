@@ -46,6 +46,13 @@ desktop-file-install --delete-original \
 %{_datadir}/icons/hicolor/*/apps/%{name}.png
 
 %changelog
+* Sun Sep 20 2026 Marco Napetti <marco.napetti@proton.me> - 0.2.11-1
+- Share target registration: X-Share-Methods belongs in [Desktop Entry]
+- Generic map-URL parsing (no per-service list)
+- Parent/child transport over Unix socket with versioned handshake
+* Sun Sep 20 2026 Marco Napetti <marco.napetti@proton.me> - 0.2.10-1
+- Share destination to car navigation over BLE (field-53 coordinates, field-21 address)
+
 * Sun Sep 13 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.17-1
 - Connect phone-key to a live BlueZ advertisement instead of RemoveDevice
 - Quiet period, -95 RSSI floor, and negotiated MTU after GATT drop (Tesla Android)
@@ -68,6 +75,7 @@ desktop-file-install --delete-original \
 - Stop presence-loop D-Bus spin on cached BlueZ devices
 * Wed Aug 26 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.9-1
 - Stabilize phone-key GATT reconnect and VCSEC presence
+
 * Thu Aug 22 2026 Marco Napetti <marco.napetti@proton.me> - 0.2.8-1
 - Restart session on wakeup
 * Thu Aug 22 2026 Marco Napetti <marco.napetti@proton.me> - 0.2.7-1
