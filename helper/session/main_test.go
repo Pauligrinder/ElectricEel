@@ -12,8 +12,68 @@ import (
 	"testing"
 	"time"
 
+	"electric-eel-session/bluez"
 	"github.com/teslamotors/vehicle-command/pkg/protocol"
 )
+
+func TestCachedBeaconCannotSpinPresenceLoop(t *testing.T) {
+	// A cached weak RSSI makes Watcher.Wait return immediately; the outer
+	// loop must still yield between full BlueZ object-tree reads.
+	started := time.Now()
+	if !pauseAfterBeacon(context.Background(), 35*time.Millisecond, &bluez.ScanResult{RSSI: -98, HasRSSI: true}, nil) {
+		t.Fatal("unexpected cancellation")
+	}
+	if elapsed := time.Since(started); elapsed < 30*time.Millisecond {
+		t.Fatalf("cached beacon yielded after %s; expected polling interval", elapsed)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if pauseAfterBeacon(ctx, time.Hour, &bluez.ScanResult{}, nil) {
+		t.Fatal("cancelled presence loop must not wait for its next tick")
+	}
+}
+
+func TestNearRSSIUpdateInterruptsCachedBeaconDelayWithoutSpinning(t *testing.T) {
+	updates := make(chan struct{}, 1)
+	updates <- struct{}{}
+	started := time.Now()
+	if !pauseAfterBeacon(context.Background(), 2*time.Second, &bluez.ScanResult{RSSI: -98, HasRSSI: true}, updates) {
+		t.Fatal("near update should wake the loop")
+	}
+	if elapsed := time.Since(started); elapsed < 450*time.Millisecond || elapsed > time.Second {
+		t.Fatalf("near update wake after %s; want fast but bounded polling", elapsed)
+	}
+}
+
+func TestManualStatusCannotBlockPresenceOnCachedOrWeakBeacon(t *testing.T) {
+	s := &session{
+		bleBackend:     "bluez",
+		presenceCancel: func() {},
+		presenceCfg:    defaultPresenceConfig(),
+		keyFile:        filepath.Join(t.TempDir(), "missing-key.pem"),
+	}
+	for _, beacon := range []*bluez.ScanResult{nil, {RSSI: -98, HasRSSI: true}, {RSSI: -50}} {
+		s.lastBeacon = beacon
+		s.lastBeaconAt = time.Now()
+		started := time.Now()
+		response := s.dispatch(request{Cmd: "body-controller-state"})
+		if response.OK || !strings.Contains(response.Stderr, "vehicle not nearby") {
+			t.Fatalf("cached beacon %+v: unexpected response %+v", beacon, response)
+		}
+		if time.Since(started) > time.Second {
+			t.Fatal("distant dashboard request blocked phone-key presence")
+		}
+	}
+	strong := &bluez.ScanResult{RSSI: -50, HasRSSI: true}
+	s.lastBeacon = strong
+	s.lastBeaconAt = time.Now()
+	if !s.presenceTargetReadyLocked(strong, time.Now()) {
+		t.Fatal("a recently observed near beacon should allow a manual command")
+	}
+	if s.presenceTargetReadyLocked(strong, time.Now().Add(5*time.Second)) {
+		t.Fatal("a formerly strong beacon must expire")
+	}
+}
 
 // execute() and the commands map are vendored verbatim from upstream (see
 // commands_vendor.go) - these tests exercise the same readiness-check code

@@ -18,19 +18,20 @@ type fakeBluez struct {
 	powered     bool
 	discovering bool
 
-	dev               *fakeDevice
-	deviceVisible     bool // device present in GetManagedObjects (turn on after discovery)
-	deviceAppearCall  int  // 0 = ignore; when >0, include dev after this many GetManagedObjects calls
-	managedCalls      int
-	servicesResolved  bool
-	connected         bool
-	gattReady         bool
-	startedNotify     bool
-	stoppedNotify     bool
-	failLargeWrites   bool  // fail WriteValue when the chunk exceeds 20 bytes (ATT MTU 23)
-	startDiscoveryErr error // when set, StartDiscovery returns this error
-	connectErr        error // when set, Device1.Connect returns this error
-	setPoweredErr     error // when set, Properties.Set(Powered) returns this error
+	dev                 *fakeDevice
+	deviceVisible       bool // device present in GetManagedObjects (turn on after discovery)
+	deviceAppearCall    int  // 0 = ignore; when >0, include dev after this many GetManagedObjects calls
+	managedCalls        int
+	servicesResolved    bool
+	connected           bool
+	gattReady           bool
+	startedNotify       bool
+	stoppedNotify       bool
+	failLargeWrites     bool  // fail WriteValue when the chunk exceeds 20 bytes (ATT MTU 23)
+	startDiscoveryErr   error // when set, StartDiscovery returns this error
+	rejectCancelledStop bool  // model D-Bus rejecting a StopDiscovery with an expired context
+	connectErr          error // when set, Device1.Connect returns this error
+	setPoweredErr       error // when set, Properties.Set(Powered) returns this error
 	// extraAdapters are additional Adapter1 objects keyed by id ("hci1").
 	// The value is the Powered flag. Used to test powered-adapter preference.
 	extraAdapters map[string]bool
@@ -40,6 +41,7 @@ type fakeBluez struct {
 	writes       [][]byte
 	calls        []string
 	sig          chan *dbus.Signal
+	subscribers  []chan *dbus.Signal
 	matches      int
 	removedMatch bool
 }
@@ -64,6 +66,25 @@ func (f *fakeBluez) object(dest string, path dbus.ObjectPath) dbusCaller {
 }
 
 func (f *fakeBluez) signals() <-chan *dbus.Signal { return f.sig }
+
+func (f *fakeBluez) subscribeSignals(ch chan *dbus.Signal) {
+	f.subscribers = append(f.subscribers, ch)
+}
+
+func (f *fakeBluez) unsubscribeSignals(ch chan *dbus.Signal) {
+	for i, subscribed := range f.subscribers {
+		if subscribed == ch {
+			f.subscribers = append(f.subscribers[:i], f.subscribers[i+1:]...)
+			return
+		}
+	}
+}
+
+func (f *fakeBluez) emitSignal(sig *dbus.Signal) {
+	for _, ch := range f.subscribers {
+		ch <- sig
+	}
+}
 
 func (f *fakeBluez) addMatch(_ ...dbus.MatchOption) error { f.matches++; return nil }
 func (f *fakeBluez) removeMatch(_ ...dbus.MatchOption) error {
@@ -183,6 +204,9 @@ func (fc *fakeCaller) call(ctx context.Context, method string, args ...interface
 		fc.b.discovering = true
 		return nil, nil
 	case adapterIface + ".StopDiscovery":
+		if fc.b.rejectCancelledStop && ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		fc.b.discovering = false
 		return nil, nil
 	case deviceIface + ".Connect":

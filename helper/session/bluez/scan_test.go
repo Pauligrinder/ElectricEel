@@ -184,6 +184,19 @@ func TestScanTimesOutWithoutBeacon(t *testing.T) {
 	}
 }
 
+func TestTimedOutScanReleasesDiscoveryWithFreshContext(t *testing.T) {
+	bus := newFakeBluez()
+	bus.rejectCancelledStop = true
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer cancel()
+	if _, err := scan(ctx, bus, "", "5YJ3E1EA0PF000000"); err == nil {
+		t.Fatal("expected scan deadline")
+	}
+	if bus.discovering {
+		t.Fatal("timed-out scan left discovery running")
+	}
+}
+
 func TestScanIgnoresOtherDevices(t *testing.T) {
 	bus := newFakeBluez()
 	vin := "5YJ3E1EA0PF000000"

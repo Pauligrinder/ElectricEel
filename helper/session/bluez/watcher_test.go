@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/godbus/dbus"
 )
 
 func TestWatcherPeekTracksBeaconVisibility(t *testing.T) {
@@ -79,6 +81,104 @@ func TestWatcherStartsDiscoveryOnceAndStopStopsIt(t *testing.T) {
 	w.Stop(ctx)
 	if bus.discovering {
 		t.Error("expected Stop to stop discovery")
+	}
+}
+
+func TestWatcherStatsCountObjectReadsWithoutAssumingFreshRSSI(t *testing.T) {
+	bus := newFakeBluez()
+	vin := "5YJ3E1EA0PF000000"
+	bus.dev = &fakeDevice{path: bus.devPath(), name: vehicleBeaconName(vin), rssi: -65}
+	bus.deviceVisible = true
+	ctx := context.Background()
+	w, err := newWatcher(ctx, bus, "", vin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Stop(ctx)
+	for i := 0; i < 3; i++ {
+		if _, err := w.Peek(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	stats := w.TakeStats()
+	if stats.Polls != 3 || stats.BeaconResults != 3 || stats.RSSIResults != 3 {
+		t.Fatalf("unexpected scan counts: %+v", stats)
+	}
+	if stats.ReadTotal < stats.ReadMax || stats.ReadMax < 0 {
+		t.Fatalf("invalid read durations: %+v", stats)
+	}
+	if got := w.TakeStats(); got.Polls != 0 {
+		t.Fatalf("TakeStats must reset window: %+v", got)
+	}
+}
+
+func TestWatcherRSSIUpdateSignalsAreDistinctFromCachedSnapshots(t *testing.T) {
+	bus := newFakeBluez()
+	vin := "5YJ3E1EA0PF000000"
+	bus.dev = &fakeDevice{path: bus.devPath(), name: vehicleBeaconName(vin), rssi: -55}
+	bus.deviceVisible = true
+	w, err := newWatcher(context.Background(), bus, "", vin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Stop(context.Background())
+	if _, err := w.Peek(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if stats := w.TakeStats(); stats.RSSIResults != 1 || stats.RSSIUpdates != 0 || stats.LastRSSIUpdateAge != -1 {
+		t.Fatalf("a cached RSSI property is not an advertisement update: %+v", stats)
+	}
+	// Separate channel: watching RSSI must never consume the GATT rxLoop's
+	// copy of a signal, even while both subscribers are registered.
+	sig := &dbus.Signal{
+		Name: propsIface + ".PropertiesChanged",
+		Path: bus.devPath(),
+		Body: []interface{}{deviceIface, map[string]dbus.Variant{"RSSI": dbus.MakeVariant(int16(-54))}, []string{}},
+	}
+	bus.emitSignal(sig)
+	deadline := time.Now().Add(time.Second)
+	for {
+		if stats := w.TakeStats(); stats.RSSIUpdates == 1 {
+			if stats.LastRSSIUpdateAge < 0 {
+				t.Fatalf("RSSI signal has no timestamp: %+v", stats)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("watcher did not observe RSSI PropertiesChanged")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	select {
+	case <-w.NearUpdates():
+	default:
+		t.Fatal("strong RSSI signal should wake presence polling")
+	}
+	sig.Body[1] = map[string]dbus.Variant{"RSSI": dbus.MakeVariant(int16(-98))}
+	bus.emitSignal(sig)
+	for {
+		if stats := w.TakeStats(); stats.RSSIUpdates == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("watcher did not process weak RSSI signal")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	select {
+	case <-w.NearUpdates():
+		t.Fatal("weak RSSI signal must not wake presence polling")
+	default:
+	}
+	// The original channel has not been read by the Watcher.
+	bus.sig <- sig
+	select {
+	case got := <-bus.sig:
+		if got != sig {
+			t.Fatal("shared GATT signal was replaced")
+		}
+	default:
+		t.Fatal("watcher stole GATT signal")
 	}
 }
 

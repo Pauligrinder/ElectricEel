@@ -73,6 +73,10 @@ type dbusBus interface {
 	object(dest string, path dbus.ObjectPath) dbusCaller
 	// signals returns the channel on which incoming D-Bus signals arrive.
 	signals() <-chan *dbus.Signal
+	// subscribeSignals registers an independent channel: the GATT rxLoop
+	// must remain the sole reader of signals() while connected.
+	subscribeSignals(chan *dbus.Signal)
+	unsubscribeSignals(chan *dbus.Signal)
 	// addMatch/removeMatch register/unregister a signal match rule.
 	addMatch(options ...dbus.MatchOption) error
 	removeMatch(options ...dbus.MatchOption) error
@@ -136,6 +140,9 @@ func (g *godbusConn) object(dest string, path dbus.ObjectPath) dbusCaller {
 }
 
 func (g *godbusConn) signals() <-chan *dbus.Signal { return g.sig }
+
+func (g *godbusConn) subscribeSignals(ch chan *dbus.Signal)   { g.c.Signal(ch) }
+func (g *godbusConn) unsubscribeSignals(ch chan *dbus.Signal) { g.c.RemoveSignal(ch) }
 
 func (g *godbusConn) addMatch(options ...dbus.MatchOption) error {
 	return g.c.AddMatchSignal(options...)

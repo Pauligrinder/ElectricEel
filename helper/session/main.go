@@ -114,6 +114,7 @@ type session struct {
 	// presenceLoop) is running; presence-start/presence-stop set/clear it.
 	presenceCancel     context.CancelFunc
 	presenceGeneration uint64
+	presenceCfg        presenceConfig
 
 	// authCancel / authInbox drive the passive-entry AuthenticationRequest
 	// responder while presence mode holds a live BlueZ session. Cleared by
@@ -122,10 +123,11 @@ type session struct {
 	authInbox  chan []byte
 
 	// lastBeacon is the most recent Watcher.Peek() result while presence mode
-	// runs. Manual commands reuse it as a connect target so they never start
-	// a colliding one-shot scan while the phone-key Watcher already holds
-	// discovery open. Cleared by stopPresenceLocked.
-	lastBeacon *bluez.ScanResult
+	// runs. Manual commands may reuse a recent strong result rather than
+	// starting a colliding one-shot scan. Cleared when the watcher sees no
+	// beacon or presence mode stops.
+	lastBeacon   *bluez.ScanResult
+	lastBeaconAt time.Time
 
 	// connectBackoffUntil gates presence-mode reconnect attempts after a
 	// failed connect, so a flaky link can't hammer bluetoothd in a tight loop.
@@ -269,6 +271,14 @@ func (s *session) ensureConnectedLocked(ctx context.Context, cmd string, target 
 		}
 		return nil
 	}
+	if s.presenceCancel != nil && s.bleBackend == "bluez" && !s.presenceTargetReadyLocked(target, time.Now()) {
+		// The dashboard can queue four status requests on launch. If the
+		// vehicle is away, they used to try a cached Device1 path for 20s
+		// apiece while holding s.mu, preventing presence from connecting
+		// when the phone actually approaches the car.
+		keylog("connect", "manual connect deferred: no recent near beacon (cmd=%q)", cmd)
+		return fmt.Errorf("vehicle not nearby; wait for phone key to connect and retry")
+	}
 
 	skey, err := protocol.LoadPrivateKey(s.keyFile)
 	if err != nil {
@@ -403,9 +413,9 @@ func (s *session) resetIdleTimerLocked() {
 	})
 }
 
-// presenceBeaconTargetLocked returns the last Watcher snapshot for connect
-// when phone-key scanning is active, so callers never start a second
-// discovery session. Caller holds mu.
+// presenceBeaconTargetLocked returns the last Watcher snapshot while phone-key
+// scanning is active. ensureConnectedLocked rejects it if stale or weak, and
+// rejects a nil target rather than starting a second scan. Caller holds mu.
 func (s *session) presenceBeaconTargetLocked() *bluez.ScanResult {
 	if s.presenceCancel == nil {
 		return nil
@@ -413,9 +423,22 @@ func (s *session) presenceBeaconTargetLocked() *bluez.ScanResult {
 	return s.lastBeacon
 }
 
-// connectTargetLocked prefers this tick's Peek result, then the last live
-// beacon. Never returns nil just to force scan(): scan() stops discovery on
-// the way out and would kill presenceLoop's Watcher. Caller holds mu.
+// presenceTargetReadyLocked only permits a competing manual command to
+// connect when the watcher has recently seen a strong beacon. A Device1
+// object (even one with RSSI) can remain cached after the car disappears.
+func (s *session) presenceTargetReadyLocked(target *bluez.ScanResult, now time.Time) bool {
+	cfg := s.presenceCfg
+	if cfg.scanInterval <= 0 {
+		cfg = defaultPresenceConfig()
+	}
+	return target != nil && target == s.lastBeacon &&
+		presenceLiveNear(target.HasRSSI, target.RSSI, cfg.nearRSSI) &&
+		!s.lastBeaconAt.IsZero() && now.Sub(s.lastBeaconAt) <= 2*cfg.scanInterval
+}
+
+// connectTargetLocked prefers this tick's Peek result, then the last result.
+// Never returns nil just to force scan() while the Watcher is active. Caller
+// holds mu.
 func (s *session) connectTargetLocked(peek *bluez.ScanResult) *bluez.ScanResult {
 	if peek != nil {
 		return peek
@@ -730,6 +753,7 @@ func (s *session) dispatchPresenceStart(req request) response {
 	s.presenceGeneration++
 	generation := s.presenceGeneration
 	s.presenceCancel = cancel
+	s.presenceCfg = cfg
 	keylog("session", "presence-start nearRSSI=%d nearConfirm=%d away=%s scan=%s",
 		cfg.nearRSSI, cfg.nearConfirm, cfg.farTimeout, cfg.scanInterval)
 	go s.presenceLoop(ctx, cfg, generation)
@@ -757,6 +781,7 @@ func (s *session) stopPresenceLocked() {
 	s.presenceGeneration++
 	s.stopAuthTapLocked()
 	s.lastBeacon = nil
+	s.lastBeaconAt = time.Time{}
 	s.clearConnectBackoffLocked()
 	keylog("session", "presence-stop")
 }
@@ -905,16 +930,19 @@ func (s *session) presenceLoop(ctx context.Context, cfg presenceConfig, generati
 }
 
 func (s *session) runPresenceWatcher(ctx context.Context, cfg presenceConfig, watcher *bluez.Watcher) {
+	watcher.SetNearRSSI(cfg.nearRSSI)
 	var (
-		near           bool
-		consecNear     int
-		lastSeen       time.Time
-		peekErrors     int
-		lastLog        time.Time
-		lastLive       bool
-		lastRSSI       int16
-		lastGATT       bool
-		linkDownStreak int
+		near            bool
+		consecNear      int
+		lastSeen        time.Time
+		peekErrors      int
+		lastLog         time.Time
+		lastScanSummary time.Time
+		lastLoopTick    time.Time
+		lastLive        bool
+		lastRSSI        int16
+		lastGATT        bool
+		linkDownStreak  int
 	)
 
 	restartWatcher := func() bool {
@@ -928,6 +956,7 @@ func (s *session) runPresenceWatcher(ctx context.Context, cfg presenceConfig, wa
 			return false
 		}
 		watcher = newWatcher
+		watcher.SetNearRSSI(cfg.nearRSSI)
 		peekErrors = 0
 		return true
 	}
@@ -936,6 +965,11 @@ func (s *session) runPresenceWatcher(ctx context.Context, cfg presenceConfig, wa
 		if ctx.Err() != nil {
 			return
 		}
+		loopNow := time.Now()
+		if !lastLoopTick.IsZero() && loopNow.Sub(lastLoopTick) > 10*time.Second {
+			keylog("presence", "loop gap=%s (possible process pause or blocked BLE call)", loopNow.Sub(lastLoopTick).Round(time.Millisecond))
+		}
+		lastLoopTick = loopNow
 
 		s.mu.Lock()
 		var bzConn *bluez.Connection
@@ -960,6 +994,10 @@ func (s *session) runPresenceWatcher(ctx context.Context, cfg presenceConfig, wa
 		// advertising after connect, and BlueZ aborts the LE link
 		// (Dropped / le-connection-abort-by-local) if discovery restarts.
 		if gattUp {
+			// Scanning is paused while connected; capture the arrival window.
+			if stats := watcher.TakeStats(); stats.Polls > 0 {
+				keylog("bluez", "scan window polls=%d beacons=%d rssiSnapshots=%d rssiUpdateSignals=%d lastRSSIUpdateAge=%s restarts=%d objectReadTotal=%s objectReadMax=%s", stats.Polls, stats.BeaconResults, stats.RSSIResults, stats.RSSIUpdates, stats.LastRSSIUpdateAge, stats.Restarts, stats.ReadTotal.Round(time.Millisecond), stats.ReadMax.Round(time.Millisecond))
+			}
 			near = true
 			lastSeen = time.Now()
 			if bzConn != nil {
@@ -1049,10 +1087,18 @@ func (s *session) runPresenceWatcher(ctx context.Context, cfg presenceConfig, wa
 		if live {
 			rssi = result.RSSI
 		}
+		s.mu.Lock()
+		s.lastBeacon = result
 		if result != nil {
-			s.mu.Lock()
-			s.lastBeacon = result
-			s.mu.Unlock()
+			s.lastBeaconAt = time.Now()
+		} else {
+			s.lastBeaconAt = time.Time{}
+		}
+		s.mu.Unlock()
+		if now.Sub(lastScanSummary) >= 30*time.Second {
+			stats := watcher.TakeStats()
+			keylog("bluez", "scan window polls=%d beacons=%d rssiSnapshots=%d rssiUpdateSignals=%d lastRSSIUpdateAge=%s restarts=%d objectReadTotal=%s objectReadMax=%s (RSSI snapshots may be cached)", stats.Polls, stats.BeaconResults, stats.RSSIResults, stats.RSSIUpdates, stats.LastRSSIUpdateAge, stats.Restarts, stats.ReadTotal.Round(time.Millisecond), stats.ReadMax.Round(time.Millisecond))
+			lastScanSummary = now
 		}
 
 		var action presenceAction
@@ -1067,14 +1113,14 @@ func (s *session) runPresenceWatcher(ctx context.Context, cfg presenceConfig, wa
 		switch action {
 		case presenceActionArrive, presenceActionStayNear:
 			if !presenceLiveNear(live, rssi, cfg.nearRSSI) {
-				continue
+				break
 			}
 			s.mu.Lock()
 			inBackoff := s.connectBackoffActive(now)
 			target := s.connectTargetLocked(result)
 			s.mu.Unlock()
 			if inBackoff || target == nil {
-				continue
+				break
 			}
 			connCtx, cancel := context.WithTimeout(ctx, s.connectTimeout)
 			s.mu.Lock()
@@ -1102,6 +1148,45 @@ func (s *session) runPresenceWatcher(ctx context.Context, cfg presenceConfig, wa
 			s.mu.Unlock()
 			s.emitEvent("presence_far", nil)
 		}
+		// Wait returns immediately when BlueZ has a cached Device1, even if
+		// its RSSI is weak or no longer current. Without a pause the outer
+		// loop spins on the same snapshot hundreds of times per second and
+		// calls GetManagedObjects each time. A missing beacon already made
+		// Wait block for scanInterval, so only pause when it returned one.
+		if !pauseAfterBeacon(ctx, cfg.scanInterval, result, watcher.NearUpdates()) {
+			return
+		}
+	}
+}
+
+func pauseAfterBeacon(ctx context.Context, interval time.Duration, result *bluez.ScanResult, nearUpdates <-chan struct{}) bool {
+	if result == nil {
+		return ctx.Err() == nil
+	}
+	started := time.Now()
+	timer := time.NewTimer(interval)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-nearUpdates:
+		// Genuine near updates can wake the loop early, but cap the read rate
+		// if BlueZ reports one on every advertisement while connect is backed
+		// off. This is far cheaper than polling the whole object tree at 100Hz.
+		minimum := 500 * time.Millisecond
+		if interval < minimum {
+			minimum = interval
+		}
+		if remaining := minimum - time.Since(started); remaining > 0 {
+			select {
+			case <-ctx.Done():
+				return false
+			case <-time.After(remaining):
+			}
+		}
+		return true
+	case <-timer.C:
+		return true
 	}
 }
 
@@ -1297,6 +1382,9 @@ func main() {
 	}
 
 	initKeyLog(logDir)
+	bluez.SetDiagnosticLogger(func(format string, args ...interface{}) {
+		keylog("bluez", format, args...)
+	})
 	keylog("session", "tesla-session start vin=%s backend=%s connect=%s command=%s idle=%s",
 		vin, bleBackend, connectTimeout, commandTimeout, idleTimeout)
 

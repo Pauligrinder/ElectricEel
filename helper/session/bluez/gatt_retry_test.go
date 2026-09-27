@@ -3,6 +3,8 @@ package bluez
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -148,5 +150,43 @@ func TestConnectAbortsPendingLinkOnFailure(t *testing.T) {
 	}
 	if n := countCalls(bus.calls, deviceIface+".Disconnect"); n == 0 {
 		t.Fatal("failed Connect must Disconnect so the next attempt is not aborted-by-local")
+	}
+}
+
+func TestServicesTimeoutReportsDeviceStateBeforeDisconnect(t *testing.T) {
+	bus := newFakeBluez()
+	vin := "5YJ3E1EA0PF000000"
+	bus.dev = &fakeDevice{path: bus.devPath(), name: vehicleBeaconName(vin)}
+	bus.deviceVisible = true
+	// Device1.Connect succeeds but BlueZ never completes service discovery.
+	var lines []string
+	SetDiagnosticLogger(func(format string, args ...interface{}) {
+		lines = append(lines, fmt.Sprintf(format, args...))
+	})
+	t.Cleanup(func() { SetDiagnosticLogger(nil) })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	defer cancel()
+	_, _, err := tryConnect(ctx, bus, "hci0", vin, &ScanResult{Path: bus.dev.path})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("tryConnect error = %v, want deadline exceeded", err)
+	}
+	if bus.connected {
+		t.Fatal("timed-out connection was not disconnected")
+	}
+	joined := strings.Join(lines, "\n")
+	for _, want := range []string{
+		"connect services wait timeout",
+		"connect services wait failed Connected=true",
+		"connect services wait failed ServicesResolved=false",
+		"connect cleanup Disconnect duration=",
+		"error=",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("missing diagnostic %q in:\n%s", want, joined)
+		}
+	}
+	if strings.Contains(joined, string(bus.dev.path)) {
+		t.Error("diagnostics exposed the Bluetooth device address")
 	}
 }

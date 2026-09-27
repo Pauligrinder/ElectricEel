@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/godbus/dbus"
@@ -44,6 +45,7 @@ func vehicleBeaconName(vin string) string {
 // already had discovery open, that session is left running - a dashboard
 // refresh must not tear down the phone-key scanner.
 func scan(ctx context.Context, bus dbusBus, adapterID, vin string) (*ScanResult, error) {
+	started := time.Now()
 	name := vehicleBeaconName(vin)
 
 	adapterPath, err := findAdapter(ctx, bus, adapterID)
@@ -60,22 +62,34 @@ func scan(ctx context.Context, bus dbusBus, adapterID, vin string) (*ScanResult,
 
 	already, _ := adapterIsDiscovering(ctx, bus, adapterPath)
 	if err := startDiscovery(ctx, bus, adapterPath); err != nil {
+		diagnostic("scan start failed: %s", dbusDetail(err))
 		return nil, fmt.Errorf("bluez: start discovery: %w", err)
 	}
+	diagnostic("scan started adapter=%s alreadyDiscovering=%v", adapterPath, already)
 	if !already {
-		defer stopDiscovery(ctx, bus, adapterPath)
+		defer func() {
+			// The scan deadline may have expired; still try to release discovery.
+			stopCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			stopDiscovery(stopCtx, bus, adapterPath)
+		}()
 	}
 
+	polls := 0
 	for {
+		polls++
 		result, err := findBeacon(ctx, bus, adapterPath, name)
 		if err != nil {
+			diagnostic("scan ended error after=%s polls=%d: %v", time.Since(started).Round(time.Millisecond), polls, err)
 			return nil, err
 		}
 		if result != nil {
+			diagnostic("scan found beacon after=%s polls=%d rssiPresent=%v rssi=%d", time.Since(started).Round(time.Millisecond), polls, result.HasRSSI, result.RSSI)
 			return result, nil
 		}
 		select {
 		case <-ctx.Done():
+			diagnostic("scan ended timeout after=%s polls=%d: %v", time.Since(started).Round(time.Millisecond), polls, ctx.Err())
 			return nil, ctx.Err()
 		case <-time.After(pollInterval):
 		}
@@ -87,10 +101,58 @@ func scan(ctx context.Context, bus dbusBus, adapterID, vin string) (*ScanResult,
 // presence-maintenance loop needs (poll every couple seconds for as long as
 // it runs), as opposed to scan()'s "block until found once" shape.
 type Watcher struct {
-	bus         dbusBus
-	adapterPath dbus.ObjectPath
-	name        string
+	bus            dbusBus
+	adapterPath    dbus.ObjectPath
+	name           string
+	match          []dbus.MatchOption
+	signalCh       chan *dbus.Signal
+	signalStop     chan struct{}
+	signalDone     chan struct{}
+	nearUpdate     chan struct{}
+	signalMu       sync.Mutex
+	devicePath     dbus.ObjectPath
+	nearRSSI       int16
+	lastRSSIUpdate time.Time
+	rssiUpdates    int
+	stats          WatchStats // accessed by the presence-loop goroutine only
 }
+
+// WatchStats counts D-Bus work done during the last observation window.
+// RSSI presence in a Device1 snapshot is not proof of a fresh advertisement.
+type WatchStats struct {
+	Polls             int
+	BeaconResults     int
+	RSSIResults       int
+	RSSIUpdates       int
+	LastRSSIUpdateAge time.Duration // -1 means no update signal seen
+	Restarts          int
+	ReadTotal         time.Duration
+	ReadMax           time.Duration
+}
+
+func (w *Watcher) TakeStats() WatchStats {
+	stats := w.stats
+	w.signalMu.Lock()
+	stats.RSSIUpdates = w.rssiUpdates
+	w.rssiUpdates = 0
+	stats.LastRSSIUpdateAge = -1
+	if !w.lastRSSIUpdate.IsZero() {
+		stats.LastRSSIUpdateAge = time.Since(w.lastRSSIUpdate).Round(time.Millisecond)
+	}
+	w.signalMu.Unlock()
+	w.stats = WatchStats{}
+	return stats
+}
+
+// SetNearRSSI configures which genuine BlueZ RSSI changes can interrupt the
+// presence loop's cached-beacon delay. Snapshot polling is unchanged.
+func (w *Watcher) SetNearRSSI(threshold int16) {
+	w.signalMu.Lock()
+	w.nearRSSI = threshold
+	w.signalMu.Unlock()
+}
+
+func (w *Watcher) NearUpdates() <-chan struct{} { return w.nearUpdate }
 
 // newWatcher starts discovery on adapterID (or the first available adapter)
 // and returns a Watcher ready for repeated Peek calls. Callers must call
@@ -107,7 +169,25 @@ func newWatcher(ctx context.Context, bus dbusBus, adapterID, vin string) (*Watch
 	if err := startDiscovery(ctx, bus, adapterPath); err != nil {
 		return nil, fmt.Errorf("bluez: start discovery: %w", err)
 	}
-	return &Watcher{bus: bus, adapterPath: adapterPath, name: vehicleBeaconName(vin)}, nil
+	diagnostic("watcher started adapter=%s", adapterPath)
+	w := &Watcher{bus: bus, adapterPath: adapterPath, name: vehicleBeaconName(vin), nearRSSI: -90, nearUpdate: make(chan struct{}, 1)}
+	w.match = []dbus.MatchOption{
+		dbus.WithMatchSender(bluezService),
+		dbus.WithMatchInterface(propsIface),
+		dbus.WithMatchMember("PropertiesChanged"),
+		dbus.WithMatchPathNamespace(adapterPath),
+	}
+	if err := bus.addMatch(w.match...); err != nil {
+		diagnostic("watcher RSSI signal subscription unavailable: %s", dbusDetail(err))
+		w.match = nil // snapshots still work; only diagnostics are missing
+	} else {
+		w.signalCh = make(chan *dbus.Signal, 128)
+		w.signalStop = make(chan struct{})
+		w.signalDone = make(chan struct{})
+		bus.subscribeSignals(w.signalCh)
+		go w.observeRSSIUpdates()
+	}
+	return w, nil
 }
 
 // Peek returns the vehicle's current beacon snapshot, or (nil, nil) if it
@@ -122,7 +202,75 @@ func (w *Watcher) Peek(ctx context.Context) (*ScanResult, error) {
 	if err := w.ensureDiscovering(ctx); err != nil {
 		return nil, err
 	}
-	return findBeacon(ctx, w.bus, w.adapterPath, w.name)
+	started := time.Now()
+	result, err := findBeacon(ctx, w.bus, w.adapterPath, w.name)
+	elapsed := time.Since(started)
+	w.stats.Polls++
+	w.stats.ReadTotal += elapsed
+	if elapsed > w.stats.ReadMax {
+		w.stats.ReadMax = elapsed
+	}
+	if result != nil {
+		w.signalMu.Lock()
+		w.devicePath = result.Path
+		w.signalMu.Unlock()
+		w.stats.BeaconResults++
+		if result.HasRSSI {
+			w.stats.RSSIResults++
+		}
+	}
+	return result, err
+}
+
+// observeRSSIUpdates records actual Device1.PropertiesChanged RSSI signals.
+// GetManagedObjects may report the same cached RSSI indefinitely, so counting
+// snapshots alone cannot establish whether the controller heard a new beacon.
+// A separate signal channel keeps the GATT rxLoop's notifications intact.
+func (w *Watcher) observeRSSIUpdates() {
+	defer close(w.signalDone)
+	for {
+		select {
+		case <-w.signalStop:
+			return
+		case sig, ok := <-w.signalCh:
+			if !ok || sig == nil {
+				return
+			}
+			if sig.Name != propsIface+".PropertiesChanged" || len(sig.Body) < 2 ||
+				!strings.HasPrefix(string(sig.Path), string(w.adapterPath)+"/dev_") {
+				continue
+			}
+			iface, ok := sig.Body[0].(string)
+			if !ok || iface != deviceIface {
+				continue
+			}
+			changed, ok := sig.Body[1].(map[string]dbus.Variant)
+			if !ok {
+				continue
+			}
+			if name, ok := variantString(changed["Name"]); ok && name == w.name {
+				w.signalMu.Lock()
+				w.devicePath = sig.Path
+				w.signalMu.Unlock()
+			}
+			w.signalMu.Lock()
+			if sig.Path != w.devicePath {
+				w.signalMu.Unlock()
+				continue
+			}
+			if rssi, ok := variantInt16(changed["RSSI"]); ok {
+				w.lastRSSIUpdate = time.Now()
+				w.rssiUpdates++
+				if rssi >= w.nearRSSI {
+					select {
+					case w.nearUpdate <- struct{}{}:
+					default: // coalesce multiple advertisements into one wakeup
+					}
+				}
+			}
+			w.signalMu.Unlock()
+		}
+	}
 }
 
 // Wait polls until the vehicle beacon is visible or ctx is done. Unlike
@@ -157,13 +305,27 @@ func (w *Watcher) ensureDiscovering(ctx context.Context) error {
 	if err == nil && discovering {
 		return nil
 	}
+	diagnostic("watcher discovery lost adapter=%s readError=%v", w.adapterPath, err)
 	_ = setDiscoveryFilter(ctx, w.bus, w.adapterPath)
-	return startDiscovery(ctx, w.bus, w.adapterPath)
+	if err := startDiscovery(ctx, w.bus, w.adapterPath); err != nil {
+		diagnostic("watcher discovery restart failed: %s", dbusDetail(err))
+		return err
+	}
+	w.stats.Restarts++
+	return nil
 }
 
 // Stop turns discovery back off. Safe to call once; a Peek after Stop simply
 // stops seeing new devices as BlueZ's cache goes stale.
 func (w *Watcher) Stop(ctx context.Context) {
+	diagnostic("watcher stopping adapter=%s", w.adapterPath)
+	if len(w.match) > 0 {
+		_ = w.bus.removeMatch(w.match...)
+		w.match = nil
+		w.bus.unsubscribeSignals(w.signalCh)
+		close(w.signalStop)
+		<-w.signalDone
+	}
 	stopDiscovery(ctx, w.bus, w.adapterPath)
 }
 
@@ -342,7 +504,10 @@ func isDiscoveryInProgress(err error) bool {
 }
 
 func stopDiscovery(ctx context.Context, bus dbusBus, adapterPath dbus.ObjectPath) {
-	_, _ = bus.object(bluezService, adapterPath).call(ctx, adapterIface+".StopDiscovery")
+	_, err := bus.object(bluezService, adapterPath).call(ctx, adapterIface+".StopDiscovery")
+	if err != nil {
+		diagnostic("stop discovery failed adapter=%s: %s", adapterPath, dbusDetail(err))
+	}
 }
 
 // findBeacon inspects the current object tree for a device advertising the
