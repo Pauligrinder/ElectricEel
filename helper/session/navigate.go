@@ -67,7 +67,7 @@ func (s *session) dispatchNavigate(req request) response {
 	// performs the full StartSession handshake like any ordinary command.
 	connectCtx, cancel := context.WithTimeout(context.Background(), s.connectTimeout)
 	s.mu.Lock()
-	connectErr := s.ensureConnectedLocked(connectCtx, "", nil)
+	connectErr := s.ensureConnectedLocked(connectCtx, "", s.presenceBeaconTargetLocked())
 	s.mu.Unlock()
 	cancel()
 	if connectErr != nil {

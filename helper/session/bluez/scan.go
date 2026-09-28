@@ -42,6 +42,7 @@ func vehicleBeaconName(vin string) string {
 // already had discovery open, that session is left running - a dashboard
 // refresh must not tear down the phone-key scanner.
 func scan(ctx context.Context, bus dbusBus, adapterID, vin string) (*ScanResult, error) {
+	started := time.Now()
 	name := vehicleBeaconName(vin)
 
 	adapterPath, err := findAdapter(ctx, bus, adapterID)
@@ -58,15 +59,25 @@ func scan(ctx context.Context, bus dbusBus, adapterID, vin string) (*ScanResult,
 
 	already, _ := adapterIsDiscovering(ctx, bus, adapterPath)
 	if err := startDiscovery(ctx, bus, adapterPath); err != nil {
+		diagnostic("scan start failed: %s", dbusDetail(err))
 		return nil, fmt.Errorf("bluez: start discovery: %w", err)
 	}
+	diagnostic("scan started adapter=%s alreadyDiscovering=%v", adapterPath, already)
 	if !already {
-		defer stopDiscovery(ctx, bus, adapterPath)
+		defer func() {
+			// The scan deadline may have expired; still try to release discovery.
+			stopCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			stopDiscovery(stopCtx, bus, adapterPath)
+		}()
 	}
 
+	polls := 0
 	for {
+		polls++
 		result, err := findBeacon(ctx, bus, adapterPath, name)
 		if err != nil {
+			diagnostic("scan ended error after=%s polls=%d: %v", time.Since(started).Round(time.Millisecond), polls, err)
 			return nil, err
 		}
 		// A cached Device1 without a live RSSI is leftover after ads stop.
@@ -74,10 +85,12 @@ func scan(ctx context.Context, bus dbusBus, adapterID, vin string) (*ScanResult,
 		// bluetoothd sits on Connect until our deadline, then
 		// GetManagedObjects itself times out.
 		if result != nil && result.HasRSSI {
+			diagnostic("scan found beacon after=%s polls=%d rssiPresent=%v rssi=%d", time.Since(started).Round(time.Millisecond), polls, result.HasRSSI, result.RSSI)
 			return result, nil
 		}
 		select {
 		case <-ctx.Done():
+			diagnostic("scan ended timeout after=%s polls=%d: %v", time.Since(started).Round(time.Millisecond), polls, ctx.Err())
 			return nil, ctx.Err()
 		case <-time.After(pollInterval):
 		}

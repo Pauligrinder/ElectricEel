@@ -1,6 +1,8 @@
 #include "teslaclient.h"
 
 #include <QDebug>
+#include <QDateTime>
+#include <QFile>
 #include <QGuiApplication>
 #include <QStandardPaths>
 #include <QThread>
@@ -24,6 +26,33 @@ const char *kSessionBin = "/usr/share/harbour-electric-eel/bin/tesla-session";
 // BlueZ is the cooperative transport the app uses by default (see
 // docs/architecture.md); "hci" raw-HCI is an escape hatch, not what ships.
 const char *kBleBackend = "bluez";
+
+// Record Qt's app lifecycle in the same file as the Go phone-key diagnostics.
+// A display turning off need not emit ApplicationSuspended; the absence of a
+// transition is useful evidence too when compared with the presence loop.
+void logApplicationState(Qt::ApplicationState state)
+{
+    const QString logDir = QString::fromUtf8(qgetenv("ELECTRIC_EEL_LOG_DIR"));
+    if (logDir.isEmpty())
+        return;
+    const QString path = logDir + QStringLiteral("/phone-key-")
+            + QDate::currentDate().toString(QStringLiteral("yyyy-MM-dd")) + QStringLiteral(".log");
+    const bool newFile = !QFile::exists(path);
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Append))
+        return;
+    if (newFile)
+        file.write("# ElectricEel phone-key log\n# tags: session presence connect auth link bluez core ui\n");
+    const char *name = "unknown";
+    switch (state) {
+    case Qt::ApplicationActive: name = "active"; break;
+    case Qt::ApplicationInactive: name = "inactive"; break;
+    case Qt::ApplicationHidden: name = "hidden"; break;
+    case Qt::ApplicationSuspended: name = "suspended"; break;
+    }
+    file.write(QDateTime::currentDateTime().toString(QStringLiteral("HH:mm:ss.zzz")).toUtf8()
+               + "  ui          applicationState=" + name + "\n");
+}
 
 // Converts a Rust-owned C string from an output slot into a QString and frees
 // it. A NULL slot (never written by the ABI) yields an empty QString.
@@ -359,6 +388,7 @@ TeslaClient::TeslaClient(QObject *parent)
     QDir().mkpath(logDir);
     qputenv("ELECTRIC_EEL_LOG_DIR", logDir.toUtf8());
     qDebug() << "TeslaClient: phone-key logs ->" << logDir;
+    logApplicationState(QGuiApplication::applicationState());
 
     // The worker lives on its own thread so the blocking C ABI calls
     // (core_run/core_pair: up to connect+command+10s, and Pair adds a 95s
@@ -501,6 +531,7 @@ void TeslaClient::onPhoneKeyEvent(const QString &kind, const QString &vin,
 
 void TeslaClient::onApplicationStateChanged(Qt::ApplicationState state)
 {
+    logApplicationState(state);
     // Only a prior Suspended that later becomes Active is a real device
     // wake (freezer). Hidden/Inactive are the normal cover/switcher
     // background where phone-key must stay alive - those must NOT recycle

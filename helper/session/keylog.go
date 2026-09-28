@@ -91,7 +91,7 @@ func openKeyLogLocked(now time.Time) *os.File {
 		return nil
 	}
 	if created {
-		_, _ = fmt.Fprintf(f, "# ElectricEel phone-key log %s\n# tags: session presence connect auth link\n", day)
+		_, _ = fmt.Fprintf(f, "# ElectricEel phone-key log %s\n# tags: session presence connect auth link bluez\n", day)
 	}
 	keyLogFile = f
 	keyLogDay = day

@@ -33,19 +33,26 @@ func liveAdvertisement(t *ScanResult) bool {
 // Transient link/scan failures are retried until ctx expires; adapter-level
 // failures (no controller) are not.
 func connect(ctx context.Context, bus dbusBus, adapterID, vin string, target *ScanResult) (connector.Connector, error) {
+	started := time.Now()
 	var lastErr error
 	backoff := connectRetryInitial
+	attempts := 0
 	for {
+		attempts++
+		attemptStart := time.Now()
 		cc, retry, err := tryConnect(ctx, bus, adapterID, vin, target)
 		if err == nil {
+			diagnostic("connect ready attempts=%d elapsed=%s", attempts, time.Since(started).Round(time.Millisecond))
 			return cc, nil
 		}
+		diagnostic("connect attempt=%d duration=%s retry=%v: %s", attempts, time.Since(attemptStart).Round(time.Millisecond), retry, dbusDetail(err))
 		if !retry || IsAdapterError(err) {
 			return nil, err
 		}
 		lastErr = err
 		select {
 		case <-ctx.Done():
+			diagnostic("connect deadline attempts=%d elapsed=%s", attempts, time.Since(started).Round(time.Millisecond))
 			if lastErr != nil {
 				return nil, lastErr
 			}
@@ -114,6 +121,7 @@ func tryConnect(ctx context.Context, bus dbusBus, adapterID, vin string, target 
 	// le-connection-abort-by-local: the adapter cancels the LE create-
 	// connection when the scanner is still running. Presence's Watcher
 	// restarts discovery on the next Peek if this attempt fails.
+	diagnostic("connect stopping discovery before Device1.Connect")
 	stopDiscovery(ctx, bus, adapterPath)
 	waitDiscoveryStopped(ctx, bus, adapterPath)
 	// A leftover Connected=true (previous Close still in HCI, or BlueZ
@@ -123,15 +131,22 @@ func tryConnect(ctx context.Context, bus dbusBus, adapterID, vin string, target 
 		abortDeviceConnect(bus, devPath)
 		waitDeviceDisconnected(ctx, bus, devPath)
 	}
+	diagnostic("connect Device1.Connect begin")
 	if err := connectDevice(ctx, bus, devPath); err != nil {
 		releaseDevice(bus, devPath)
 		return nil, true, err
 	}
+	diagnostic("connect Device1.Connect ok; waiting for ServicesResolved")
 	// GATT objects only materialize once the remote services are resolved.
 	if err := waitServicesResolved(ctx, bus, devPath); err != nil {
+		// The connect deadline has usually expired here. Probe with a fresh,
+		// short context so we can distinguish a missing link from an
+		// unresponsive bluetoothd before Disconnect changes the state.
+		logDeviceState(bus, devPath, "services wait failed")
 		releaseDevice(bus, devPath)
 		return nil, true, err
 	}
+	diagnostic("connect services resolved; finding GATT characteristics")
 	svcPath, txPath, rxPath, err := discoverGATT(ctx, bus, devPath)
 	if err != nil {
 		releaseDevice(bus, devPath)
@@ -385,26 +400,63 @@ func connectDevice(ctx context.Context, bus dbusBus, devPath dbus.ObjectPath) er
 func abortDeviceConnect(bus dbusBus, devPath dbus.ObjectPath) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	_, _ = bus.object(bluezService, devPath).call(ctx, deviceIface+".Disconnect")
+	started := time.Now()
+	_, err := bus.object(bluezService, devPath).call(ctx, deviceIface+".Disconnect")
+	diagnostic("connect cleanup Disconnect duration=%s error=%s", time.Since(started).Round(time.Millisecond), dbusDetail(err))
 }
 
 // waitServicesResolved polls Device1.ServicesResolved until the remote GATT
 // database is available.
 func waitServicesResolved(ctx context.Context, bus dbusBus, devPath dbus.ObjectPath) error {
 	obj := bus.object(bluezService, devPath)
+	started := time.Now()
+	lastProgress := started
+	polls := 0
 	for {
 		v, err := obj.getProp(ctx, deviceIface, "ServicesResolved")
 		if err != nil {
+			diagnostic("connect services read failed elapsed=%s polls=%d error=%s", time.Since(started).Round(time.Millisecond), polls, dbusDetail(err))
 			return fmt.Errorf("bluez: read ServicesResolved: %w", err)
 		}
+		polls++
 		if resolved, ok := variantBool(v); ok && resolved {
+			diagnostic("connect services wait complete elapsed=%s polls=%d", time.Since(started).Round(time.Millisecond), polls)
 			return nil
+		}
+		if time.Since(lastProgress) >= 3*time.Second {
+			lastProgress = time.Now()
+			connected, err := obj.getProp(ctx, deviceIface, "Connected")
+			if err != nil {
+				diagnostic("connect services pending elapsed=%s polls=%d connectedError=%s", time.Since(started).Round(time.Millisecond), polls, dbusDetail(err))
+			} else {
+				value, ok := variantBool(connected)
+				diagnostic("connect services pending elapsed=%s polls=%d connected=%v valid=%v", time.Since(started).Round(time.Millisecond), polls, value, ok)
+			}
 		}
 		select {
 		case <-ctx.Done():
+			diagnostic("connect services wait timeout elapsed=%s polls=%d", time.Since(started).Round(time.Millisecond), polls)
 			return ctx.Err()
 		case <-time.After(pollInterval):
 		}
+	}
+}
+
+// logDeviceState uses a bounded independent deadline because the failed
+// connect's context is generally already cancelled. Never log the device
+// path: it contains the Bluetooth address.
+func logDeviceState(bus dbusBus, devPath dbus.ObjectPath, phase string) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	obj := bus.object(bluezService, devPath)
+	for _, property := range []string{"Connected", "ServicesResolved"} {
+		v, err := obj.getProp(ctx, deviceIface, property)
+		if err != nil {
+			diagnostic("connect %s %s error=%s", phase, property, dbusDetail(err))
+			continue
+		}
+		value, ok := variantBool(v)
+		diagnostic("connect %s %s=%v valid=%v", phase, property, value, ok)
 	}
 }
 

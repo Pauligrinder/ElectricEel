@@ -12,8 +12,54 @@ import (
 	"testing"
 	"time"
 
+	"electric-eel-session/bluez"
 	"github.com/teslamotors/vehicle-command/pkg/protocol"
 )
+
+func TestManualStatusCannotBlockPresenceOnCachedOrWeakBeacon(t *testing.T) {
+	s := &session{
+		bleBackend:     "bluez",
+		presenceCancel: func() {},
+		presenceCfg:    defaultPresenceConfig(),
+		keyFile:        filepath.Join(t.TempDir(), "missing-key.pem"),
+	}
+	// Dashboard status commands defer to presence before any GATT connect.
+	for _, beacon := range []*bluez.ScanResult{nil, {RSSI: -98, HasRSSI: true}, {RSSI: -50}} {
+		s.lastBeacon = beacon
+		s.lastBeaconAt = time.Now()
+		started := time.Now()
+		response := s.dispatch(request{Cmd: "body-controller-state"})
+		if response.OK || !strings.Contains(response.Stderr, "phone key is still connecting") {
+			t.Fatalf("cached beacon %+v: unexpected response %+v", beacon, response)
+		}
+		if time.Since(started) > time.Second {
+			t.Fatal("distant dashboard request blocked phone-key presence")
+		}
+	}
+	// Pairing bypasses the deferral and must still refuse a weak/stale beacon
+	// instead of burning the connect deadline on a leftover Device1.
+	for _, beacon := range []*bluez.ScanResult{nil, {RSSI: -98, HasRSSI: true}, {RSSI: -50}} {
+		s.lastBeacon = beacon
+		s.lastBeaconAt = time.Now()
+		started := time.Now()
+		response := s.dispatch(request{Cmd: "add-key-request"})
+		if response.OK || !strings.Contains(response.Stderr, "vehicle not nearby") {
+			t.Fatalf("pairing with cached beacon %+v: unexpected response %+v", beacon, response)
+		}
+		if time.Since(started) > time.Second {
+			t.Fatal("distant pairing request blocked phone-key presence")
+		}
+	}
+	strong := &bluez.ScanResult{RSSI: -50, HasRSSI: true}
+	s.lastBeacon = strong
+	s.lastBeaconAt = time.Now()
+	if !s.presenceTargetReadyLocked(strong, time.Now()) {
+		t.Fatal("a recently observed near beacon should allow a manual command")
+	}
+	if s.presenceTargetReadyLocked(strong, time.Now().Add(5*time.Second)) {
+		t.Fatal("a formerly strong beacon must expire")
+	}
+}
 
 // execute() and the commands map are vendored verbatim from upstream (see
 // commands_vendor.go) - these tests exercise the same readiness-check code
