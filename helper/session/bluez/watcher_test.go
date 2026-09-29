@@ -2,6 +2,7 @@ package bluez
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -149,7 +150,7 @@ func TestWatcherRestartsDiscoveryWhenDropped(t *testing.T) {
 	}
 }
 
-func TestWatcherRepowersAdapterOnPeek(t *testing.T) {
+func TestWatcherPeekFailsWhenAdapterOff(t *testing.T) {
 	bus := newFakeBluez()
 	vin := "5YJ3E1EA0PF000000"
 	bus.dev = &fakeDevice{path: bus.devPath(), name: vehicleBeaconName(vin)}
@@ -165,14 +166,13 @@ func TestWatcherRepowersAdapterOnPeek(t *testing.T) {
 
 	bus.powered = false
 	bus.discovering = false
-	if _, err := w.Peek(ctx); err != nil {
-		t.Fatalf("Peek after adapter powered off: %v", err)
+	if _, err := w.Peek(ctx); err == nil {
+		t.Fatal("Peek must fail when the adapter is off")
+	} else if !strings.Contains(err.Error(), "adapter not powered") {
+		t.Fatalf("Peek error %q, want adapter not powered", err)
 	}
-	if !bus.powered {
-		t.Error("expected Peek to power the adapter back on")
-	}
-	if !bus.discovering {
-		t.Error("expected Peek to restart discovery after powering the adapter")
+	if bus.powered {
+		t.Error("Peek must not Set Powered (Sailfish ConnMan AuthFailed)")
 	}
 }
 
@@ -253,6 +253,53 @@ func TestWatcherWaitIgnoresCachedDeviceWithoutRSSI(t *testing.T) {
 	}
 	if res != nil {
 		t.Fatalf("Wait should not return a cached Device1 without RSSI, got %+v", res)
+	}
+}
+
+func TestWatcherForgetStaleRemovesLeftoverWithoutRSSI(t *testing.T) {
+	bus := newFakeBluez()
+	vin := "5YJ3E1EA0PF000000"
+	bus.dev = &fakeDevice{path: bus.devPath(), name: vehicleBeaconName(vin), omitRSSI: true}
+	bus.deviceVisible = true
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	w, err := newWatcher(ctx, bus, "", vin)
+	if err != nil {
+		t.Fatalf("newWatcher: %v", err)
+	}
+	defer w.Stop(ctx)
+
+	if !w.ForgetStale(ctx) {
+		t.Fatal("expected ForgetStale to RemoveDevice a leftover without RSSI")
+	}
+	if bus.removeDeviceN == 0 {
+		t.Fatal("ForgetStale must call RemoveDevice")
+	}
+	if w.devicePath != "" {
+		t.Fatalf("devicePath = %q after ForgetStale, want empty", w.devicePath)
+	}
+}
+
+func TestWatcherForgetStaleLeavesLiveAdvertisement(t *testing.T) {
+	bus := newFakeBluez()
+	vin := "5YJ3E1EA0PF000000"
+	bus.dev = &fakeDevice{path: bus.devPath(), name: vehicleBeaconName(vin), rssi: -52}
+	bus.deviceVisible = true
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	w, err := newWatcher(ctx, bus, "", vin)
+	if err != nil {
+		t.Fatalf("newWatcher: %v", err)
+	}
+	defer w.Stop(ctx)
+
+	if w.ForgetStale(ctx) {
+		t.Fatal("ForgetStale must not RemoveDevice a live RSSI beacon")
+	}
+	if bus.removeDeviceN != 0 {
+		t.Fatal("live advertisement must stay paired")
 	}
 }
 
@@ -421,6 +468,151 @@ func TestWatcherPauseStopsDiscovery(t *testing.T) {
 	}
 	if !bus.discovering {
 		t.Fatal("Resume+Peek must restart discovery")
+	}
+}
+
+func TestWatcherRecycleDiscoveryStopsAndStarts(t *testing.T) {
+	bus := newFakeBluez()
+	vin := "5YJ3E1EA0PF000000"
+	bus.dev = &fakeDevice{path: bus.devPath(), name: vehicleBeaconName(vin), rssi: -94}
+	bus.deviceVisible = true
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	w, err := newWatcher(ctx, bus, "", vin)
+	if err != nil {
+		t.Fatalf("newWatcher: %v", err)
+	}
+	defer w.Stop(ctx)
+	if !bus.discovering {
+		t.Fatal("expected discovery after newWatcher")
+	}
+
+	bus.advertiseRSSI(-94)
+	if err := w.RecycleDiscovery(ctx); err != nil {
+		t.Fatalf("RecycleDiscovery: %v", err)
+	}
+	if !bus.discovering {
+		t.Fatal("RecycleDiscovery must leave discovery running")
+	}
+	if n := countCalls(bus.calls, adapterIface+".StopDiscovery"); n == 0 {
+		t.Fatal("RecycleDiscovery must StopDiscovery")
+	}
+	if n := countCalls(bus.calls, adapterIface+".StartDiscovery"); n < 2 {
+		t.Fatalf("StartDiscovery calls=%d, want newWatcher + recycle", n)
+	}
+
+	waitCtx, waitCancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer waitCancel()
+	res, err := w.Wait(waitCtx)
+	if err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	if res != nil {
+		t.Fatalf("RecycleDiscovery must drain leftover RSSI, got %+v", res)
+	}
+}
+
+func TestWatcherRecycleDiscoveryNoopWhilePaused(t *testing.T) {
+	bus := newFakeBluez()
+	vin := "5YJ3E1EA0PF000000"
+	bus.dev = &fakeDevice{path: bus.devPath(), name: vehicleBeaconName(vin)}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	w, err := newWatcher(ctx, bus, "", vin)
+	if err != nil {
+		t.Fatalf("newWatcher: %v", err)
+	}
+	defer w.Stop(ctx)
+
+	w.Pause()
+	stops := countCalls(bus.calls, adapterIface+".StopDiscovery")
+	if err := w.RecycleDiscovery(ctx); err != nil {
+		t.Fatalf("RecycleDiscovery while paused: %v", err)
+	}
+	if countCalls(bus.calls, adapterIface+".StopDiscovery") != stops {
+		t.Fatal("RecycleDiscovery must not touch discovery while paused")
+	}
+	if bus.discovering {
+		t.Fatal("paused watcher must stay not-discovering")
+	}
+}
+
+func TestWatcherForgetCachedRemovesLeftoverWithRSSI(t *testing.T) {
+	bus := newFakeBluez()
+	vin := "5YJ3E1EA0PF000000"
+	bus.dev = &fakeDevice{path: bus.devPath(), name: vehicleBeaconName(vin), rssi: -94}
+	bus.deviceVisible = true
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	w, err := newWatcher(ctx, bus, "", vin)
+	if err != nil {
+		t.Fatalf("newWatcher: %v", err)
+	}
+	defer w.Stop(ctx)
+
+	if !w.ForgetCached(ctx) {
+		t.Fatal("frozen leftover with RSSI must be RemoveDevice'd")
+	}
+	if bus.removeDeviceN == 0 {
+		t.Fatal("ForgetCached must call RemoveDevice")
+	}
+	if bus.deviceVisible {
+		t.Fatal("ForgetCached must drop the leftover Device1")
+	}
+	if w.devicePath != "" {
+		t.Fatalf("devicePath = %q after ForgetCached, want empty", w.devicePath)
+	}
+}
+
+func TestWatcherForgetCachedNoopWhilePaused(t *testing.T) {
+	bus := newFakeBluez()
+	vin := "5YJ3E1EA0PF000000"
+	bus.dev = &fakeDevice{path: bus.devPath(), name: vehicleBeaconName(vin), rssi: -94}
+	bus.deviceVisible = true
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	w, err := newWatcher(ctx, bus, "", vin)
+	if err != nil {
+		t.Fatalf("newWatcher: %v", err)
+	}
+	defer w.Stop(ctx)
+
+	w.Pause()
+	if w.ForgetCached(ctx) {
+		t.Fatal("ForgetCached must not RemoveDevice while connecting")
+	}
+	if bus.removeDeviceN != 0 {
+		t.Fatal("paused ForgetCached must leave Device1")
+	}
+}
+
+func TestWatcherReleaseOrphanLinkDisconnectsLeftover(t *testing.T) {
+	bus := newFakeBluez()
+	vin := "5YJ3E1EA0PF000000"
+	bus.dev = &fakeDevice{path: bus.devPath(), name: vehicleBeaconName(vin), omitRSSI: true}
+	bus.deviceVisible = true
+	bus.connected = true
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	w, err := newWatcher(ctx, bus, "", vin)
+	if err != nil {
+		t.Fatalf("newWatcher: %v", err)
+	}
+	defer w.Stop(ctx)
+
+	if !w.ReleaseOrphanLink(ctx) {
+		t.Fatal("leftover Connected Device1 must be released")
+	}
+	if bus.connected {
+		t.Fatal("ReleaseOrphanLink must Disconnect")
+	}
+	if w.ReleaseOrphanLink(ctx) {
+		t.Fatal("second ReleaseOrphanLink must be a no-op")
 	}
 }
 

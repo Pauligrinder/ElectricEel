@@ -1,14 +1,14 @@
 TARGET = harbour-electric-eel
 
 CONFIG += sailfishapp
+QT += dbus
 
 # Single source of the app version, surfaced on the Settings page and
 # compared against the core's GetVersion. The release workflow stamps
 # this (and helper/Cargo.toml) from the same git tag, so a matched pair
 # reports equal versions. Keep in sync with helper/Cargo.toml when bumping
 # outside a release.
-
-VERSION = 0.2.17
+VERSION = 0.2.26
 
 DEFINES += APP_VERSION=\\\"$$VERSION\\\"
 
@@ -20,10 +20,14 @@ LIBS += $$PWD/thirdparty/libelectriceelcore.a -lpthread -ldl -lm
 
 SOURCES += \
     src/harbour-electric-eel.cpp \
-    src/teslaclient.cpp
+    src/teslaclient.cpp \
+    src/drivehotspot.cpp \
+    src/driveapplauncher.cpp
 
 HEADERS += \
-    src/teslaclient.h
+    src/teslaclient.h \
+    src/drivehotspot.h \
+    src/driveapplauncher.h
 
 DISTFILES += \
     rpm/harbour-electric-eel.spec \

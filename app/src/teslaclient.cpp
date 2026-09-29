@@ -1,4 +1,6 @@
 #include "teslaclient.h"
+#include "drivehotspot.h"
+#include "driveapplauncher.h"
 
 #include <QDebug>
 #include <QDateTime>
@@ -17,6 +19,28 @@ extern "C" {
 }
 
 namespace {
+
+void keylog(const char *tag, const QString &message)
+{
+    const QByteArray utf8 = message.toUtf8();
+    core_keylog(tag, utf8.constData());
+}
+
+const char *appStateName(Qt::ApplicationState state)
+{
+    switch (state) {
+    case Qt::ApplicationSuspended:
+        return "Suspended";
+    case Qt::ApplicationHidden:
+        return "Hidden";
+    case Qt::ApplicationInactive:
+        return "Inactive";
+    case Qt::ApplicationActive:
+        return "Active";
+    default:
+        return "Unknown";
+    }
+}
 
 // Binaries the core spawns live under the app's data dir in the RPM. The Go
 // tesla-session is bundled there by the spec; tesla-control/tesla-keygen were
@@ -435,10 +459,21 @@ TeslaClient::TeslaClient(QObject *parent)
                               Q_ARG(QString, QString::fromLatin1(kSessionBin)));
 
     m_helperVersion = QString::fromUtf8(core_version());
+
+    m_driveHotspot = new DriveHotspot(this);
+    connect(m_driveHotspot, &DriveHotspot::enabledChanged,
+            this, &TeslaClient::driveHotspotEnabledChanged);
+
+    m_driveAppLauncher = new DriveAppLauncher(this);
+    connect(m_driveAppLauncher, &DriveAppLauncher::enabledChanged,
+            this, &TeslaClient::driveAppEnabledChanged);
+    connect(m_driveAppLauncher, &DriveAppLauncher::desktopFileChanged,
+            this, &TeslaClient::driveAppDesktopFileChanged);
 }
 
 TeslaClient::~TeslaClient()
 {
+    keylog("core", QStringLiteral("ui shutting down worker"));
     // Stop the worker thread before the core handle goes away. wait() returns
     // once no queued slot is running; the worker is then idle and safe to
     // delete from this thread (no deleteLater, which would need its own loop).
@@ -512,7 +547,8 @@ void TeslaClient::onPhoneKeyEvent(const QString &kind, const QString &vin,
              || kind == QStringLiteral("presence_restarted")
              || kind == QStringLiteral("presence_disconnected"))
         status = QStringLiteral("Phone key scanning");
-    else if (kind == QStringLiteral("presence_auth_ok"))
+    else if (kind == QStringLiteral("presence_auth_ok")
+             || kind == QStringLiteral("presence_handle_pull"))
         status = QStringLiteral("Phone key authorized");
     else if (kind == QStringLiteral("presence_stopped"))
         status = QStringLiteral("Phone key stopped");
@@ -521,12 +557,57 @@ void TeslaClient::onPhoneKeyEvent(const QString &kind, const QString &vin,
         status = errorMessage.isEmpty()
                  ? QStringLiteral("Phone key error")
                  : QStringLiteral("Phone key error: %1").arg(errorMessage);
-    else
-        return;
-    if (m_phoneKeyStatus == status)
+    if (m_driveHotspot)
+        m_driveHotspot->onPhoneKeyEvent(kind);
+    if (m_driveAppLauncher)
+        m_driveAppLauncher->onPhoneKeyEvent(kind);
+    if (status.isEmpty() || m_phoneKeyStatus == status)
         return;
     m_phoneKeyStatus = status;
     emit phoneKeyStatusChanged();
+}
+
+bool TeslaClient::driveHotspotEnabled() const
+{
+    return m_driveHotspot && m_driveHotspot->enabled();
+}
+
+void TeslaClient::setDriveHotspotEnabled(bool enabled)
+{
+    if (m_driveHotspot)
+        m_driveHotspot->setEnabled(enabled);
+}
+
+bool TeslaClient::driveAppEnabled() const
+{
+    return m_driveAppLauncher && m_driveAppLauncher->enabled();
+}
+
+void TeslaClient::setDriveAppEnabled(bool enabled)
+{
+    if (m_driveAppLauncher)
+        m_driveAppLauncher->setEnabled(enabled);
+}
+
+QString TeslaClient::driveAppDesktopFile() const
+{
+    return m_driveAppLauncher ? m_driveAppLauncher->desktopFile() : QString();
+}
+
+void TeslaClient::setDriveAppDesktopFile(const QString &path)
+{
+    if (m_driveAppLauncher)
+        m_driveAppLauncher->setDesktopFile(path);
+}
+
+QString TeslaClient::driveAppName() const
+{
+    return m_driveAppLauncher ? m_driveAppLauncher->appName() : QString();
+}
+
+QVariantList TeslaClient::installedApps() const
+{
+    return m_driveAppLauncher ? m_driveAppLauncher->installedApps() : QVariantList();
 }
 
 void TeslaClient::onApplicationStateChanged(Qt::ApplicationState state)
@@ -537,6 +618,7 @@ void TeslaClient::onApplicationStateChanged(Qt::ApplicationState state)
     // background where phone-key must stay alive - those must NOT recycle
     // the session. Use a latched flag so Suspended->Hidden->Active still
     // triggers after a wake that passes through Hidden.
+    keylog("core", QStringLiteral("app state %1").arg(QLatin1String(appStateName(state))));
     if (state == Qt::ApplicationSuspended) {
         m_suspended = true;
         qDebug() << "TeslaClient: system suspended, will recycle BLE session on resume";

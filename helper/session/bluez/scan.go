@@ -45,7 +45,7 @@ func scan(ctx context.Context, bus dbusBus, adapterID, vin string) (*ScanResult,
 	started := time.Now()
 	name := vehicleBeaconName(vin)
 
-	adapterPath, err := findAdapter(ctx, bus, adapterID)
+	adapterPath, err := findAdapterForName(ctx, bus, adapterID, name)
 	if err != nil {
 		return nil, err
 	}
@@ -118,7 +118,8 @@ type Watcher struct {
 // can be missed, then seeds its target from one object-tree snapshot. Callers
 // must call Stop when done to remove the matches and turn discovery back off.
 func newWatcher(ctx context.Context, bus dbusBus, adapterID, vin string) (*Watcher, error) {
-	adapterPath, err := findAdapter(ctx, bus, adapterID)
+	name := vehicleBeaconName(vin)
+	adapterPath, err := findAdapterForName(ctx, bus, adapterID, name)
 	if err != nil {
 		return nil, err
 	}
@@ -159,7 +160,7 @@ func newWatcher(ctx context.Context, bus dbusBus, adapterID, vin string) (*Watch
 	w := &Watcher{
 		bus:         bus,
 		adapterPath: adapterPath,
-		name:        vehicleBeaconName(vin),
+		name:        name,
 		sigs:        sigs,
 		detachSigs:  detachSigs,
 		ifaceMatch:  ifaceMatch,
@@ -193,6 +194,69 @@ func (w *Watcher) Peek(ctx context.Context) (*ScanResult, error) {
 		return nil, err
 	}
 	return findBeacon(ctx, w.bus, w.adapterPath, w.name)
+}
+
+// AdapterPath is the org.bluez Adapter1 this watcher scans. Jolla often
+// exposes the radio as hci1 while a dummy hci0 also exists; callers log
+// this so a silent scan is diagnosable.
+func (w *Watcher) AdapterPath() dbus.ObjectPath {
+	return w.adapterPath
+}
+
+// ForgetStale RemoveDevice's a cached vehicle Device1 that is not
+// advertising. Presence must not call this: sleeping VCSEC drops RSSI
+// between ads, and RemoveDevice is what filled the 2026-09-17 logs and
+// then hung the next Connect. Kept for tests.
+func (w *Watcher) ForgetStale(ctx context.Context) bool {
+	forgotten := forgetStaleNamed(ctx, w.bus, w.adapterPath, w.name)
+	if forgotten == "" {
+		return false
+	}
+	w.devicePath = ""
+	return true
+}
+
+// RecycleDiscovery stops and starts LE discovery so a wedged Sailfish
+// scanner (Discovering=true, no RSSI signals) can hear advertisements
+// again. 2026-09-25 17:33–18:17 sat on a leftover RSSI=-94 Device1 until
+// a Bluetooth restart; Stop+Start is what bluetoothd needs without that.
+func (w *Watcher) RecycleDiscovery(ctx context.Context) error {
+	w.mu.Lock()
+	if w.paused {
+		w.mu.Unlock()
+		return nil
+	}
+	adapterPath := w.adapterPath
+	w.mu.Unlock()
+	stopDiscovery(ctx, w.bus, adapterPath)
+	waitDiscoveryStopped(ctx, w.bus, adapterPath)
+	drainSignalChan(w.sigs)
+	_ = setDiscoveryFilter(ctx, w.bus, adapterPath)
+	return startDiscovery(ctx, w.bus, adapterPath)
+}
+
+// ForgetCached RemoveDevice's the vehicle Device1 even when BlueZ still
+// reports a leftover RSSI. Presence calls this only after discovery has
+// been silent long enough that the RSSI cannot be a live advert (the
+// 2026-09-25 18:00 frozen -94). Sleeping-car RSSI gaps must not use this.
+func (w *Watcher) ForgetCached(ctx context.Context) bool {
+	w.mu.Lock()
+	if w.paused {
+		w.mu.Unlock()
+		return false
+	}
+	w.mu.Unlock()
+	result, err := findBeacon(ctx, w.bus, w.adapterPath, w.name)
+	if err != nil || result == nil || result.Path == "" {
+		return false
+	}
+	forgetDevice(w.bus, result.Path)
+	w.mu.Lock()
+	if w.devicePath == result.Path {
+		w.devicePath = ""
+	}
+	w.mu.Unlock()
+	return true
 }
 
 // Wait blocks on BlueZ signals until a fresh advertisement appears or ctx is
@@ -354,6 +418,26 @@ func (w *Watcher) Pause() {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	stopDiscovery(ctx, w.bus, w.adapterPath)
+	waitDiscoveryStopped(ctx, w.bus, w.adapterPath)
+}
+
+// ReleaseOrphanLink Disconnects a leftover Device1.Connected=true when we
+// have no GATT session. That zombie blocks Tesla advertisements and is
+// why the first attach after a BT restart waited minutes on "Device1
+// without RSSI" until tesla-session was killed (2026-09-25 13:29).
+func (w *Watcher) ReleaseOrphanLink(ctx context.Context) bool {
+	w.mu.Lock()
+	path := w.devicePath
+	w.mu.Unlock()
+	if path == "" {
+		return false
+	}
+	connected, err := deviceConnected(ctx, w.bus, path)
+	if err != nil || !connected {
+		return false
+	}
+	releaseDevice(w.bus, path)
+	return true
 }
 
 func (w *Watcher) Resume() {
@@ -419,6 +503,43 @@ func managedObjects(ctx context.Context, bus dbusBus) (map[dbus.ObjectPath]map[s
 	return m, nil
 }
 
+// findAdapterForName is findAdapter, but when adapterID is empty it prefers
+// the powered adapter that already has a Device1 advertising name. Jolla
+// Phone 2026 exposes the radio as hci1; lexicographic findAdapter would
+// watch hci0 and never see the leftover Tesla object on hci1.
+func findAdapterForName(ctx context.Context, bus dbusBus, adapterID, name string) (dbus.ObjectPath, error) {
+	if adapterID != "" || name == "" {
+		return findAdapter(ctx, bus, adapterID)
+	}
+	objects, err := managedObjects(ctx, bus)
+	if err != nil {
+		return "", err
+	}
+	if p := adapterWithDeviceNamed(objects, name); p != "" {
+		if ifaces, ok := objects[p]; ok && adapterPoweredIn(ifaces) {
+			return p, nil
+		}
+	}
+	return findAdapter(ctx, bus, adapterID)
+}
+
+func adapterWithDeviceNamed(objects map[dbus.ObjectPath]map[string]map[string]dbus.Variant, name string) dbus.ObjectPath {
+	for path, ifaces := range objects {
+		dev, ok := ifaces[deviceIface]
+		if !ok {
+			continue
+		}
+		devName, ok := deviceAdvertisedName(dev, name)
+		if !ok || devName != name {
+			continue
+		}
+		if p := adapterPathForDevice(path); p != "" {
+			return p
+		}
+	}
+	return ""
+}
+
 // findAdapter locates the org.bluez Adapter1 object. If adapterID names a
 // specific controller ("hci0", ...), that one is required; otherwise a
 // powered adapter is preferred (stable path order). Picking an unpowered
@@ -467,9 +588,137 @@ func adapterPoweredIn(ifaces map[string]map[string]dbus.Variant) bool {
 	return ok && powered
 }
 
-// ensurePowered turns the adapter on if it is off. Under a healthy
-// bluetoothd it is already powered; this is a convenience that mirrors
-// go-ble bringing the device up.
+// waitPowered returns when a matching adapter is already Powered, or when
+// BlueZ signals Powered=true (user toggle) / an Adapter1 appears powered
+// (bluetoothd back). ctx cancellation is the 1-minute backoff fallback.
+func waitPowered(ctx context.Context, bus dbusBus, adapterID string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if ready, err := adapterAlreadyPowered(ctx, bus, adapterID); err == nil && ready {
+		return nil
+	}
+
+	sigs, detach := bus.attachSignals()
+	defer detach()
+	propsMatch := []dbus.MatchOption{
+		dbus.WithMatchSender(bluezService),
+		dbus.WithMatchInterface(propsIface),
+		dbus.WithMatchMember("PropertiesChanged"),
+		dbus.WithMatchPathNamespace("/org/bluez"),
+	}
+	ifaceMatch := []dbus.MatchOption{
+		dbus.WithMatchSender(bluezService),
+		dbus.WithMatchInterface(objMgrIface),
+		dbus.WithMatchMember("InterfacesAdded"),
+		dbus.WithMatchObjectPath("/"),
+	}
+	if err := bus.addMatch(propsMatch...); err != nil {
+		return fmt.Errorf("bluez: subscribe to adapter power: %w", err)
+	}
+	defer bus.removeMatch(propsMatch...)
+	if err := bus.addMatch(ifaceMatch...); err != nil {
+		return fmt.Errorf("bluez: subscribe to adapter appear: %w", err)
+	}
+	defer bus.removeMatch(ifaceMatch...)
+
+	if ready, err := adapterAlreadyPowered(ctx, bus, adapterID); err == nil && ready {
+		return nil
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case sig, ok := <-sigs:
+			if !ok {
+				return errors.New("bluez: adapter power signal channel closed")
+			}
+			if adapterPowerOnSignal(sig, adapterID) {
+				return nil
+			}
+		}
+	}
+}
+
+func adapterAlreadyPowered(ctx context.Context, bus dbusBus, adapterID string) (bool, error) {
+	objects, err := managedObjects(ctx, bus)
+	if err != nil {
+		return false, err
+	}
+	for path, ifaces := range objects {
+		if _, ok := ifaces[adapterIface]; !ok {
+			continue
+		}
+		if !adapterObjectPath(path, adapterID) {
+			continue
+		}
+		if adapterPoweredIn(ifaces) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// adapterPowerOnSignal is true for Adapter1 Powered=true, or an Adapter1
+// InterfacesAdded that is already powered. Device1 traffic is ignored.
+func adapterPowerOnSignal(sig *dbus.Signal, adapterID string) bool {
+	if sig == nil {
+		return false
+	}
+	switch sig.Name {
+	case propsIface + ".PropertiesChanged":
+		if len(sig.Body) < 2 || !adapterObjectPath(sig.Path, adapterID) {
+			return false
+		}
+		iface, ok := sig.Body[0].(string)
+		if !ok || iface != adapterIface {
+			return false
+		}
+		changed, ok := sig.Body[1].(map[string]dbus.Variant)
+		if !ok {
+			return false
+		}
+		powered, ok := variantBool(changed["Powered"])
+		return ok && powered
+	case objMgrIface + ".InterfacesAdded":
+		if len(sig.Body) < 2 {
+			return false
+		}
+		path, ok := sig.Body[0].(dbus.ObjectPath)
+		if !ok || !adapterObjectPath(path, adapterID) {
+			return false
+		}
+		ifaces, ok := sig.Body[1].(map[string]map[string]dbus.Variant)
+		if !ok {
+			return false
+		}
+		return adapterPoweredIn(ifaces)
+	}
+	return false
+}
+
+func adapterObjectPath(path dbus.ObjectPath, adapterID string) bool {
+	const prefix = "/org/bluez/"
+	s := string(path)
+	if !strings.HasPrefix(s, prefix) {
+		return false
+	}
+	base := strings.TrimPrefix(s, prefix)
+	if base == "" || strings.Contains(base, "/") {
+		return false
+	}
+	if adapterID != "" && base != adapterID {
+		return false
+	}
+	return true
+}
+
+// ensurePowered checks that the adapter is already on. Sailfish ConnMan owns
+// Adapter1.Powered; a Set from harbour-electric-eel is always AuthFailed and
+// used to wedge the presence loop until the user toggled Bluetooth
+// (2026-09-25/26). When the radio is off, callers WaitPowered for a user
+// (or ConnMan) Powered=true signal instead of retrying Set.
 func ensurePowered(ctx context.Context, bus dbusBus, adapterPath dbus.ObjectPath) error {
 	obj := bus.object(bluezService, adapterPath)
 	v, err := obj.getProp(ctx, adapterIface, "Powered")
@@ -483,19 +732,7 @@ func ensurePowered(ctx context.Context, bus dbusBus, adapterPath dbus.ObjectPath
 	if powered {
 		return nil
 	}
-	if err := obj.setProp(ctx, adapterIface, "Powered", true); err != nil {
-		// Sailfish often denies Adapter1.Powered writes (ConnMan owns
-		// radio power). The D-Bus error body is frequently empty, which
-		// used to log as "power on adapter:" with nothing after the colon.
-		// Re-read: the adapter may already be coming up.
-		if v2, e2 := obj.getProp(ctx, adapterIface, "Powered"); e2 == nil {
-			if nowOn, ok := variantBool(v2); ok && nowOn {
-				return nil
-			}
-		}
-		return fmt.Errorf("bluez: power on adapter: %s", dbusDetail(err))
-	}
-	return nil
+	return fmt.Errorf("bluez: adapter not powered")
 }
 
 // dbusDetail keeps the BlueZ error name when the message body is empty.

@@ -142,6 +142,41 @@ Page {
                 valueText: value + qsTr(" s")
             }
 
+            TextSwitch {
+                width: parent.width
+                text: qsTr("Hotspot when driving")
+                description: qsTr("Turns the Wi-Fi hotspot on when the phone is inside the car. Turns it off a few minutes after you walk away, if it was off before.")
+                checked: teslaClient.driveHotspotEnabled
+                onCheckedChanged: {
+                    if (checked !== teslaClient.driveHotspotEnabled)
+                        teslaClient.driveHotspotEnabled = checked
+                }
+            }
+
+            TextSwitch {
+                id: driveAppSwitch
+                width: parent.width
+                text: qsTr("Launch app when driving")
+                description: qsTr("Starts a chosen app when the phone is inside the car.")
+                checked: teslaClient.driveAppEnabled
+                onCheckedChanged: {
+                    if (checked !== teslaClient.driveAppEnabled)
+                        teslaClient.driveAppEnabled = checked
+                }
+            }
+
+            // App picker only when the feature is on.
+            ValueButton {
+                width: parent.width
+                visible: driveAppSwitch.checked
+                label: qsTr("App")
+                value: teslaClient.driveAppName.length > 0
+                       ? teslaClient.driveAppName
+                       : qsTr("Not selected")
+                onClicked: pageStack.push(Qt.resolvedUrl("AppPickerPage.qml"),
+                                          { teslaClient: teslaClient })
+            }
+
             Button {
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: qsTr("Save")

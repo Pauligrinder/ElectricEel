@@ -328,32 +328,54 @@ impl SessionClient {
         command_timeout_sec: i32,
     ) -> Result<ChildHandle, SessionError> {
         let (listener, sock_path) = self.bind_listener()?;
-        // this is made unsafe by libc::prctl
-        // Wrapped at birth: every later drop path (including `?`
-        // early-outs and panics) reaps the child, not just the explicit
-        // kills below.
-        let child = KillOnDrop(
-            Command::new(&self.bin_path)
-                .arg("-vin")
-                .arg(vin)
-                .arg("-key-file")
-                .arg(key_file)
-                .arg("-ble-backend")
-                .arg(&self.ble_backend)
-                .arg("-connect-timeout")
-                .arg(format!("{connect_timeout_sec}s"))
-                .arg("-command-timeout")
-                .arg(format!("{command_timeout_sec}s"))
-                .arg("-idle-timeout")
-                .arg(format!("{IDLE_TIMEOUT_SEC}s"))
-                .arg("-socket-path")
-                .arg(&sock_path)
-                // Inherited, not discarded: tesla-session's own startup
-                // failures (bad flags, an unexpected panic) should land in
-                // the app's own journal tag.
-                .stderr(Stdio::inherit())
-                .spawn()
-                .map_err(SessionError::Spawn)?,
+        let log_dir = crate::keylog::log_dir();
+        let mut command = Command::new(&self.bin_path);
+        command
+            .arg("-vin")
+            .arg(vin)
+            .arg("-key-file")
+            .arg(key_file)
+            .arg("-ble-backend")
+            .arg(&self.ble_backend)
+            .arg("-connect-timeout")
+            .arg(format!("{connect_timeout_sec}s"))
+            .arg("-command-timeout")
+            .arg(format!("{command_timeout_sec}s"))
+            .arg("-idle-timeout")
+            .arg(format!("{IDLE_TIMEOUT_SEC}s"))
+            .arg("-log-dir")
+            .arg(&log_dir)
+            .arg("-socket-path")
+            .arg(&sock_path)
+            .stderr(Stdio::inherit());
+        // Own process group: Sailfish SIGTERMs the harbour app group when
+        // the cover closes. tesla-session used to be in that group, tore
+        // down a live GATT link, and the MediaTek chip raised a hardware
+        // error (2026-09-20 19:08). SessionClient::kill still targets pid.
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            command.process_group(0);
+        }
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::unix::process::CommandExt;
+            // SAFETY: pre_exec runs in the child after fork, before exec.
+            unsafe {
+                command.pre_exec(|| {
+                    libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM as usize, 0, 0, 0);
+                    Ok(())
+                });
+            }
+        }
+        let child = KillOnDrop(command.spawn().map_err(SessionError::Spawn)?);
+        crate::keylog::log(
+            "core",
+            &format!(
+                "spawn tesla-session pid={} socket backend={}",
+                child.id(),
+                self.ble_backend
+            ),
         );
         self.accept_and_handshake(listener, Some(child), sock_path)
     }

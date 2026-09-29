@@ -124,6 +124,17 @@ func (c *Connection) DeviceConnected(ctx context.Context) (bool, error) {
 	return deviceConnected(ctx, c.bus, c.devPath)
 }
 
+// DeviceRSSI reads Device1.RSSI without starting discovery. Used to notice
+// the phone is inside the cabin after GATT is up (Tesla stops advertising).
+func (c *Connection) DeviceRSSI(ctx context.Context) (int16, bool, error) {
+	v, err := c.bus.object(bluezService, c.devPath).getProp(ctx, deviceIface, "RSSI")
+	if err != nil {
+		return 0, false, err
+	}
+	rssi, ok := variantInt16(v)
+	return rssi, ok, nil
+}
+
 // SetTrusted marks the vehicle as a trusted BlueZ device so reconnects do
 // not require interactive pairing prompts.
 func (c *Connection) SetTrusted(trusted bool) error {

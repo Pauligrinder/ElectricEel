@@ -77,6 +77,63 @@ func TestParseAuthenticationRequestOmittedLevelIsIgnored(t *testing.T) {
 	}
 }
 
+func TestParseAuthenticationRequestReasonsUnpackedAndPacked(t *testing.T) {
+	// requestedLevel=DRIVE plus unpacked reasonsForAuth=EXTERIOR_HANDLE
+	authReq := protowire.AppendTag(nil, 3, protowire.VarintType)
+	authReq = protowire.AppendVarint(authReq, authLevelDrive)
+	authReq = protowire.AppendTag(authReq, 4, protowire.VarintType)
+	authReq = protowire.AppendVarint(authReq, authReasonExteriorHandle)
+	from := protowire.AppendTag(nil, 3, protowire.BytesType)
+	from = protowire.AppendBytes(from, authReq)
+	req, ok := parseAuthenticationRequest(from)
+	if !ok {
+		t.Fatal("expected AuthenticationRequest with unpacked reason")
+	}
+	if req.RequestedLevel != authLevelDrive || len(req.Reasons) != 1 || req.Reasons[0] != authReasonExteriorHandle {
+		t.Fatalf("unpacked = level %d reasons %v", req.RequestedLevel, req.Reasons)
+	}
+
+	packed := protowire.AppendVarint(nil, authReasonExteriorHandle)
+	packed = protowire.AppendVarint(packed, authReasonAutopresentDoor)
+	authPacked := protowire.AppendTag(nil, 3, protowire.VarintType)
+	authPacked = protowire.AppendVarint(authPacked, authLevelDrive)
+	authPacked = protowire.AppendTag(authPacked, 4, protowire.BytesType)
+	authPacked = protowire.AppendBytes(authPacked, packed)
+	fromPacked := protowire.AppendTag(nil, 3, protowire.BytesType)
+	fromPacked = protowire.AppendBytes(fromPacked, authPacked)
+	req, ok = parseAuthenticationRequest(fromPacked)
+	if !ok {
+		t.Fatal("expected AuthenticationRequest with packed reasons")
+	}
+	if len(req.Reasons) != 2 || req.Reasons[0] != authReasonExteriorHandle || req.Reasons[1] != authReasonAutopresentDoor {
+		t.Fatalf("packed reasons = %v", req.Reasons)
+	}
+}
+
+func TestHandlePullFromAuth(t *testing.T) {
+	if !handlePullFromAuth(authenticationRequest{
+		RequestedLevel: authLevelDrive,
+		Reasons:        []int{authReasonExteriorHandle},
+	}, -99, true) {
+		t.Fatal("exterior handle must count even at weak RSSI")
+	}
+	if handlePullFromAuth(authenticationRequest{
+		RequestedLevel: authLevelDrive,
+		Reasons:        []int{authReasonIdentification},
+	}, -65, true) {
+		t.Fatal("IDENTIFICATION must not count as a handle pull")
+	}
+	if !handlePullFromAuth(authenticationRequest{RequestedLevel: authLevelDrive}, -70, true) {
+		t.Fatal("DRIVE with no reasons and strong RSSI is the fallback")
+	}
+	if handlePullFromAuth(authenticationRequest{RequestedLevel: authLevelDrive}, -93, true) {
+		t.Fatal("DRIVE at -93 (bedroom reconnect) must not look like a pull")
+	}
+	if handlePullFromAuth(authenticationRequest{RequestedLevel: authLevelDrive}, 0, false) {
+		t.Fatal("DRIVE with no reasons and no RSSI must not look like a pull")
+	}
+}
+
 func TestParseAuthenticationRequestUnlockLevel(t *testing.T) {
 	// FromVCSECMessage { authenticationRequest { requestedLevel = UNLOCK } }
 	authReq := protowire.AppendTag(nil, 3, protowire.VarintType)

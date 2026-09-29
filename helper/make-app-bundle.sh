@@ -32,6 +32,13 @@ if ! rustup target list --installed | grep -q "^$target_triple$"; then
 fi
 
 echo "Cross-compiling libelectriceelcore.a ($target_triple, glibc)"
+# cargo [profile.release] strip = true runs rust-objcopy. On macOS rustup
+# that binary's @rpath is @loader_path/../lib (rustlib/<host>/lib), but
+# libLLVM.dylib lives in the toolchain lib/, so the strip step SIGABRTs.
+# The Sailfish RPM strips the linked app; skip the broken host strip.
+if [ "$(uname -s)" = Darwin ]; then
+    export CARGO_PROFILE_RELEASE_STRIP=false
+fi
 (cd "$helper_dir" && cargo build --release --target "$target_triple" --lib)
 
 install -m 0644 "$helper_dir/target/$target_triple/release/libelectriceelcore.a" \

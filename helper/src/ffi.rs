@@ -85,6 +85,23 @@ pub extern "C" fn core_version() -> *const c_char {
         .as_ptr()
 }
 
+/// Append a line to the phone-key log. Used by the Qt worker for app-state
+/// transitions (suspend/hidden/active) so a SIGTERM of tesla-session can be
+/// correlated with the UI process going away. NULL tag/message are no-ops.
+///
+/// # Safety
+/// Pointers must be NUL-terminated UTF-8 or NULL.
+#[no_mangle]
+pub unsafe extern "C" fn core_keylog(tag: *const c_char, message: *const c_char) {
+    let Some(tag) = cstr(tag) else {
+        return;
+    };
+    let Some(message) = cstr(message) else {
+        return;
+    };
+    crate::keylog::log(&tag, &message);
+}
+
 /// Create the control core.
 ///
 /// # Arguments
@@ -846,5 +863,14 @@ mod tests {
         let rc = unsafe { core_handle_resume(ptr::null_mut()) };
         assert_eq!(rc, CoreError::BadArg);
         unsafe { core_free(core) };
+    }
+
+    #[test]
+    fn test_core_keylog_null_is_safe() {
+        unsafe {
+            core_keylog(ptr::null(), ptr::null());
+            let tag = CString::new("core").unwrap();
+            core_keylog(tag.as_ptr(), ptr::null());
+        }
     }
 }

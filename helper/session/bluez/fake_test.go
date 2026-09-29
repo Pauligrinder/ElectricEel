@@ -183,6 +183,45 @@ func (f *fakeBluez) discoveryChanged(discovering bool) {
 	})
 }
 
+func (f *fakeBluez) adapterPoweredChanged(id string, powered bool) {
+	if id == "" || id == f.adapterID {
+		f.powered = powered
+		id = f.adapterID
+	} else if f.extraAdapters != nil {
+		if _, ok := f.extraAdapters[id]; ok {
+			f.extraAdapters[id] = powered
+		}
+	}
+	f.emit(&dbus.Signal{
+		Name: propsIface + ".PropertiesChanged",
+		Path: dbus.ObjectPath("/org/bluez/" + id),
+		Body: []interface{}{
+			adapterIface,
+			map[string]dbus.Variant{"Powered": dbus.MakeVariant(powered)},
+			[]string{},
+		},
+	})
+}
+
+func (f *fakeBluez) adapterAdded(id string, powered bool) {
+	if f.extraAdapters == nil {
+		f.extraAdapters = map[string]bool{}
+	}
+	f.extraAdapters[id] = powered
+	f.emit(&dbus.Signal{
+		Name: objMgrIface + ".InterfacesAdded",
+		Path: "/",
+		Body: []interface{}{
+			dbus.ObjectPath("/org/bluez/" + id),
+			map[string]map[string]dbus.Variant{
+				adapterIface: {
+					"Powered": dbus.MakeVariant(powered),
+				},
+			},
+		},
+	})
+}
+
 // notify simulates an org.bluez GattCharacteristic1 PropertiesChanged signal
 // carrying a notification Value.
 func (f *fakeBluez) notify(path dbus.ObjectPath, value []byte) {

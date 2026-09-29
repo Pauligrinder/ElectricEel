@@ -240,11 +240,16 @@ impl Core {
                         // whole reason bluez mode exists). Surface the
                         // session error instead - the user must fix the
                         // session, not silently regress to hci.
+                        crate::keylog::log("core", &format!("session failed for {cmd}: {e}"));
                         return Err(HelperError::SessionUnavailable(format!(
                             "bluez persistent session failed for {cmd}: {e}"
                         )));
                     }
                     Err(e) => {
+                        crate::keylog::log(
+                            "core",
+                            &format!("session unavailable ({e}); falling back to tesla-control for {cmd}"),
+                        );
                         eprintln!(
                             "Core: persistent session unavailable ({e}); falling back to one-shot tesla-control for {cmd}"
                         );
@@ -590,7 +595,8 @@ impl Core {
                 cfg.command_timeout_sec,
                 Duration::from_secs(10),
             );
-            if result.is_err() {
+            if let Err(e) = &result {
+                crate::keylog::log("core", &format!("presence-stop failed: {e}"));
                 session.invalidate();
             }
         }
@@ -810,6 +816,7 @@ impl Core {
 
 impl Drop for Core {
     fn drop(&mut self) {
+        crate::keylog::log("core", "core dropping - stop presence and child");
         self.stop_phone_key();
         if let Some(session) = &self.session {
             session.invalidate();
