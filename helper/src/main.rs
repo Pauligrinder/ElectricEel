@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::path::PathBuf;
 
 use electriceelcore::core::Core;
 use electriceelcore::helper::{Helper, IFACE_NAME};
@@ -40,7 +41,7 @@ fn main() {
     };
 
     // Off by default and not yet verified on real hardware - see
-    // KNOWN_ISSUES.md. tesla-session is bundled in bin_dir alongside
+    // docs/limitations.md. tesla-session is bundled in bin_dir alongside
     // tesla-control/tesla-keygen and setcap'd the same way (needs
     // CAP_NET_ADMIN itself once it's the one holding the BLE session).
     //
@@ -64,6 +65,7 @@ fn main() {
         Some(SessionClient::new(
             Path::new(&bin_dir).join("tesla-session"),
             &ble_backend,
+            PathBuf::from(state_dir.clone()),
         ))
     } else {
         None

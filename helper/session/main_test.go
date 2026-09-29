@@ -12,8 +12,54 @@ import (
 	"testing"
 	"time"
 
+	"electric-eel-session/bluez"
 	"github.com/teslamotors/vehicle-command/pkg/protocol"
 )
+
+func TestManualStatusCannotBlockPresenceOnCachedOrWeakBeacon(t *testing.T) {
+	s := &session{
+		bleBackend:     "bluez",
+		presenceCancel: func() {},
+		presenceCfg:    defaultPresenceConfig(),
+		keyFile:        filepath.Join(t.TempDir(), "missing-key.pem"),
+	}
+	// Dashboard status commands defer to presence before any GATT connect.
+	for _, beacon := range []*bluez.ScanResult{nil, {RSSI: -98, HasRSSI: true}, {RSSI: -50}} {
+		s.lastBeacon = beacon
+		s.lastBeaconAt = time.Now()
+		started := time.Now()
+		response := s.dispatch(request{Cmd: "body-controller-state"})
+		if response.OK || !strings.Contains(response.Stderr, "phone key is still connecting") {
+			t.Fatalf("cached beacon %+v: unexpected response %+v", beacon, response)
+		}
+		if time.Since(started) > time.Second {
+			t.Fatal("distant dashboard request blocked phone-key presence")
+		}
+	}
+	// Pairing bypasses the deferral and must still refuse a weak/stale beacon
+	// instead of burning the connect deadline on a leftover Device1.
+	for _, beacon := range []*bluez.ScanResult{nil, {RSSI: -98, HasRSSI: true}, {RSSI: -50}} {
+		s.lastBeacon = beacon
+		s.lastBeaconAt = time.Now()
+		started := time.Now()
+		response := s.dispatch(request{Cmd: "add-key-request"})
+		if response.OK || !strings.Contains(response.Stderr, "vehicle not nearby") {
+			t.Fatalf("pairing with cached beacon %+v: unexpected response %+v", beacon, response)
+		}
+		if time.Since(started) > time.Second {
+			t.Fatal("distant pairing request blocked phone-key presence")
+		}
+	}
+	strong := &bluez.ScanResult{RSSI: -50, HasRSSI: true}
+	s.lastBeacon = strong
+	s.lastBeaconAt = time.Now()
+	if !s.presenceTargetReadyLocked(strong, time.Now()) {
+		t.Fatal("a recently observed near beacon should allow a manual command")
+	}
+	if s.presenceTargetReadyLocked(strong, time.Now().Add(5*time.Second)) {
+		t.Fatal("a formerly strong beacon must expire")
+	}
+}
 
 // execute() and the commands map are vendored verbatim from upstream (see
 // commands_vendor.go) - these tests exercise the same readiness-check code
@@ -460,6 +506,21 @@ func TestPresenceStepLiveGATTHoldsNearWithoutAdvertisement(t *testing.T) {
 // TestPresenceLiveNearRejectsWeakAndCachedBeacons is the regression for
 // connecting at RSSI -97..-100 (and to leftover Device1 cache) after a GATT
 // drop: those attempts hang bluetoothd with deadline exceeded / abort-by-local.
+func TestInsideCarRSSI(t *testing.T) {
+	if !insideCar(-48, true) {
+		t.Fatal("cabin-strength RSSI must count as inside")
+	}
+	if !insideCar(-65, true) {
+		t.Fatal("inside threshold itself must count")
+	}
+	if insideCar(-75, true) {
+		t.Fatal("walk-up -75 must not look like the phone is in the cabin")
+	}
+	if insideCar(-62, false) {
+		t.Fatal("missing RSSI must not count as inside")
+	}
+}
+
 func TestPresenceLiveNearRejectsWeakAndCachedBeacons(t *testing.T) {
 	if !presenceLiveNear(true, -90, -90) {
 		t.Fatal("RSSI at the near threshold must be a connect signal")
@@ -470,11 +531,186 @@ func TestPresenceLiveNearRejectsWeakAndCachedBeacons(t *testing.T) {
 	if presenceLiveNear(true, -97, -90) {
 		t.Fatal("weak live RSSI must not start GATT")
 	}
+
 	if presenceLiveNear(true, teslaMinConnectRSSI, -100) {
 		t.Fatal("Tesla Android skips RSSI <= -95 even if nearRSSI is weaker")
 	}
+
 	if presenceLiveNear(false, 0, -90) {
 		t.Fatal("cached Device1 without RSSI must not start GATT")
+	}
+	if presenceLiveNear(true, -89, -85) {
+		t.Fatal("RSSI below the presence floor must not start GATT")
+	}
+}
+
+func TestPresenceConnectOKDropHold(t *testing.T) {
+	const near int16 = -90
+	if !presenceConnectOK(true, -89, near, false, false) {
+		t.Fatal("first attach at -89 must connect when dropHold is off")
+	}
+	if presenceConnectOK(true, -89, near, true, true) {
+		t.Fatal("post-drop -89 must not connect (grocery-trip hang)")
+	}
+	if !presenceConnectOK(true, -80, near, true, true) {
+		t.Fatal("post-drop -80 (at the car) must reconnect")
+	}
+	if !presenceConnectOK(true, -74, near, true, true) {
+		t.Fatal("post-drop -74 must reconnect")
+	}
+	if presenceConnectOK(false, -74, near, true, true) {
+		t.Fatal("cached Device1 must not connect during drop hold")
+	}
+	if dropHoldFloor(near) != -80 {
+		t.Fatalf("dropHoldFloor(%d) = %d, want -80", near, dropHoldFloor(near))
+	}
+	if afterSessionFloor(near) != -93 {
+		t.Fatalf("afterSessionFloor(%d) = %d, want -93", near, afterSessionFloor(near))
+	}
+	if !presenceConnectOK(true, -91, near, false, true) {
+		t.Fatal("after a session, -91 at a stop must reconnect")
+	}
+	if presenceConnectOK(true, -91, near, false, false) {
+		t.Fatal("first attach must still require nearRSSI")
+	}
+}
+
+func TestShouldRecycleDiscovery(t *testing.T) {
+	now := time.Now()
+	if shouldRecycleDiscovery(false, 2*time.Minute, time.Time{}, now, 0) {
+		t.Fatal("car away (no leftover) must not StopDiscovery")
+	}
+	if shouldRecycleDiscovery(true, 19*time.Second, time.Time{}, now, 0) {
+		t.Fatal("must not recycle before 20s of silence")
+	}
+	if !shouldRecycleDiscovery(true, 20*time.Second, time.Time{}, now, 0) {
+		t.Fatal("first recycle at 20s for a frozen leftover")
+	}
+	if shouldRecycleDiscovery(true, 40*time.Second, now.Add(-20*time.Second), now, 1) {
+		t.Fatal("second recycle must wait 40s, not 20s")
+	}
+	if !shouldRecycleDiscovery(true, 60*time.Second, now.Add(-40*time.Second), now, 1) {
+		t.Fatal("second recycle after 40s")
+	}
+	if discoveryRecycleWait(0) != 20*time.Second || discoveryRecycleWait(1) != 40*time.Second {
+		t.Fatalf("recycle wait 0=%s 1=%s", discoveryRecycleWait(0), discoveryRecycleWait(1))
+	}
+	if discoveryRecycleWait(8) != discoveryRecycleMax {
+		t.Fatalf("recycle wait cap %s, want %s", discoveryRecycleWait(8), discoveryRecycleMax)
+	}
+}
+
+func TestShouldForgetCached(t *testing.T) {
+	if shouldForgetCached(false, false, time.Minute) {
+		t.Fatal("no leftover Device1 must not be forgotten")
+	}
+	if shouldForgetCached(true, false, 20*time.Second) {
+		t.Fatal("must not RemoveDevice at the first recycle (sleeping-car RSSI gap)")
+	}
+	if !shouldForgetCached(true, false, 40*time.Second) {
+		t.Fatal("frozen leftover after 40s silent must be forgotten once")
+	}
+	if shouldForgetCached(true, true, time.Minute) {
+		t.Fatal("must not ForgetCached again in the same silent stretch")
+	}
+}
+
+func TestShouldIdlePoll(t *testing.T) {
+	if shouldIdlePoll(false, 5*time.Minute) {
+		t.Fatal("frozen leftover must keep recycle/forget, not idle-poll")
+	}
+	if shouldIdlePoll(true, 59*time.Second) {
+		t.Fatal("first minute away keeps continuous discovery for a fast return")
+	}
+	if !shouldIdlePoll(true, 60*time.Second) {
+		t.Fatal("empty adapter past idlePollAfter must pause continuous discovery")
+	}
+	if idlePollWait(0) != 30*time.Second || idlePollWait(1) != 60*time.Second {
+		t.Fatalf("idle poll wait 0=%s 1=%s", idlePollWait(0), idlePollWait(1))
+	}
+	if idlePollWait(8) != idlePollMax {
+		t.Fatalf("idle poll wait cap %s, want %s", idlePollWait(8), idlePollMax)
+	}
+}
+
+func TestAfterShortSession(t *testing.T) {
+	if afterShortSession(0) {
+		t.Fatal("no prior session is not a bounce")
+	}
+	if !afterShortSession(16 * time.Second) {
+		t.Fatal("16s GATT bounce (21:17–21:18) must drop afterSession slack")
+	}
+	if afterShortSession(time.Minute) {
+		t.Fatal("a normal session must keep -93 reconnect slack")
+	}
+}
+
+func TestAdapterPowerDenied(t *testing.T) {
+	if !adapterPowerDenied(errors.New("bluez: adapter not powered")) {
+		t.Fatal("adapter not powered must wait for WaitPowered")
+	}
+	if !adapterPowerDenied(errors.New("bluez: power on adapter: org.freedesktop.DBus.Error.AuthFailed")) {
+		t.Fatal("Sailfish ConnMan AuthFailed must be treated as power-denied")
+	}
+	if !adapterPowerDenied(errors.New("org.bluez.Error.NotPowered: RFKILL")) {
+		t.Fatal("NotPowered/RFKILL must be treated as power-denied")
+	}
+	if adapterPowerDenied(errors.New("GATT failed: context deadline exceeded")) {
+		t.Fatal("a connect timeout is not a denied Powered write")
+	}
+	if adapterPowerDenied(nil) {
+		t.Fatal("nil error is not power-denied")
+	}
+}
+
+func TestNextWatchRetryDoublesOnPowerDenied(t *testing.T) {
+	minWait := 2 * time.Second
+	wait, next := nextWatchRetry(errors.New("bluez: power on adapter: AuthFailed"), minWait, minWait)
+	if wait != minWait || next != 4*time.Second {
+		t.Fatalf("first denied retry wait=%v next=%v, want 2s / 4s", wait, next)
+	}
+	wait, next = nextWatchRetry(errors.New("bluez: power on adapter: AuthFailed"), next, minWait)
+	if wait != 4*time.Second || next != 8*time.Second {
+		t.Fatalf("second denied retry wait=%v next=%v, want 4s / 8s", wait, next)
+	}
+	_, next = nextWatchRetry(errors.New("bluez: power on adapter: AuthFailed"), time.Minute, minWait)
+	if next != time.Minute {
+		t.Fatalf("backoff cap next=%v, want 1m", next)
+	}
+	wait, next = nextWatchRetry(errors.New("context deadline exceeded"), 8*time.Second, minWait)
+	if wait != minWait || next != minWait {
+		t.Fatalf("transient error wait=%v next=%v, want reset to 2s", wait, next)
+	}
+}
+
+func TestSessionIdentityHasParent(t *testing.T) {
+	pid, ppid, pgid, orphan := sessionIdentity()
+	if pid <= 0 {
+		t.Fatalf("pid=%d", pid)
+	}
+	if ppid <= 0 {
+		t.Fatalf("ppid=%d", ppid)
+	}
+	if pgid <= 0 {
+		t.Fatalf("pgid=%d", pgid)
+	}
+	if orphan {
+		t.Fatalf("test process should not be orphaned, ppid=%d", ppid)
+	}
+}
+
+func TestScanQuietRemaining(t *testing.T) {
+	now := time.Now()
+	if got := scanQuietRemaining(time.Time{}, now); got != 0 {
+		t.Fatalf("zero until: %v", got)
+	}
+	if got := scanQuietRemaining(now.Add(-time.Second), now); got != 0 {
+		t.Fatalf("already elapsed: %v", got)
+	}
+	until := now.Add(2 * time.Second)
+	got := scanQuietRemaining(until, now)
+	if got < time.Second || got > 2*time.Second {
+		t.Fatalf("remaining %v, want ~2s", got)
 	}
 }
 
@@ -569,10 +805,10 @@ func TestParsePresenceArgsDefaults(t *testing.T) {
 		t.Errorf("parsePresenceArgs(nil) = %+v, want defaults %+v", cfg, want)
 	}
 	if cfg.nearRSSI != -90 || cfg.nearConfirm != 1 {
-		t.Errorf("defaults nearRSSI=%d nearConfirm=%d, want -90 / 1 (connect on first live beacon)", cfg.nearRSSI, cfg.nearConfirm)
+		t.Errorf("defaults nearRSSI=%d nearConfirm=%d, want -90 / 1 (0.2.16 floor, connect on first advert)", cfg.nearRSSI, cfg.nearConfirm)
 	}
-	if cfg.farTimeout != 15*time.Second {
-		t.Errorf("default farTimeout = %v, want 15s", cfg.farTimeout)
+	if cfg.farTimeout != 60*time.Second {
+		t.Errorf("default farTimeout = %v, want 60s", cfg.farTimeout)
 	}
 	if cfg.scanInterval != 2*time.Second {
 		t.Errorf("default scanInterval = %v, want 2s", cfg.scanInterval)
@@ -645,8 +881,10 @@ func TestConnectBackoffDoublesAfterExpiry(t *testing.T) {
 	s := &session{}
 	s.scheduleConnectBackoffLocked()
 	first := s.connectBackoff
+
 	if first != reconnectQuietAfterError {
 		t.Fatalf("first backoff = %v, want %v (Tesla DELAY_AFTER_ERROR)", first, reconnectQuietAfterError)
+
 	}
 	s.connectBackoffUntil = time.Now().Add(-time.Millisecond)
 	s.scheduleConnectBackoffLocked()

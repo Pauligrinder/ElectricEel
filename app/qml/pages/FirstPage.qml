@@ -12,6 +12,7 @@ Page {
     property string model: ""
     property bool hasKey: false
 
+
     readonly property bool isPaired: page.hasKey && page.vin.length > 0
     // Same connectionKind as CoverPage — single source in PhoneKeyStatus.js.
     readonly property string phoneKeyKind: {
@@ -24,6 +25,7 @@ Page {
             page.refreshBodyStatus()
     }
 
+
     // Live dashboard state. refreshStatus() starts with body-controller-state
     // (VCSEC: lock/doors while the car sleeps), then chains the three
     // Infotainment `state` categories. Sequential because each is its own
@@ -31,10 +33,12 @@ Page {
     // can show a single busy indicator and refuse to stack requests.
     property var vehicleStatus: VState.emptyStatus()
     property string statusStage: ""
+
     // Pull-down Refresh Status asks for climate/charge/closures too.
     // Auto-refresh after the phone key connects does not: those legs
     // talk Infotainment and can drop the VCSEC link.
     property bool statusWantInfotainment: false
+
     // Set from stdErr when a status leg fails. Climate/charge/closures go
     // through Infotainment and fail on a sleeping vehicle; lock/unlock and
     // body-controller-state use VCSEC and still work then (see
@@ -188,6 +192,7 @@ Page {
             if (requestId === "status:body") {
                 if (ok)
                     page.vehicleStatus = VState.mergeBodyControllerState(page.vehicleStatus, stdOut)
+
                 else {
                     page.statusError = stdErr.length ? stdErr : ("exit code " + exitCode)
                     page.statusStage = ""
@@ -197,17 +202,20 @@ Page {
                     page.statusStage = ""
                     return
                 }
+
                 page.statusStage = "closures"
                 teslaClient.runCommand("status:closures", "state", ["closures"])
             } else if (requestId === "status:closures") {
                 if (ok)
                     page.vehicleStatus = VState.mergeClosuresState(page.vehicleStatus, stdOut)
+
                 else {
                     if (page.statusError.length === 0)
                         page.statusError = stdErr.length ? stdErr : ("exit code " + exitCode)
                     page.statusStage = ""
                     return
                 }
+
                 page.statusStage = "climate"
                 teslaClient.runCommand("status:climate", "state", ["climate"])
             } else if (requestId === "status:climate") {
@@ -285,7 +293,7 @@ Page {
             // Warns when the helper half is missing, too old to report its
             // own version, or a different version than this app. All three
             // are the states that previously announced themselves as a
-            // silent "No VIN configured" (see KNOWN_ISSUES.md); GetVersion
+            // silent "No VIN configured" (see docs/limitations.md); GetVersion
             // + APP_VERSION make them visible up front instead.
             Rectangle {
                 id: versionBanner
@@ -310,10 +318,10 @@ Page {
                         color: Theme.highlightColor
                         font.pixelSize: Theme.fontSizeSmall
                         text: !teslaClient.helperAvailable
-                            ? "The control core failed to start. Reinstall the app, then pull down to refresh."
+                            ? qsTr("The control core failed to start. Reinstall the app, then pull down to refresh.")
                             : teslaClient.helperVersion.length === 0
-                                ? "The control core is too old to report its version. Reinstall the app (" + teslaClient.appVersion + "), then pull down to refresh."
-                                : "Version mismatch: app " + teslaClient.appVersion + ", core " + teslaClient.helperVersion + ". Reinstall the app, then pull down to refresh."
+                                ? qsTr("The control core is too old to report its version. Reinstall the app (%1), then pull down to refresh.").arg(teslaClient.appVersion)
+                                : qsTr("Version mismatch: app %1, core %2. Reinstall the app, then pull down to refresh.").arg(teslaClient.appVersion).arg(teslaClient.helperVersion)
                     }
                 }
             }
@@ -331,11 +339,11 @@ Page {
                     anchors.rightMargin: Theme.horizontalPageMargin
 
                     Label {
-                        text: page.vin.length > 0 ? page.vin : "No VIN configured"
+                        text: page.vin.length > 0 ? page.vin : qsTr("No VIN configured")
                         color: page.vin.length > 0 ? Theme.primaryColor : Theme.secondaryColor
                     }
                     Label {
-                        text: page.hasKey ? "Key ready" : "No key - tap for Settings / Pairing"
+                        text: page.hasKey ? qsTr("Key ready") : qsTr("No key - tap for Settings / Pairing")
                         font.pixelSize: Theme.fontSizeExtraSmall
                         color: page.hasKey ? Theme.secondaryHighlightColor : Theme.secondaryColor
                     }
@@ -403,7 +411,7 @@ Page {
                             color: Theme.primaryColor
                             text: page.vehicleStatus.batteryLevel === null ? "--" :
                                   (page.vehicleStatus.batteryLevel + "%" +
-                                   (page.vehicleStatus.chargingState === "Charging" ? " • charging" : ""))
+                                   (page.vehicleStatus.chargingState === "Charging" ? qsTr(" • charging") : ""))
                         }
 
                         Label {
@@ -412,7 +420,7 @@ Page {
                             visible: page.vehicleStatus.insideTemp !== null
                             font.pixelSize: Theme.fontSizeSmall
                             color: Theme.secondaryColor
-                            text: "• " + page.vehicleStatus.insideTemp.toFixed(0) + "°C"
+                            text: qsTr("• %1°C").arg(page.vehicleStatus.insideTemp.toFixed(0))
                         }
                     }
 
@@ -449,6 +457,7 @@ Page {
                                 var _ = page.statusAgeTick
                                 var age = VState.minutesAgo(page.vehicleStatus.updatedAt)
                                 if (page.statusStage.length > 0)
+
                                     return "Updating..."
                                 if (age >= 0) {
                                     if (age === 0)
@@ -464,6 +473,7 @@ Page {
                                 if (page.statusError.length > 0)
                                     return "Status unavailable (" + page.statusError + "). Vehicle may be asleep - try Wake Vehicle (Attention), then Refresh Status."
                                 return "Pull down to refresh status"
+
                             }
                         }
                     }
@@ -556,7 +566,7 @@ Page {
                 }
             }
 
-            SectionHeader { text: "Categories" }
+            SectionHeader { text: qsTr("Categories") }
         }
 
         delegate: BackgroundItem {
@@ -605,19 +615,23 @@ Page {
 
         PullDownMenu {
             MenuItem {
-                text: "Pair Vehicle"
+                text: qsTr("Send Destination")
+                onClicked: pageStack.push(Qt.resolvedUrl("NavigationPage.qml"), { teslaClient: teslaClient })
+            }
+            MenuItem {
+                text: qsTr("Pair Vehicle")
                 onClicked: pageStack.push(Qt.resolvedUrl("PairingPage.qml"), { teslaClient: teslaClient })
             }
             MenuItem {
-                text: "Settings"
+                text: qsTr("Settings")
                 onClicked: pageStack.push(Qt.resolvedUrl("SettingsPage.qml"), { teslaClient: teslaClient })
             }
             MenuItem {
-                text: "Refresh"
+                text: qsTr("Refresh")
                 onClicked: page.refresh()
             }
             MenuItem {
-                text: "Refresh Status"
+                text: qsTr("Refresh Status")
                 visible: page.hasKey && page.vin.length > 0
                 onClicked: page.refreshStatus()
             }

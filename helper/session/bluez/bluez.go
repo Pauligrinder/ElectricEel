@@ -220,9 +220,17 @@ func (c *Conn) Watch(ctx context.Context, adapterID, vin string) (*Watcher, erro
 	return newWatcher(ctx, c.bus, adapterID, vin)
 }
 
+// WaitPowered blocks until a BlueZ adapter we would use is Powered, or ctx
+// ends. Presence uses this so a Bluetooth toggle wakes the 1-minute Watch
+// backoff instead of waiting it out. tesla-session cannot Set Powered
+// itself (Sailfish ConnMan / sailjail AuthFailed).
+func (c *Conn) WaitPowered(ctx context.Context, adapterID string) error {
+	return waitPowered(ctx, c.bus, adapterID)
+}
+
 // Connect connects to the vehicle. A live target (HasRSSI) is Connected
-// directly, matching Tesla Android's reconnect-to-known-MAC. A stale
-// Device1 without RSSI is forgotten first so bluetoothd does not hang.
+// directly, matching Tesla Android's reconnect-to-known-MAC. A Device1
+// without RSSI is not Connected; scan waits for a live advertisement.
 func (c *Conn) Connect(ctx context.Context, adapterID, vin string, target *ScanResult) (connector.Connector, error) {
 	return connect(ctx, c.bus, adapterID, vin, target)
 }

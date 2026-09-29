@@ -3,6 +3,8 @@ package bluez
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -173,20 +175,18 @@ func TestConnectDoesNotConnectLeftoverDeviceWithoutRSSI(t *testing.T) {
 	vin := "5YJ3E1EA0PF000000"
 	bus.dev = &fakeDevice{path: bus.devPath(), name: vehicleBeaconName(vin), omitRSSI: true}
 	bus.deviceVisible = true
-	bus.removeDeviceErr = errors.New("org.freedesktop.DBus.Error.AuthFailed")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
 	defer cancel()
-	start := time.Now()
 	_, err := connect(ctx, bus, "hci0", vin, &ScanResult{Path: bus.dev.path})
 	if err == nil {
-		t.Fatal("expected leftover Device1 with no RSSI after failed RemoveDevice to abort connect")
-	}
-	if elapsed := time.Since(start); elapsed > 200*time.Millisecond {
-		t.Fatalf("leftover Device1 returned after %v; must fail immediately, not burn the connect deadline", elapsed)
+		t.Fatal("expected leftover Device1 with no RSSI to refuse Connect")
 	}
 	if n := countCalls(bus.calls, deviceIface+".Connect"); n != 0 {
 		t.Fatalf("Device.Connect called %d times on a leftover Device1, want 0", n)
+	}
+	if bus.removeDeviceN != 0 {
+		t.Fatal("must not RemoveDevice a leftover Device1 while waiting for a live advert")
 	}
 }
 
@@ -212,29 +212,27 @@ func TestConnectProceedsWhenLeftoverHasLiveRSSI(t *testing.T) {
 	}
 }
 
-func TestConnectForgetsStaleDeviceBeforeRescan(t *testing.T) {
+func TestConnectScansWhenTargetHasNoRSSI(t *testing.T) {
 	bus := newFakeBluez()
 	vin := "5YJ3E1EA0PF000000"
-	bus.dev = &fakeDevice{path: bus.devPath(), name: vehicleBeaconName(vin), rssi: -55, omitRSSI: true}
+	bus.dev = &fakeDevice{path: bus.devPath(), name: vehicleBeaconName(vin), rssi: -55}
 	bus.deviceVisible = true
 	bus.servicesResolved = true
 	bus.gattReady = true
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	// No live target: a cached Device1 without RSSI must be dropped so the
-	// subsequent scan can materialize a fresh advertisement.
 	if _, err := connect(ctx, bus, "hci0", vin, nil); err != nil {
 		t.Fatalf("connect: %v", err)
 	}
-	if bus.removeDeviceN == 0 {
-		t.Fatal("stale Device1 with no RSSI must be RemoveDevice'd before rescanning")
+	if bus.removeDeviceN != 0 {
+		t.Fatal("scan+Connect must not RemoveDevice")
 	}
 	if !hasCall(bus.calls, adapterIface+".StartDiscovery") {
-		t.Fatal("connect must rescan after forgetting the stale Device1")
+		t.Fatal("nil target must scan for a live advertisement")
 	}
 	if !bus.connected {
-		t.Fatal("expected a live connection after forget+rescan")
+		t.Fatal("expected a live connection after scan")
 	}
 }
 
@@ -310,5 +308,44 @@ func TestAdapterPathForDevice(t *testing.T) {
 	}
 	if got := adapterPathForDevice("/org/bluez/hci0"); got != "" {
 		t.Fatalf("adapterPathForDevice(adapter) = %q, want empty", got)
+	}
+}
+
+func TestServicesTimeoutReportsDeviceStateBeforeDisconnect(t *testing.T) {
+	bus := newFakeBluez()
+	vin := "5YJ3E1EA0PF000000"
+	bus.dev = &fakeDevice{path: bus.devPath(), name: vehicleBeaconName(vin)}
+	bus.deviceVisible = true
+	bus.holdServices = true
+	// Device1.Connect succeeds but BlueZ never completes service discovery.
+	var lines []string
+	SetDiagnosticLogger(func(format string, args ...interface{}) {
+		lines = append(lines, fmt.Sprintf(format, args...))
+	})
+	t.Cleanup(func() { SetDiagnosticLogger(nil) })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	defer cancel()
+	_, _, err := tryConnect(ctx, bus, "hci0", vin, &ScanResult{Path: bus.dev.path, HasRSSI: true, RSSI: -55})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("tryConnect error = %v, want deadline exceeded", err)
+	}
+	if bus.connected {
+		t.Fatal("timed-out connection was not disconnected")
+	}
+	joined := strings.Join(lines, "\n")
+	for _, want := range []string{
+		"connect services wait timeout",
+		"connect services wait failed Connected=true",
+		"connect services wait failed ServicesResolved=false",
+		"connect cleanup Disconnect duration=",
+		"error=",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("missing diagnostic %q in:\n%s", want, joined)
+		}
+	}
+	if strings.Contains(joined, string(bus.dev.path)) {
+		t.Error("diagnostics exposed the Bluetooth device address")
 	}
 }

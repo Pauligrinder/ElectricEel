@@ -1,6 +1,10 @@
 #include "teslaclient.h"
+#include "drivehotspot.h"
+#include "driveapplauncher.h"
 
 #include <QDebug>
+#include <QDateTime>
+#include <QFile>
 #include <QGuiApplication>
 #include <QStandardPaths>
 #include <QThread>
@@ -16,14 +20,63 @@ extern "C" {
 
 namespace {
 
+void keylog(const char *tag, const QString &message)
+{
+    const QByteArray utf8 = message.toUtf8();
+    core_keylog(tag, utf8.constData());
+}
+
+const char *appStateName(Qt::ApplicationState state)
+{
+    switch (state) {
+    case Qt::ApplicationSuspended:
+        return "Suspended";
+    case Qt::ApplicationHidden:
+        return "Hidden";
+    case Qt::ApplicationInactive:
+        return "Inactive";
+    case Qt::ApplicationActive:
+        return "Active";
+    default:
+        return "Unknown";
+    }
+}
+
 // Binaries the core spawns live under the app's data dir in the RPM. The Go
 // tesla-session is bundled there by the spec; tesla-control/tesla-keygen were
 // the pre-in-process one-shot fallbacks and no longer exist in this design.
 const char *kBinDir = "/usr/share/harbour-electric-eel/bin";
 const char *kSessionBin = "/usr/share/harbour-electric-eel/bin/tesla-session";
 // BlueZ is the cooperative transport the app uses by default (see
-// BLUEZ_BACKEND_PLAN.md); "hci" raw-HCI is an escape hatch, not what ships.
+// docs/architecture.md); "hci" raw-HCI is an escape hatch, not what ships.
 const char *kBleBackend = "bluez";
+
+// Record Qt's app lifecycle in the same file as the Go phone-key diagnostics.
+// A display turning off need not emit ApplicationSuspended; the absence of a
+// transition is useful evidence too when compared with the presence loop.
+void logApplicationState(Qt::ApplicationState state)
+{
+    const QString logDir = QString::fromUtf8(qgetenv("ELECTRIC_EEL_LOG_DIR"));
+    if (logDir.isEmpty())
+        return;
+    const QString path = logDir + QStringLiteral("/phone-key-")
+            + QDate::currentDate().toString(QStringLiteral("yyyy-MM-dd")) + QStringLiteral(".log");
+    const bool newFile = !QFile::exists(path);
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Append))
+        return;
+    if (newFile)
+        file.write("# ElectricEel phone-key log\n# tags: session presence connect auth link bluez core ui\n");
+    const char *name = "unknown";
+    switch (state) {
+    case Qt::ApplicationActive: name = "active"; break;
+    case Qt::ApplicationInactive: name = "inactive"; break;
+    case Qt::ApplicationHidden: name = "hidden"; break;
+    case Qt::ApplicationSuspended: name = "suspended"; break;
+    }
+    file.write(QDateTime::currentDateTime().toString(QStringLiteral("HH:mm:ss.zzz")).toUtf8()
+               + "  ui          applicationState=" + name + "\n");
+}
 
 // Converts a Rust-owned C string from an output slot into a QString and frees
 // it. A NULL slot (never written by the ABI) yields an empty QString.
@@ -298,6 +351,51 @@ void CoreWorker::refreshConfig()
                       connectTimeoutSec, commandTimeoutSec, hasKey, takeCString(publicKeyPem));
 }
 
+void CoreWorker::previewDestination(const QString &requestId, const QString &text)
+{
+    if (!m_core) {
+        emit destinationPreviewed(requestId, false, QString(), QString(), QString(),
+                                  QStringLiteral("control core not initialized"));
+        return;
+    }
+    const QByteArray textBa = text.toUtf8();
+    bool ok = false;
+    char *kind = nullptr;
+    char *value1 = nullptr;
+    char *value2 = nullptr;
+    char *errorMessage = nullptr;
+    const CoreError rc = core_preview_destination(m_core, textBa.constData(), &ok,
+                                                  &kind, &value1, &value2, &errorMessage);
+    if (rc != CoreError::Ok) {
+        emit destinationPreviewed(requestId, false, QString(), QString(), QString(),
+                                  QStringLiteral("core_preview_destination failed (ABI error %1)").arg(rc));
+        return;
+    }
+    emit destinationPreviewed(requestId, ok, takeCString(kind), takeCString(value1),
+                              takeCString(value2), takeCString(errorMessage));
+}
+
+void CoreWorker::shareDestination(const QString &requestId, const QString &text)
+{
+    if (!m_core) {
+        emit shareFinished(requestId, false, QString(),
+                           QStringLiteral("control core not initialized"));
+        return;
+    }
+    const QByteArray textBa = text.toUtf8();
+    bool ok = false;
+    char *out = nullptr;
+    char *errorMessage = nullptr;
+    const CoreError rc = core_share_destination(m_core, textBa.constData(),
+                                                &ok, &out, &errorMessage);
+    if (rc != CoreError::Ok) {
+        emit shareFinished(requestId, false, QString(),
+                           QStringLiteral("core_share_destination failed (ABI error %1)").arg(rc));
+        return;
+    }
+    emit shareFinished(requestId, ok, takeCString(out), takeCString(errorMessage));
+}
+
 TeslaClient::TeslaClient(QObject *parent)
     : QObject(parent)
     , m_worker(nullptr)
@@ -314,6 +412,7 @@ TeslaClient::TeslaClient(QObject *parent)
     QDir().mkpath(logDir);
     qputenv("ELECTRIC_EEL_LOG_DIR", logDir.toUtf8());
     qDebug() << "TeslaClient: phone-key logs ->" << logDir;
+    logApplicationState(QGuiApplication::applicationState());
 
     // The worker lives on its own thread so the blocking C ABI calls
     // (core_run/core_pair: up to connect+command+10s, and Pair adds a 95s
@@ -333,6 +432,8 @@ TeslaClient::TeslaClient(QObject *parent)
     connect(m_worker, &CoreWorker::configLoaded, this, &TeslaClient::configLoaded);
     connect(m_worker, &CoreWorker::phoneKeyStarted, this, &TeslaClient::onPhoneKeyStarted);
     connect(m_worker, &CoreWorker::phoneKeyEvent, this, &TeslaClient::onPhoneKeyEvent);
+    connect(m_worker, &CoreWorker::destinationPreviewed, this, &TeslaClient::destinationPreviewed);
+    connect(m_worker, &CoreWorker::shareFinished, this, &TeslaClient::shareFinished);
 
     // Device suspend (screen off / freezer) leaves the Go child's
     // org.bluez SystemBus socket stale. The next BLE command would then
@@ -358,10 +459,21 @@ TeslaClient::TeslaClient(QObject *parent)
                               Q_ARG(QString, QString::fromLatin1(kSessionBin)));
 
     m_helperVersion = QString::fromUtf8(core_version());
+
+    m_driveHotspot = new DriveHotspot(this);
+    connect(m_driveHotspot, &DriveHotspot::enabledChanged,
+            this, &TeslaClient::driveHotspotEnabledChanged);
+
+    m_driveAppLauncher = new DriveAppLauncher(this);
+    connect(m_driveAppLauncher, &DriveAppLauncher::enabledChanged,
+            this, &TeslaClient::driveAppEnabledChanged);
+    connect(m_driveAppLauncher, &DriveAppLauncher::desktopFileChanged,
+            this, &TeslaClient::driveAppDesktopFileChanged);
 }
 
 TeslaClient::~TeslaClient()
 {
+    keylog("core", QStringLiteral("ui shutting down worker"));
     // Stop the worker thread before the core handle goes away. wait() returns
     // once no queued slot is running; the worker is then idle and safe to
     // delete from this thread (no deleteLater, which would need its own loop).
@@ -435,7 +547,8 @@ void TeslaClient::onPhoneKeyEvent(const QString &kind, const QString &vin,
              || kind == QStringLiteral("presence_restarted")
              || kind == QStringLiteral("presence_disconnected"))
         status = QStringLiteral("Phone key scanning");
-    else if (kind == QStringLiteral("presence_auth_ok"))
+    else if (kind == QStringLiteral("presence_auth_ok")
+             || kind == QStringLiteral("presence_handle_pull"))
         status = QStringLiteral("Phone key authorized");
     else if (kind == QStringLiteral("presence_stopped"))
         status = QStringLiteral("Phone key stopped");
@@ -444,21 +557,68 @@ void TeslaClient::onPhoneKeyEvent(const QString &kind, const QString &vin,
         status = errorMessage.isEmpty()
                  ? QStringLiteral("Phone key error")
                  : QStringLiteral("Phone key error: %1").arg(errorMessage);
-    else
-        return;
-    if (m_phoneKeyStatus == status)
+    if (m_driveHotspot)
+        m_driveHotspot->onPhoneKeyEvent(kind);
+    if (m_driveAppLauncher)
+        m_driveAppLauncher->onPhoneKeyEvent(kind);
+    if (status.isEmpty() || m_phoneKeyStatus == status)
         return;
     m_phoneKeyStatus = status;
     emit phoneKeyStatusChanged();
 }
 
+bool TeslaClient::driveHotspotEnabled() const
+{
+    return m_driveHotspot && m_driveHotspot->enabled();
+}
+
+void TeslaClient::setDriveHotspotEnabled(bool enabled)
+{
+    if (m_driveHotspot)
+        m_driveHotspot->setEnabled(enabled);
+}
+
+bool TeslaClient::driveAppEnabled() const
+{
+    return m_driveAppLauncher && m_driveAppLauncher->enabled();
+}
+
+void TeslaClient::setDriveAppEnabled(bool enabled)
+{
+    if (m_driveAppLauncher)
+        m_driveAppLauncher->setEnabled(enabled);
+}
+
+QString TeslaClient::driveAppDesktopFile() const
+{
+    return m_driveAppLauncher ? m_driveAppLauncher->desktopFile() : QString();
+}
+
+void TeslaClient::setDriveAppDesktopFile(const QString &path)
+{
+    if (m_driveAppLauncher)
+        m_driveAppLauncher->setDesktopFile(path);
+}
+
+QString TeslaClient::driveAppName() const
+{
+    return m_driveAppLauncher ? m_driveAppLauncher->appName() : QString();
+}
+
+QVariantList TeslaClient::installedApps() const
+{
+    return m_driveAppLauncher ? m_driveAppLauncher->installedApps() : QVariantList();
+}
+
 void TeslaClient::onApplicationStateChanged(Qt::ApplicationState state)
 {
+    logApplicationState(state);
     // Only a prior Suspended that later becomes Active is a real device
     // wake (freezer). Hidden/Inactive are the normal cover/switcher
     // background where phone-key must stay alive - those must NOT recycle
     // the session. Use a latched flag so Suspended->Hidden->Active still
     // triggers after a wake that passes through Hidden.
+    keylog("core", QStringLiteral("app state %1").arg(QLatin1String(appStateName(state))));
     if (state == Qt::ApplicationSuspended) {
         m_suspended = true;
         qDebug() << "TeslaClient: system suspended, will recycle BLE session on resume";
@@ -492,6 +652,20 @@ void TeslaClient::generateKey(bool force)
 {
     QMetaObject::invokeMethod(m_worker, "generateKey", Qt::QueuedConnection,
                               Q_ARG(bool, force));
+}
+
+void TeslaClient::previewDestination(const QString &requestId, const QString &text)
+{
+    QMetaObject::invokeMethod(m_worker, "previewDestination", Qt::QueuedConnection,
+                              Q_ARG(QString, requestId),
+                              Q_ARG(QString, text));
+}
+
+void TeslaClient::shareDestination(const QString &requestId, const QString &text)
+{
+    QMetaObject::invokeMethod(m_worker, "shareDestination", Qt::QueuedConnection,
+                              Q_ARG(QString, requestId),
+                              Q_ARG(QString, text));
 }
 
 void TeslaClient::pair()

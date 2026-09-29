@@ -1,4 +1,4 @@
-//! C ABI surface for the in-process control core (see `BLUEZ_BACKEND_PLAN.md`
+//! C ABI surface for the in-process control core (see `docs/architecture.md`
 //! for why). The app links `libelectriceelcore.a` and drives
 //! all vehicle/config work through these functions on its own worker thread;
 //! the header is generated from this module with cbindgen
@@ -85,6 +85,23 @@ pub extern "C" fn core_version() -> *const c_char {
         .as_ptr()
 }
 
+/// Append a line to the phone-key log. Used by the Qt worker for app-state
+/// transitions (suspend/hidden/active) so a SIGTERM of tesla-session can be
+/// correlated with the UI process going away. NULL tag/message are no-ops.
+///
+/// # Safety
+/// Pointers must be NUL-terminated UTF-8 or NULL.
+#[no_mangle]
+pub unsafe extern "C" fn core_keylog(tag: *const c_char, message: *const c_char) {
+    let Some(tag) = cstr(tag) else {
+        return;
+    };
+    let Some(message) = cstr(message) else {
+        return;
+    };
+    crate::keylog::log(&tag, &message);
+}
+
 /// Create the control core.
 ///
 /// # Arguments
@@ -134,7 +151,11 @@ pub unsafe extern "C" fn core_new(
             return std::ptr::null_mut();
         };
         let backend = cstr(ble_backend).unwrap_or_else(|| "hci".to_string());
-        Some(SessionClient::new(PathBuf::from(path), &backend))
+        Some(SessionClient::new(
+            PathBuf::from(path),
+            &backend,
+            PathBuf::from(state_dir.clone()),
+        ))
     };
 
     // If the core can't be constructed (bad state dir), the app must know.
@@ -540,6 +561,115 @@ pub unsafe extern "C" fn core_run(
     }
 }
 
+/// Preview a navigation share without sending: parses `text` and reports
+/// (kind, value1, value2) = ("gps", lat, lon) or ("address", text, "").
+/// A parse failure is `ok=false` + `error_message`, same soft shape as
+/// `core_generate_key`.
+///
+/// # Safety
+/// `core` must be valid; strings NUL-terminated UTF-8; outputs writable/NULL.
+#[no_mangle]
+pub unsafe extern "C" fn core_preview_destination(
+    core: *mut Core,
+    text: *const c_char,
+    ok: *mut bool,
+    kind: *mut *mut c_char,
+    value1: *mut *mut c_char,
+    value2: *mut *mut c_char,
+    error_message: *mut *mut c_char,
+) -> CoreError {
+    let Some(_) = (unsafe { core.as_ref() }) else {
+        return CoreError::BadArg;
+    };
+    let Some(text) = cstr(text) else {
+        return CoreError::BadArg;
+    };
+    match Core::preview_destination(&text) {
+        Ok((k, v1, v2)) => {
+            if !ok.is_null() {
+                // SAFETY: caller-owned slot.
+                unsafe { *ok = true };
+            }
+            if !kind.is_null() {
+                // SAFETY: caller-owned slot.
+                unsafe { *kind = into_cstring(k) };
+            }
+            if !value1.is_null() {
+                // SAFETY: caller-owned slot.
+                unsafe { *value1 = into_cstring(v1) };
+            }
+            if !value2.is_null() {
+                // SAFETY: caller-owned slot.
+                unsafe { *value2 = into_cstring(v2) };
+            }
+            if !error_message.is_null() {
+                // SAFETY: caller-owned slot.
+                unsafe { *error_message = into_cstring(String::new()) };
+            }
+        }
+        Err(e) => {
+            if !ok.is_null() {
+                // SAFETY: caller-owned slot.
+                unsafe { *ok = false };
+            }
+            if !error_message.is_null() {
+                // SAFETY: caller-owned slot.
+                unsafe { *error_message = into_cstring(e.to_string()) };
+            }
+        }
+    }
+    CoreError::Ok
+}
+
+/// Send shared text to the car navigation over BLE (session child).
+/// Same output shape as `core_pair`.
+///
+/// # Safety
+/// `core` must be valid; strings NUL-terminated UTF-8; outputs writable/NULL.
+#[no_mangle]
+pub unsafe extern "C" fn core_share_destination(
+    core: *mut Core,
+    text: *const c_char,
+    ok: *mut bool,
+    stdout_out: *mut *mut c_char,
+    error_message: *mut *mut c_char,
+) -> CoreError {
+    let Some(core) = (unsafe { core.as_ref() }) else {
+        return CoreError::BadArg;
+    };
+    let Some(text) = cstr(text) else {
+        return CoreError::BadArg;
+    };
+    match core.share_destination(&text) {
+        Ok((success, out, err)) => {
+            if !ok.is_null() {
+                // SAFETY: caller-owned slot.
+                unsafe { *ok = success };
+            }
+            if !stdout_out.is_null() {
+                // SAFETY: caller-owned slot.
+                unsafe { *stdout_out = into_cstring(out) };
+            }
+            if !error_message.is_null() {
+                // SAFETY: caller-owned slot.
+                unsafe { *error_message = into_cstring(err) };
+            }
+            CoreError::Ok
+        }
+        Err(e) => {
+            if !ok.is_null() {
+                // SAFETY: caller-owned slot.
+                unsafe { *ok = false };
+            }
+            if !error_message.is_null() {
+                // SAFETY: caller-owned slot.
+                unsafe { *error_message = err_str(&e.to_string()) };
+            }
+            CoreError::Ok
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -733,5 +863,14 @@ mod tests {
         let rc = unsafe { core_handle_resume(ptr::null_mut()) };
         assert_eq!(rc, CoreError::BadArg);
         unsafe { core_free(core) };
+    }
+
+    #[test]
+    fn test_core_keylog_null_is_safe() {
+        unsafe {
+            core_keylog(ptr::null(), ptr::null());
+            let tag = CString::new("core").unwrap();
+            core_keylog(tag.as_ptr(), ptr::null());
+        }
     }
 }

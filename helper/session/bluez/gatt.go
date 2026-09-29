@@ -13,39 +13,40 @@ import (
 const (
 	connectRetryInitial = 500 * time.Millisecond
 	connectRetryMax     = 3 * time.Second
-	// connectAttemptTimeout caps a single Device.Connect. Sailfish
-	// bluetoothd can ignore the D-Bus deadline; we abort via Disconnect
-	// and let connect() retry with backoff instead of burning 20s.
-	connectAttemptTimeout = 8 * time.Second
 )
 
 // liveAdvertisement reports a Device1 that is advertising right now.
-// Connect to that object. A cached Device1 with no RSSI is the leftover
-// that hangs Sailfish bluetoothd.
 func liveAdvertisement(t *ScanResult) bool {
 	return t != nil && t.Path != "" && t.HasRSSI
 }
 
 // connect connects to the vehicle and returns a live connector. target, when
-// it is a live advertisement, is the Device1 to Connect — the Tesla Android
-// phone key reconnects to the known MAC and never unpairs. A stale Device1
-// (no RSSI) is forgotten first; Connect to that leftover hangs bluetoothd.
-// Transient link/scan failures are retried until ctx expires; adapter-level
-// failures (no controller) are not.
+// it is a live advertisement, is the Device1 to Connect — Tesla Android
+// reconnects to that known MAC and never unpairs. A Device1 without RSSI
+// is not Connected (that leftover hangs bluetoothd); scan waits for a
+// live advert instead. Transient link/scan failures are retried until ctx
+// expires; adapter-level failures (no controller) are not.
 func connect(ctx context.Context, bus dbusBus, adapterID, vin string, target *ScanResult) (connector.Connector, error) {
+	started := time.Now()
 	var lastErr error
 	backoff := connectRetryInitial
+	attempts := 0
 	for {
+		attempts++
+		attemptStart := time.Now()
 		cc, retry, err := tryConnect(ctx, bus, adapterID, vin, target)
 		if err == nil {
+			diagnostic("connect ready attempts=%d elapsed=%s", attempts, time.Since(started).Round(time.Millisecond))
 			return cc, nil
 		}
+		diagnostic("connect attempt=%d duration=%s retry=%v: %s", attempts, time.Since(attemptStart).Round(time.Millisecond), retry, dbusDetail(err))
 		if !retry || IsAdapterError(err) {
 			return nil, err
 		}
 		lastErr = err
 		select {
 		case <-ctx.Done():
+			diagnostic("connect deadline attempts=%d elapsed=%s", attempts, time.Since(started).Round(time.Millisecond))
 			if lastErr != nil {
 				return nil, lastErr
 			}
@@ -74,33 +75,15 @@ func tryConnect(ctx context.Context, bus dbusBus, adapterID, vin string, target 
 		adapterPath = p
 	}
 
+	// Only Connect a Device1 that is advertising. A leftover without
+	// RSSI is what hung bluetoothd when later builds treated it as the
+	// sleeping car and paused the scanner to Connect it.
 	if !liveAdvertisement(target) {
-		// Tesla Android reconnects to the known MAC. Only forget a
-		// Device1 that is not advertising: Connect to that leftover
-		// hangs Sailfish bluetoothd, then GetManagedObjects times out.
-		// RemoveDevice on a live beacon is what the 2026-09-13 log
-		// shows — AuthFailed leftover, then we refused to Connect
-		// while the Watcher kept seeing RSSI -50..-80.
-		forgotten := forgetStaleVehicle(ctx, bus, adapterPath, vin)
-		if forgotten != "" {
-			leftover, lerr := findBeacon(ctx, bus, adapterPath, vehicleBeaconName(vin))
-			if lerr != nil {
-				return nil, true, lerr
-			}
-			if leftover != nil && leftover.Path == forgotten && !leftover.HasRSSI {
-				return nil, false, fmt.Errorf("bluez: leftover device %s after RemoveDevice", forgotten)
-			}
-			if liveAdvertisement(leftover) {
-				target = leftover
-			}
+		r, err := scan(ctx, bus, adapterID, vin)
+		if err != nil {
+			return nil, true, err
 		}
-		if !liveAdvertisement(target) {
-			r, err := scan(ctx, bus, adapterID, vin)
-			if err != nil {
-				return nil, true, err
-			}
-			target = r
-		}
+		target = r
 	}
 	if !liveAdvertisement(target) {
 		return nil, true, fmt.Errorf("bluez: no live vehicle advertisement")
@@ -114,6 +97,7 @@ func tryConnect(ctx context.Context, bus dbusBus, adapterID, vin string, target 
 	// le-connection-abort-by-local: the adapter cancels the LE create-
 	// connection when the scanner is still running. Presence's Watcher
 	// restarts discovery on the next Peek if this attempt fails.
+	diagnostic("connect stopping discovery before Device1.Connect")
 	stopDiscovery(ctx, bus, adapterPath)
 	waitDiscoveryStopped(ctx, bus, adapterPath)
 	// A leftover Connected=true (previous Close still in HCI, or BlueZ
@@ -123,15 +107,31 @@ func tryConnect(ctx context.Context, bus dbusBus, adapterID, vin string, target 
 		abortDeviceConnect(bus, devPath)
 		waitDeviceDisconnected(ctx, bus, devPath)
 	}
+	diagnostic("connect Device1.Connect begin")
+	// StopDiscovery is asynchronous on Sailfish bluetoothd. Connecting
+	// in the same tick leaves the scanner running and Device.Connect
+	// blocks until the presence deadline ("GATT timeout"). 0.2.16's
+	// 150ms settle is what let the home attach complete.
+	select {
+	case <-ctx.Done():
+		return nil, true, ctx.Err()
+	case <-time.After(150 * time.Millisecond):
+	}
 	if err := connectDevice(ctx, bus, devPath); err != nil {
 		releaseDevice(bus, devPath)
 		return nil, true, err
 	}
+	diagnostic("connect Device1.Connect ok; waiting for ServicesResolved")
 	// GATT objects only materialize once the remote services are resolved.
 	if err := waitServicesResolved(ctx, bus, devPath); err != nil {
+		// The connect deadline has usually expired here. Probe with a fresh,
+		// short context so we can distinguish a missing link from an
+		// unresponsive bluetoothd before Disconnect changes the state.
+		logDeviceState(bus, devPath, "services wait failed")
 		releaseDevice(bus, devPath)
 		return nil, true, err
 	}
+	diagnostic("connect services resolved; finding GATT characteristics")
 	svcPath, txPath, rxPath, err := discoverGATT(ctx, bus, devPath)
 	if err != nil {
 		releaseDevice(bus, devPath)
@@ -282,8 +282,8 @@ func scanPath(t *ScanResult) dbus.ObjectPath {
 
 // releaseDevice drops a pending or live GATT link without RemoveDevice.
 // Tesla Android disconnects and later reconnects to the same MAC; unpairing
-// on Sailfish often fails with AuthFailed and leaves the leftover that
-// tryConnect must not Connect.
+// on Sailfish often fails with AuthFailed and leaves a leftover Device1
+// that must not be Connect'd until it advertises again.
 func releaseDevice(bus dbusBus, devPath dbus.ObjectPath) {
 	if devPath == "" {
 		return
@@ -311,7 +311,11 @@ func forgetDevice(bus dbusBus, devPath dbus.ObjectPath) {
 // forgetStaleVehicle RemoveDevice's a cached vehicle Device1 that is not
 // advertising. A live RSSI means Connect that object, do not drop it.
 func forgetStaleVehicle(ctx context.Context, bus dbusBus, adapterPath dbus.ObjectPath, vin string) dbus.ObjectPath {
-	result, err := findBeacon(ctx, bus, adapterPath, vehicleBeaconName(vin))
+	return forgetStaleNamed(ctx, bus, adapterPath, vehicleBeaconName(vin))
+}
+
+func forgetStaleNamed(ctx context.Context, bus dbusBus, adapterPath dbus.ObjectPath, name string) dbus.ObjectPath {
+	result, err := findBeacon(ctx, bus, adapterPath, name)
 	if err != nil || result == nil || result.Path == "" || result.HasRSSI {
 		return ""
 	}
@@ -351,12 +355,12 @@ func findDevice(ctx context.Context, bus dbusBus, adapterPath dbus.ObjectPath, t
 // connectDevice issues Device1.Connect. The D-Bus method is run in a
 // goroutine so a hung bluetoothd Connect cannot ignore ctx; on timeout we
 // Disconnect, which is what makes BlueZ abort the in-flight LE create.
+// The deadline is the caller's (presence uses 20s, as in 0.2.16) — an
+// extra 8s cap aborted Connects that were still going to succeed.
 func connectDevice(ctx context.Context, bus dbusBus, devPath dbus.ObjectPath) error {
-	attemptCtx, cancel := context.WithTimeout(ctx, connectAttemptTimeout)
-	defer cancel()
 	errCh := make(chan error, 1)
 	go func() {
-		_, err := bus.object(bluezService, devPath).call(attemptCtx, deviceIface+".Connect")
+		_, err := bus.object(bluezService, devPath).call(ctx, deviceIface+".Connect")
 		errCh <- err
 	}()
 	select {
@@ -365,7 +369,7 @@ func connectDevice(ctx context.Context, bus dbusBus, devPath dbus.ObjectPath) er
 			return fmt.Errorf("bluez: connect to vehicle: %s", dbusDetail(err))
 		}
 		return nil
-	case <-attemptCtx.Done():
+	case <-ctx.Done():
 		abortDeviceConnect(bus, devPath)
 		select {
 		case err := <-errCh:
@@ -374,7 +378,7 @@ func connectDevice(ctx context.Context, bus dbusBus, devPath dbus.ObjectPath) er
 			}
 			return nil
 		case <-time.After(2 * time.Second):
-			return fmt.Errorf("bluez: connect to vehicle: %w", attemptCtx.Err())
+			return fmt.Errorf("bluez: connect to vehicle: %w", ctx.Err())
 		}
 	}
 }
@@ -385,26 +389,63 @@ func connectDevice(ctx context.Context, bus dbusBus, devPath dbus.ObjectPath) er
 func abortDeviceConnect(bus dbusBus, devPath dbus.ObjectPath) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	_, _ = bus.object(bluezService, devPath).call(ctx, deviceIface+".Disconnect")
+	started := time.Now()
+	_, err := bus.object(bluezService, devPath).call(ctx, deviceIface+".Disconnect")
+	diagnostic("connect cleanup Disconnect duration=%s error=%s", time.Since(started).Round(time.Millisecond), dbusDetail(err))
 }
 
 // waitServicesResolved polls Device1.ServicesResolved until the remote GATT
 // database is available.
 func waitServicesResolved(ctx context.Context, bus dbusBus, devPath dbus.ObjectPath) error {
 	obj := bus.object(bluezService, devPath)
+	started := time.Now()
+	lastProgress := started
+	polls := 0
 	for {
 		v, err := obj.getProp(ctx, deviceIface, "ServicesResolved")
 		if err != nil {
+			diagnostic("connect services read failed elapsed=%s polls=%d error=%s", time.Since(started).Round(time.Millisecond), polls, dbusDetail(err))
 			return fmt.Errorf("bluez: read ServicesResolved: %w", err)
 		}
+		polls++
 		if resolved, ok := variantBool(v); ok && resolved {
+			diagnostic("connect services wait complete elapsed=%s polls=%d", time.Since(started).Round(time.Millisecond), polls)
 			return nil
+		}
+		if time.Since(lastProgress) >= 3*time.Second {
+			lastProgress = time.Now()
+			connected, err := obj.getProp(ctx, deviceIface, "Connected")
+			if err != nil {
+				diagnostic("connect services pending elapsed=%s polls=%d connectedError=%s", time.Since(started).Round(time.Millisecond), polls, dbusDetail(err))
+			} else {
+				value, ok := variantBool(connected)
+				diagnostic("connect services pending elapsed=%s polls=%d connected=%v valid=%v", time.Since(started).Round(time.Millisecond), polls, value, ok)
+			}
 		}
 		select {
 		case <-ctx.Done():
+			diagnostic("connect services wait timeout elapsed=%s polls=%d", time.Since(started).Round(time.Millisecond), polls)
 			return ctx.Err()
 		case <-time.After(pollInterval):
 		}
+	}
+}
+
+// logDeviceState uses a bounded independent deadline because the failed
+// connect's context is generally already cancelled. Never log the device
+// path: it contains the Bluetooth address.
+func logDeviceState(bus dbusBus, devPath dbus.ObjectPath, phase string) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	obj := bus.object(bluezService, devPath)
+	for _, property := range []string{"Connected", "ServicesResolved"} {
+		v, err := obj.getProp(ctx, deviceIface, property)
+		if err != nil {
+			diagnostic("connect %s %s error=%s", phase, property, dbusDetail(err))
+			continue
+		}
+		value, ok := variantBool(v)
+		diagnostic("connect %s %s=%v valid=%v", phase, property, value, ok)
 	}
 }
 

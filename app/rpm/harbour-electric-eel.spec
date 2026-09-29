@@ -1,6 +1,6 @@
 Name:       harbour-electric-eel
 Summary:    Control your Tesla over Bluetooth
-Version:    0.2.17
+Version:    0.2.26
 Release:    1
 License:    ASL 2.0
 URL:        https://github.com/nappa85/ElectricEel
@@ -8,10 +8,12 @@ Source0:    %{name}-%{version}.tar.bz2
 Requires:   sailfishsilica-qt5 >= 0.10.9
 Requires:   qt5-qtcore
 Requires:   qt5-qtdeclarative
+Requires:   qt5-qtdbus
 BuildRequires:  pkgconfig(sailfishapp) >= 1.0.2
 BuildRequires:  pkgconfig(Qt5Core)
 BuildRequires:  pkgconfig(Qt5Qml)
 BuildRequires:  pkgconfig(Qt5Quick)
+BuildRequires:  pkgconfig(Qt5DBus)
 BuildRequires:  desktop-file-utils
 
 %description
@@ -46,6 +48,41 @@ desktop-file-install --delete-original \
 %{_datadir}/icons/hicolor/*/apps/%{name}.png
 
 %changelog
+* Tue Sep 29 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.26-1
+- Drop drive-app background toggle and test-launch button
+
+* Tue Sep 29 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.25-1
+- Background drive-app launch: reclaim ElectricEel focus after start (Lipstick always raises)
+
+* Tue Sep 29 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.24-1
+- Launch drive apps via systemd D-Bus StartTransientUnit (Sailjail blocks systemd-run exec)
+
+* Tue Sep 29 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.23-1
+- Persist hotspot/drive-app UI settings under Sailjail AppData (not blocked .conf path)
+- Launch drive app via systemd --user scope (AppLaunch); test launch always foreground
+
+* Tue Sep 29 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.22-1
+- Launch chosen app when driving; test launch button in Settings
+
+* Sat Sep 26 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.21-1
+- Wi-Fi hotspot when the phone is inside the car (very strong RSSI); off after walk-away if we turned it on
+- Wake the Bluetooth-off watcher as soon as BlueZ reports the adapter powered
+* Fri Sep 25 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.20-1
+- Do not recycle discovery when the car is away; forget a frozen leftover Device1 only once
+- After a short GATT bounce, drop the -93 reconnect slack so a last-gasp Connect cannot hang
+* Fri Sep 25 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.19-1
+- Recycle dead LE discovery and drop a frozen leftover Device1 so attach does not need a Bluetooth restart
+* Sun Sep 20 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.18-1
+- Merge nappa i18n, share destination, and Unix-socket tesla-session IPC
+- Own process group so covering the phone does not SIGTERM a live GATT link
+- Wait 2s after GATT teardown before restarting LE discovery
+* Sun Sep 20 2026 Marco Napetti <marco.napetti@proton.me> - 0.2.11-1
+- Share target registration: X-Share-Methods belongs in [Desktop Entry]
+- Generic map-URL parsing (no per-service list)
+- Parent/child transport over Unix socket with versioned handshake
+* Sun Sep 20 2026 Marco Napetti <marco.napetti@proton.me> - 0.2.10-1
+- Share destination to car navigation over BLE (field-53 coordinates, field-21 address)
+
 * Sun Sep 13 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.17-1
 - Connect phone-key to a live BlueZ advertisement instead of RemoveDevice
 - Quiet period, -95 RSSI floor, and negotiated MTU after GATT drop (Tesla Android)
@@ -68,6 +105,7 @@ desktop-file-install --delete-original \
 - Stop presence-loop D-Bus spin on cached BlueZ devices
 * Wed Aug 26 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.9-1
 - Stabilize phone-key GATT reconnect and VCSEC presence
+
 * Thu Aug 22 2026 Marco Napetti <marco.napetti@proton.me> - 0.2.8-1
 - Restart session on wakeup
 * Thu Aug 22 2026 Marco Napetti <marco.napetti@proton.me> - 0.2.7-1

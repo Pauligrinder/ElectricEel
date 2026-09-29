@@ -29,10 +29,11 @@ type fakeBluez struct {
 	startedNotify     bool
 	stoppedNotify     bool
 	failLargeWrites   bool  // fail WriteValue when the chunk exceeds 20 bytes (ATT MTU 23)
-	startDiscoveryErr error // when set, StartDiscovery returns this error
-	connectErr        error // when set, Device1.Connect returns this error
-	connectHang       time.Duration // when >0, Device1.Connect blocks this long (or until ctx ends)
-	setPoweredErr     error // when set, Properties.Set(Powered) returns this error
+	startDiscoveryErr   error // when set, StartDiscovery returns this error
+	rejectCancelledStop bool  // model D-Bus rejecting a StopDiscovery with an expired context
+	connectErr          error // when set, Device1.Connect returns this error
+	connectHang         time.Duration // when >0, Device1.Connect blocks this long (or until ctx ends)
+	setPoweredErr       error // when set, Properties.Set(Powered) returns this error
 	// extraAdapters are additional Adapter1 objects keyed by id ("hci1").
 	// The value is the Powered flag. Used to test powered-adapter preference.
 	extraAdapters map[string]bool
@@ -48,6 +49,7 @@ type fakeBluez struct {
 	reappearAfterManaged int
 	removeDeviceErr      error // when set, Adapter1.RemoveDevice fails and keeps the Device1
 	mtu                  uint16 // GattCharacteristic1.MTU; 0 = property absent
+	holdServices         bool   // Connect leaves ServicesResolved false (timeout tests)
 
 	writes         [][]byte
 	calls          []string
@@ -177,6 +179,45 @@ func (f *fakeBluez) discoveryChanged(discovering bool) {
 			adapterIface,
 			map[string]dbus.Variant{"Discovering": dbus.MakeVariant(discovering)},
 			[]string{},
+		},
+	})
+}
+
+func (f *fakeBluez) adapterPoweredChanged(id string, powered bool) {
+	if id == "" || id == f.adapterID {
+		f.powered = powered
+		id = f.adapterID
+	} else if f.extraAdapters != nil {
+		if _, ok := f.extraAdapters[id]; ok {
+			f.extraAdapters[id] = powered
+		}
+	}
+	f.emit(&dbus.Signal{
+		Name: propsIface + ".PropertiesChanged",
+		Path: dbus.ObjectPath("/org/bluez/" + id),
+		Body: []interface{}{
+			adapterIface,
+			map[string]dbus.Variant{"Powered": dbus.MakeVariant(powered)},
+			[]string{},
+		},
+	})
+}
+
+func (f *fakeBluez) adapterAdded(id string, powered bool) {
+	if f.extraAdapters == nil {
+		f.extraAdapters = map[string]bool{}
+	}
+	f.extraAdapters[id] = powered
+	f.emit(&dbus.Signal{
+		Name: objMgrIface + ".InterfacesAdded",
+		Path: "/",
+		Body: []interface{}{
+			dbus.ObjectPath("/org/bluez/" + id),
+			map[string]map[string]dbus.Variant{
+				adapterIface: {
+					"Powered": dbus.MakeVariant(powered),
+				},
+			},
 		},
 	})
 }
@@ -331,6 +372,9 @@ func (fc *fakeCaller) call(ctx context.Context, method string, args ...interface
 		fc.b.discovering = true
 		return nil, nil
 	case adapterIface + ".StopDiscovery":
+		if fc.b.rejectCancelledStop && ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		fc.b.discovering = false
 		return nil, nil
 	case deviceIface + ".Connect":
@@ -352,9 +396,11 @@ func (fc *fakeCaller) call(ctx context.Context, method string, args ...interface
 		fc.b.connected = true
 		// A fresh Device1 after RemoveDevice resolves GATT only once
 		// Connect succeeds - mirror that so tests that forget+rescan still
-		// find the Tesla service.
-		fc.b.servicesResolved = true
-		fc.b.gattReady = true
+		// find the Tesla service. holdServices models a hang before that.
+		if !fc.b.holdServices {
+			fc.b.servicesResolved = true
+			fc.b.gattReady = true
+		}
 		return nil, nil
 	case deviceIface + ".Disconnect":
 		fc.b.connected = false
