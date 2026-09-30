@@ -34,6 +34,7 @@ import (
 	"github.com/teslamotors/vehicle-command/pkg/connector"
 	"github.com/teslamotors/vehicle-command/pkg/connector/ble"
 	"github.com/teslamotors/vehicle-command/pkg/protocol"
+	"github.com/teslamotors/vehicle-command/pkg/protocol/protobuf/vcsec"
 	"github.com/teslamotors/vehicle-command/pkg/vehicle"
 )
 
@@ -559,7 +560,7 @@ func (s *session) connectTargetLocked(peek *bluez.ScanResult) *bluez.ScanResult 
 const (
 	reconnectQuietAfterDrop  = 500 * time.Millisecond // DELAY_AFTER_NORMAL_DISCONNECT
 	reconnectQuietAfterError = 2 * time.Second        // DELAY_AFTER_ERROR (GATT 0x85 / hung Connect)
-	teslaMinConnectRSSI      = -95                    // background scan skips RSSI <= -95
+	teslaMinConnectRSSI      = bluez.MinFreshRSSI     // background scan skips RSSI <= -95
 	// postDropHoldMargin is how much stronger than nearRSSI a beacon must
 	// be during dropHoldDuration (the walking-away last gasp). Connecting
 	// a collapsing -89 (2026-09-21 grocery trip) hung Device.Connect ~45s.
@@ -610,11 +611,28 @@ func discoveryRecycleWait(completed int) time.Duration {
 	return wait
 }
 
+// rssiSignalAge prefers the watcher's last live advert signal. Age < 0 means
+// none yet (leftover Device1 seeded at start); fall back to Wait-silence so
+// recycle/forget still age out.
+func rssiSignalAge(updateAge, waitSilence time.Duration) time.Duration {
+	if updateAge < 0 {
+		return waitSilence
+	}
+	return updateAge
+}
+
+// leftoverFrozen is a Device1 whose RSSI property is still present but has
+// not been refreshed by a live advert signal. Peek/GetManagedObjects alone
+// cannot tell that cache from a fresh beacon (nappa's stale-RSSI insight).
+func leftoverFrozen(hasCachedRSSI bool, signalAge, staleAfter time.Duration) bool {
+	return hasCachedRSSI && signalAge >= staleAfter
+}
+
 // shouldRecycleDiscovery is only for a leftover Device1 that still has a
 // cached RSSI and no live signals. An empty adapter (car away) must keep
 // discovery running — Stop+Start then misses the arrival.
-func shouldRecycleDiscovery(frozen bool, silentFor time.Duration, last time.Time, now time.Time, completed int) bool {
-	if !frozen || silentFor < discoveryRecycleAfter {
+func shouldRecycleDiscovery(hasCachedRSSI bool, signalAge time.Duration, last time.Time, now time.Time, completed int) bool {
+	if !leftoverFrozen(hasCachedRSSI, signalAge, discoveryRecycleAfter) {
 		return false
 	}
 	wait := discoveryRecycleWait(completed)
@@ -623,15 +641,23 @@ func shouldRecycleDiscovery(frozen bool, silentFor time.Duration, last time.Time
 
 // shouldForgetCached RemoveDevice's a frozen leftover once per silent
 // stretch. Repeating it (0.2.19 21:20) is the 2026-09-17 ForgetStale loop.
-func shouldForgetCached(frozen, alreadyForgot bool, silentFor time.Duration) bool {
-	return frozen && !alreadyForgot && silentFor >= discoveryForgetAfter
+func shouldForgetCached(hasCachedRSSI, alreadyForgot bool, signalAge time.Duration) bool {
+	return leftoverFrozen(hasCachedRSSI, signalAge, discoveryForgetAfter) && !alreadyForgot
 }
 
-// shouldIdlePoll leaves continuous LE discovery once the adapter has been
-// empty (no vehicle Device1) long enough. Frozen leftovers still use recycle
-// / ForgetCached; idle polling is only for a truly empty scan.
-func shouldIdlePoll(empty bool, silentFor time.Duration) bool {
-	return empty && silentFor >= idlePollAfter
+// shouldIdlePoll leaves continuous LE discovery once the car has been away
+// long enough: no Device1, or only an unusable RSSI (<= MinFreshRSSI).
+// Approach-strength leftovers still use recycle / ForgetCached so a wedged
+// scanner can recover without pausing through an arrival.
+func shouldIdlePoll(away bool, silentFor time.Duration) bool {
+	return away && silentFor >= idlePollAfter
+}
+
+// beaconUsable is a live advertisement strong enough to count as the car
+// still being around. RSSI at or below teslaMinConnectRSSI must not reset
+// the away timer: 2026-09-26 logged 2700+ such ticks and never idle-polled.
+func beaconUsable(hasRSSI bool, rssi int16) bool {
+	return hasRSSI && rssi > teslaMinConnectRSSI
 }
 
 // idlePollWait is the gap with discovery off between bursts. 30s, 60s, 2m…
@@ -713,17 +739,20 @@ const vcsecPrimeInterval = 15 * time.Second
 // live session. Handle-pull unlock was only working after a dashboard
 // status query because that query performed this same round-trip; presence
 // connect used to stop at StartSession. Caller holds mu; s.car must be set.
-func (s *session) primeVCSECLocked(ctx context.Context) {
+// Returns the vehicle's reported userPresence (UNKNOWN on failure).
+func (s *session) primeVCSECLocked(ctx context.Context) vcsec.UserPresence_E {
 	if s.car == nil {
-		return
+		return vcsec.UserPresence_E_VEHICLE_USER_PRESENCE_UNKNOWN
 	}
-	_, err := s.car.BodyControllerState(ctx)
+	status, err := s.car.BodyControllerState(ctx)
 	if err != nil {
 		keylog("auth", "VCSEC prime failed: %v", err)
-		return
+		return vcsec.UserPresence_E_VEHICLE_USER_PRESENCE_UNKNOWN
 	}
 	s.lastVCSECPrime = time.Now()
-	keylog("auth", "VCSEC primed")
+	presence := status.GetUserPresence()
+	keylog("auth", "VCSEC primed userPresence=%s", presence.String())
+	return presence
 }
 
 func (s *session) vcsecPrimeDueLocked(now time.Time) bool {
@@ -910,13 +939,24 @@ func presenceStep(cfg presenceConfig, near bool, consecNear int, lastSeen, now t
 // (or resume) a GATT session. Weak RSSI and cached Device1 entries without
 // RSSI must not connect: BlueZ keeps Device1 objects forever, and connecting
 // at -97 dBm wedges bluetoothd (deadline exceeded / le-connection-abort-by-local).
-// insideCarRSSI is "phone is in the cabin", not walk-up from the street
-// or a bedroom leftover. Real at-the-car arrives in the logs are about
-// -44 to -65; overnight far ads sit at -94 to -103.
-const insideCarRSSI int16 = -65
+// insideSettleDuration is how long the phone-key GATT session must stay up
+// before presence_inside may fire. Combined with VCSEC userPresence this
+// avoids turning on drive hotspot/app while packing or washing the car.
+const insideSettleDuration = 45 * time.Second
 
-func insideCar(rssi int16, hasRSSI bool) bool {
-	return hasRSSI && rssi >= insideCarRSSI
+func userPresent(p vcsec.UserPresence_E) bool {
+	return p == vcsec.UserPresence_E_VEHICLE_USER_PRESENCE_PRESENT
+}
+
+// readyForInside is true once the current GATT session has lasted long
+// enough and the car reports a user present (seat occupancy / known key
+// in cabin). RSSI alone is not used: after connect Tesla stops advertising
+// and BlueZ often has no cabin-strength sample.
+func readyForInside(sessionStarted time.Time, now time.Time, present bool) bool {
+	if sessionStarted.IsZero() || !present {
+		return false
+	}
+	return !now.Before(sessionStarted.Add(insideSettleDuration))
 }
 
 func presenceLiveNear(live bool, rssi, nearRSSI int16) bool {
@@ -1308,12 +1348,18 @@ func (s *session) presenceLoop(ctx context.Context, cfg presenceConfig, generati
 		if watcher.ReleaseOrphanLink(context.Background()) {
 			keylog("presence", "released leftover Connected Device1 (no session)")
 		}
-		s.runPresenceWatcher(ctx, cfg, watcher)
-		watcher.Stop(context.Background())
+		// runPresenceWatcher may swap in a replacement after peek errors;
+		// stop whichever Watcher is current, or its discovery and D-Bus
+		// matches leak past presence-stop.
+		current := s.runPresenceWatcher(ctx, cfg, watcher)
+		current.Stop(context.Background())
 	}
 }
 
-func (s *session) runPresenceWatcher(ctx context.Context, cfg presenceConfig, watcher *bluez.Watcher) {
+// runPresenceWatcher drives one Watcher until ctx ends or the Watcher cannot
+// be restarted. Returns the Watcher that is live at exit (the caller owns
+// Stop) — restartWatcher may have replaced the one passed in.
+func (s *session) runPresenceWatcher(ctx context.Context, cfg presenceConfig, watcher *bluez.Watcher) *bluez.Watcher {
 	var (
 		near       bool
 		consecNear int
@@ -1332,6 +1378,7 @@ func (s *session) runPresenceWatcher(ctx context.Context, cfg presenceConfig, wa
 		idlePolls        int  // completed idle sleeps (escalates interval)
 		sessionStarted   time.Time
 		insideEmitted    bool
+		lastUserPresence vcsec.UserPresence_E
 
 		dropHoldUntil time.Time
 		afterSession  bool
@@ -1342,6 +1389,7 @@ func (s *session) runPresenceWatcher(ctx context.Context, cfg presenceConfig, wa
 		// them (0.2.18-3) declared the car far in 15s and ignored -91.
 		lastSeen = time.Now()
 		insideEmitted = false
+		lastUserPresence = vcsec.UserPresence_E_VEHICLE_USER_PRESENCE_UNKNOWN
 		lastSession := time.Duration(0)
 		if !sessionStarted.IsZero() {
 			lastSession = time.Since(sessionStarted)
@@ -1391,7 +1439,7 @@ func (s *session) runPresenceWatcher(ctx context.Context, cfg presenceConfig, wa
 
 	for {
 		if ctx.Err() != nil {
-			return
+			return watcher
 		}
 
 		s.mu.Lock()
@@ -1415,6 +1463,14 @@ func (s *session) runPresenceWatcher(ctx context.Context, cfg presenceConfig, wa
 			}
 		}
 		s.mu.Unlock()
+		if !gattUp && !linkLost && !sessionStarted.IsZero() {
+			// The session went away outside this loop (auth responder saw
+			// a dropped send, dispatch or idle timer tore it down). Without
+			// this, sessionStarted/insideEmitted/drop-hold stay stale and a
+			// last-gasp advert can reconnect without the post-drop floor.
+			keylog("presence", "session gone outside presence loop - treating as link lost")
+			linkLost = true
+		}
 		if linkLost {
 			onLinkLost()
 		}
@@ -1428,7 +1484,7 @@ func (s *session) runPresenceWatcher(ctx context.Context, cfg presenceConfig, wa
 			if bzConn != nil {
 				select {
 				case <-ctx.Done():
-					return
+					return watcher
 				case <-bzConn.Dropped():
 					s.mu.Lock()
 					if bz, ok := s.conn.(*bluez.Connection); ok && bz == bzConn {
@@ -1464,21 +1520,11 @@ func (s *session) runPresenceWatcher(ctx context.Context, cfg presenceConfig, wa
 					}
 				} else {
 					linkDownStreak = 0
-					if !insideEmitted {
-						rssiCtx, rssiCancel := context.WithTimeout(ctx, 400*time.Millisecond)
-						rssi, has, rssiErr := bzConn.DeviceRSSI(rssiCtx)
-						rssiCancel()
-						if rssiErr == nil && insideCar(rssi, has) {
-							keylog("presence", "inside car rssi=%d (connected)", rssi)
-							s.emitEvent("presence_inside", nil)
-							insideEmitted = true
-						}
-					}
 				}
 			} else {
 				select {
 				case <-ctx.Done():
-					return
+					return watcher
 				case <-time.After(cfg.scanInterval):
 				}
 			}
@@ -1488,17 +1534,23 @@ func (s *session) runPresenceWatcher(ctx context.Context, cfg presenceConfig, wa
 			if s.car != nil {
 				if s.vcsecPrimeDueLocked(now) {
 					primeCtx, primeCancel := context.WithTimeout(ctx, s.commandTimeout)
-					s.primeVCSECLocked(primeCtx)
+					lastUserPresence = s.primeVCSECLocked(primeCtx)
 					primeCancel()
 				}
 				s.resetIdleTimerLocked()
 			}
 			s.mu.Unlock()
+			if !insideEmitted && readyForInside(sessionStarted, now, userPresent(lastUserPresence)) {
+				keylog("presence", "inside car userPresence=%s after %s",
+					lastUserPresence.String(), now.Sub(sessionStarted).Truncate(time.Millisecond))
+				s.emitEvent("presence_inside", nil)
+				insideEmitted = true
+			}
 			continue
 		}
 		linkDownStreak = 0
 		if ctx.Err() != nil {
-			return
+			return watcher
 		}
 		s.mu.Lock()
 		quiet := scanQuietRemaining(s.scanQuietUntil, time.Now())
@@ -1507,12 +1559,12 @@ func (s *session) runPresenceWatcher(ctx context.Context, cfg presenceConfig, wa
 			keylog("presence", "scan quiet %s after GATT teardown", quiet.Truncate(time.Millisecond))
 			select {
 			case <-ctx.Done():
-				return
+				return watcher
 			case <-time.After(quiet):
 			}
 		}
 		if ctx.Err() != nil {
-			return
+			return watcher
 		}
 		watcher.Resume()
 
@@ -1538,26 +1590,26 @@ func (s *session) runPresenceWatcher(ctx context.Context, cfg presenceConfig, wa
 		if err != nil {
 			if adapterPowerDenied(err) {
 				keylog("presence", "peek error: %v (adapter power denied)", err)
-				return
+				return watcher
 			}
 			peekErrors++
 			keylog("presence", "peek error (%d): %v", peekErrors, err)
 			if peekErrors >= 5 && !restartWatcher() {
-				return
+				return watcher
 			}
 		} else {
 			peekErrors = 0
 
-			live := result != nil && result.HasRSSI
 			var rssi int16
-			if live {
+			if result != nil && result.HasRSSI {
 				rssi = result.RSSI
 			}
+			live := result != nil && beaconUsable(result.HasRSSI, rssi)
 			s.mu.Lock()
-			if result != nil && result.HasRSSI {
+			if live {
 				s.lastBeacon = result
 				s.lastBeaconAt = time.Now()
-			} else if result == nil {
+			} else {
 				s.lastBeacon = nil
 				s.lastBeaconAt = time.Time{}
 			}
@@ -1585,45 +1637,51 @@ func (s *session) runPresenceWatcher(ctx context.Context, cfg presenceConfig, wa
 					silentSince = now
 				}
 				silentFor := now.Sub(silentSince)
+				signalAge := rssiSignalAge(watcher.LastRSSIUpdateAge(), silentFor)
 				logIdle := emptyStreak == 1 || emptyStreak == 5 || (emptyStreak%15 == 0 && now.Sub(lastIdleLog) >= 10*time.Second)
 				leftover := result
-				if leftover == nil && (logIdle || silentFor >= discoveryRecycleAfter || silentFor >= idlePollAfter) {
+				if leftover == nil && (logIdle || silentFor >= discoveryRecycleAfter || silentFor >= idlePollAfter || signalAge >= discoveryRecycleAfter) {
 					leftover, _ = watcher.Peek(ctx)
 				}
-				frozen := leftover != nil && leftover.HasRSSI
-				if shouldForgetCached(frozen, forgotCached, silentFor) {
+				hasCachedRSSI := leftover != nil && leftover.HasRSSI
+				if shouldForgetCached(hasCachedRSSI, forgotCached, signalAge) {
 					if watcher.ForgetCached(ctx) {
-						keylog("presence", "forgot leftover Device1 after %s without live adverts",
-							silentFor.Truncate(time.Second))
+						keylog("presence", "forgot leftover Device1 after %s without live adverts (rssiSignalAge=%s)",
+							silentFor.Truncate(time.Second), signalAge.Truncate(time.Second))
 						s.mu.Lock()
 						s.lastBeacon = nil
 						s.mu.Unlock()
 					}
 					forgotCached = true
 				}
-				if shouldRecycleDiscovery(frozen, silentFor, lastRecycle, now, recycleCount) {
+				if shouldRecycleDiscovery(hasCachedRSSI, signalAge, lastRecycle, now, recycleCount) {
 					if err := watcher.RecycleDiscovery(ctx); err != nil {
 						keylog("presence", "recycle discovery: %v", err)
 					} else {
-						keylog("presence", "recycled discovery after %s without live adverts (n=%d)",
-							silentFor.Truncate(time.Second), recycleCount+1)
+						keylog("presence", "recycled discovery after %s without live adverts (n=%d rssiSignalAge=%s)",
+							silentFor.Truncate(time.Second), recycleCount+1, signalAge.Truncate(time.Second))
 					}
 					lastRecycle = now
 					recycleCount++
 				}
 				empty := leftover == nil
-				if shouldIdlePoll(empty, silentFor) {
-					// Continuous LE scan with no Device1 is what preceded
-					// Powered going false on 2026-09-25/26. Pause the radio
-					// and only burst-listen on a longer cadence.
+				weakOnly := leftover != nil && leftover.HasRSSI && !beaconUsable(true, leftover.RSSI)
+				if shouldIdlePoll(empty || weakOnly, silentFor) {
+					// Continuous LE scan with nothing usable is what preceded
+					// Powered going false on 2026-09-25/26 (6.5h of rssi<=-95).
+					// Pause the radio and only burst-listen on a longer cadence.
 					sleep := idlePollWait(idlePolls)
 					idlePolls++
-					keylog("presence", "idle poll: discovery off for %s (empty %s, n=%d)",
-						sleep.Truncate(time.Second), silentFor.Truncate(time.Second), idlePolls)
+					why := "empty"
+					if weakOnly {
+						why = fmt.Sprintf("rssi=%d", leftover.RSSI)
+					}
+					keylog("presence", "idle poll: discovery off for %s (%s, away %s, n=%d)",
+						sleep.Truncate(time.Second), why, silentFor.Truncate(time.Second), idlePolls)
 					watcher.Pause()
 					select {
 					case <-ctx.Done():
-						return
+						return watcher
 					case <-time.After(sleep):
 					}
 					idleBurst = true
@@ -1632,11 +1690,14 @@ func (s *session) runPresenceWatcher(ctx context.Context, cfg presenceConfig, wa
 				} else if logIdle {
 					switch {
 					case leftover != nil && leftover.HasRSSI:
-						keylog("presence", "scanning rssi=%d (below connect or waiting) known=true", leftover.RSSI)
+						keylog("presence", "scanning rssi=%d (below connect or waiting) known=true rssiSignalAge=%s",
+							leftover.RSSI, signalAge.Truncate(time.Second))
 					case leftover != nil:
-						keylog("presence", "scanning Device1 without RSSI — waiting for a live advert, not connecting")
+						keylog("presence", "scanning Device1 without RSSI — waiting for a live advert, not connecting (rssiSignalAge=%s)",
+							signalAge.Truncate(time.Second))
 					default:
-						keylog("presence", "scanning no vehicle Device1")
+						keylog("presence", "scanning no vehicle Device1 (rssiSignalAge=%s)",
+							signalAge.Truncate(time.Second))
 					}
 					lastIdleLog = now
 				}
@@ -1667,7 +1728,12 @@ func (s *session) runPresenceWatcher(ctx context.Context, cfg presenceConfig, wa
 						if connErr == nil {
 							s.clearConnectBackoffLocked()
 							s.ensureAuthTapLocked(ctx)
-							s.primeVCSECLocked(connCtx)
+							// Fresh budget: a 19s Device.Connect leaves connCtx
+							// with ~1s, which failed the first GET_STATUS and
+							// left userPresence UNKNOWN until the next prime.
+							primeCtx, primeCancel := context.WithTimeout(ctx, s.commandTimeout)
+							lastUserPresence = s.primeVCSECLocked(primeCtx)
+							primeCancel()
 							s.resetIdleTimerLocked()
 							dropHoldUntil = time.Time{}
 						} else {
@@ -1692,12 +1758,10 @@ func (s *session) runPresenceWatcher(ctx context.Context, cfg presenceConfig, wa
 							s.emitEvent("presence_error", connErr)
 						} else {
 							sessionStarted = time.Now()
+							insideEmitted = false
 							s.emitEvent("presence_near", nil)
-							if insideCar(target.RSSI, target.HasRSSI) {
-								keylog("presence", "inside car rssi=%d (connect)", target.RSSI)
-								s.emitEvent("presence_inside", nil)
-								insideEmitted = true
-							}
+							// presence_inside waits for settle + VCSEC userPresent
+							// so packing/washing near the car does not fire it.
 						}
 					}
 				} else if dropHold && live {

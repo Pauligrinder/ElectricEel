@@ -1,6 +1,6 @@
 Name:       harbour-electric-eel
 Summary:    Control your Tesla over Bluetooth
-Version:    0.2.26
+Version:    0.2.27
 Release:    1
 License:    ASL 2.0
 URL:        https://github.com/nappa85/ElectricEel
@@ -48,6 +48,11 @@ desktop-file-install --delete-original \
 %{_datadir}/icons/hicolor/*/apps/%{name}.png
 
 %changelog
+* Thu Oct 01 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.27-1
+- Gate presence_inside on 45s GATT settle + VCSEC userPresence (not cabin RSSI)
+- Idle-poll when only weak RSSI (≤ -95) remains, so discovery does not run for hours
+- Age stale Device1 recycle/forget on live RSSI signals; fix watcher leak and missed link-loss
+
 * Tue Sep 29 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.26-1
 - Drop drive-app background toggle and test-launch button
 

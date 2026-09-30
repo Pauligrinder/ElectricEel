@@ -145,7 +145,7 @@ Page {
             TextSwitch {
                 width: parent.width
                 text: qsTr("Hotspot when driving")
-                description: qsTr("Turns the Wi-Fi hotspot on when the phone is inside the car. Turns it off a few minutes after you walk away, if it was off before.")
+                description: qsTr("Turns the Wi-Fi hotspot on once you have been connected for a bit and the car reports a driver present. Turns it off a few minutes after you walk away, if it was off before.")
                 checked: teslaClient.driveHotspotEnabled
                 onCheckedChanged: {
                     if (checked !== teslaClient.driveHotspotEnabled)
@@ -157,7 +157,7 @@ Page {
                 id: driveAppSwitch
                 width: parent.width
                 text: qsTr("Launch app when driving")
-                description: qsTr("Starts a chosen app when the phone is inside the car.")
+                description: qsTr("Starts a chosen app once you have been connected for a bit and the car reports a driver present.")
                 checked: teslaClient.driveAppEnabled
                 onCheckedChanged: {
                     if (checked !== teslaClient.driveAppEnabled)

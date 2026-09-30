@@ -221,6 +221,10 @@ func TestWatcherWaitUsesRSSIUpdateForCachedTarget(t *testing.T) {
 	}
 	defer w.Stop(ctx)
 
+	if age := w.LastRSSIUpdateAge(); age != -1 {
+		t.Fatalf("seeded leftover must not count as a live RSSI signal, age=%s", age)
+	}
+
 	bus.advertiseRSSI(-62)
 	res, err := w.Wait(ctx)
 	if err != nil {
@@ -228,6 +232,62 @@ func TestWatcherWaitUsesRSSIUpdateForCachedTarget(t *testing.T) {
 	}
 	if res == nil || res.Path != bus.dev.path || res.RSSI != -62 || !res.HasRSSI {
 		t.Fatalf("Wait returned %+v, want fresh RSSI update for cached target", res)
+	}
+	if age := w.LastRSSIUpdateAge(); age < 0 || age > time.Second {
+		t.Fatalf("live RSSI signal age = %s, want recent", age)
+	}
+}
+
+func TestWatcherPeekCachedRSSIDoesNotStampLiveUpdate(t *testing.T) {
+	bus := newFakeBluez()
+	vin := "5YJ3E1EA0PF000000"
+	bus.dev = &fakeDevice{path: bus.devPath(), name: vehicleBeaconName(vin), rssi: -94}
+	bus.deviceVisible = true
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	w, err := newWatcher(ctx, bus, "", vin)
+	if err != nil {
+		t.Fatalf("newWatcher: %v", err)
+	}
+	defer w.Stop(ctx)
+
+	res, err := w.Peek(ctx)
+	if err != nil {
+		t.Fatalf("Peek: %v", err)
+	}
+	if res == nil || !res.HasRSSI {
+		t.Fatalf("Peek should see cached RSSI, got %+v", res)
+	}
+	if age := w.LastRSSIUpdateAge(); age != -1 {
+		t.Fatalf("Peek of a leftover RSSI must not stamp lastRSSIUpdate, age=%s", age)
+	}
+}
+
+func TestWatcherWeakRSSISignalDoesNotStampLiveUpdate(t *testing.T) {
+	bus := newFakeBluez()
+	vin := "5YJ3E1EA0PF000000"
+	bus.dev = &fakeDevice{path: bus.devPath(), name: vehicleBeaconName(vin), omitRSSI: true}
+	bus.deviceVisible = true
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	w, err := newWatcher(ctx, bus, "", vin)
+	if err != nil {
+		t.Fatalf("newWatcher: %v", err)
+	}
+	defer w.Stop(ctx)
+
+	bus.advertiseRSSI(MinFreshRSSI)
+	res, err := w.Wait(ctx)
+	if err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	if res == nil || res.RSSI != MinFreshRSSI {
+		t.Fatalf("Wait returned %+v, want floor RSSI", res)
+	}
+	if age := w.LastRSSIUpdateAge(); age != -1 {
+		t.Fatalf("RSSI <= MinFreshRSSI must not stamp a live update, age=%s", age)
 	}
 }
 
