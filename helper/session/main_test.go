@@ -14,6 +14,7 @@ import (
 
 	"electric-eel-session/bluez"
 	"github.com/teslamotors/vehicle-command/pkg/protocol"
+	"github.com/teslamotors/vehicle-command/pkg/protocol/protobuf/vcsec"
 )
 
 func TestManualStatusCannotBlockPresenceOnCachedOrWeakBeacon(t *testing.T) {
@@ -506,18 +507,29 @@ func TestPresenceStepLiveGATTHoldsNearWithoutAdvertisement(t *testing.T) {
 // TestPresenceLiveNearRejectsWeakAndCachedBeacons is the regression for
 // connecting at RSSI -97..-100 (and to leftover Device1 cache) after a GATT
 // drop: those attempts hang bluetoothd with deadline exceeded / abort-by-local.
-func TestInsideCarRSSI(t *testing.T) {
-	if !insideCar(-48, true) {
-		t.Fatal("cabin-strength RSSI must count as inside")
+func TestReadyForInside(t *testing.T) {
+	now := time.Now()
+	started := now.Add(-insideSettleDuration)
+	if !readyForInside(started, now, true) {
+		t.Fatal("settled session with user present must count as inside")
 	}
-	if !insideCar(-65, true) {
-		t.Fatal("inside threshold itself must count")
+	if readyForInside(started, now, false) {
+		t.Fatal("settled session without user present must not count as inside")
 	}
-	if insideCar(-75, true) {
-		t.Fatal("walk-up -75 must not look like the phone is in the cabin")
+	if readyForInside(now.Add(-insideSettleDuration+time.Second), now, true) {
+		t.Fatal("must wait the full settle duration even when user is present")
 	}
-	if insideCar(-62, false) {
-		t.Fatal("missing RSSI must not count as inside")
+	if readyForInside(time.Time{}, now, true) {
+		t.Fatal("no GATT session must not count as inside")
+	}
+	if !userPresent(vcsec.UserPresence_E_VEHICLE_USER_PRESENCE_PRESENT) {
+		t.Fatal("PRESENT must count as userPresent")
+	}
+	if userPresent(vcsec.UserPresence_E_VEHICLE_USER_PRESENCE_NOT_PRESENT) {
+		t.Fatal("NOT_PRESENT must not count as userPresent")
+	}
+	if userPresent(vcsec.UserPresence_E_VEHICLE_USER_PRESENCE_UNKNOWN) {
+		t.Fatal("UNKNOWN must not count as userPresent")
 	}
 }
 
@@ -581,7 +593,7 @@ func TestShouldRecycleDiscovery(t *testing.T) {
 		t.Fatal("car away (no leftover) must not StopDiscovery")
 	}
 	if shouldRecycleDiscovery(true, 19*time.Second, time.Time{}, now, 0) {
-		t.Fatal("must not recycle before 20s of silence")
+		t.Fatal("must not recycle before 20s without a live RSSI signal")
 	}
 	if !shouldRecycleDiscovery(true, 20*time.Second, time.Time{}, now, 0) {
 		t.Fatal("first recycle at 20s for a frozen leftover")
@@ -608,28 +620,64 @@ func TestShouldForgetCached(t *testing.T) {
 		t.Fatal("must not RemoveDevice at the first recycle (sleeping-car RSSI gap)")
 	}
 	if !shouldForgetCached(true, false, 40*time.Second) {
-		t.Fatal("frozen leftover after 40s silent must be forgotten once")
+		t.Fatal("frozen leftover after 40s without live RSSI signal must be forgotten once")
 	}
 	if shouldForgetCached(true, true, time.Minute) {
 		t.Fatal("must not ForgetCached again in the same silent stretch")
 	}
 }
 
+func TestRssiSignalAgeFallsBackToWaitSilence(t *testing.T) {
+	if got := rssiSignalAge(-1, 15*time.Second); got != 15*time.Second {
+		t.Fatalf("no signal yet: got %s, want wait silence", got)
+	}
+	if got := rssiSignalAge(25*time.Second, 5*time.Second); got != 25*time.Second {
+		t.Fatalf("live signal age wins: got %s", got)
+	}
+}
+
+func TestLeftoverFrozenNeedsStaleSignalNotJustCachedRSSI(t *testing.T) {
+	if leftoverFrozen(true, 5*time.Second, discoveryRecycleAfter) {
+		t.Fatal("fresh advert signal must not look frozen")
+	}
+	if !leftoverFrozen(true, discoveryRecycleAfter, discoveryRecycleAfter) {
+		t.Fatal("cached RSSI with no recent signal is frozen")
+	}
+	if leftoverFrozen(false, time.Minute, discoveryRecycleAfter) {
+		t.Fatal("empty adapter is not a frozen leftover")
+	}
+}
+
 func TestShouldIdlePoll(t *testing.T) {
 	if shouldIdlePoll(false, 5*time.Minute) {
-		t.Fatal("frozen leftover must keep recycle/forget, not idle-poll")
+		t.Fatal("approach-strength leftover must keep recycle/forget, not idle-poll")
 	}
 	if shouldIdlePoll(true, 59*time.Second) {
 		t.Fatal("first minute away keeps continuous discovery for a fast return")
 	}
 	if !shouldIdlePoll(true, 60*time.Second) {
-		t.Fatal("empty adapter past idlePollAfter must pause continuous discovery")
+		t.Fatal("empty or only-weak adapter past idlePollAfter must pause continuous discovery")
 	}
 	if idlePollWait(0) != 30*time.Second || idlePollWait(1) != 60*time.Second {
 		t.Fatalf("idle poll wait 0=%s 1=%s", idlePollWait(0), idlePollWait(1))
 	}
 	if idlePollWait(8) != idlePollMax {
 		t.Fatalf("idle poll wait cap %s, want %s", idlePollWait(8), idlePollMax)
+	}
+}
+
+func TestBeaconUsableIgnoresFloorRSSI(t *testing.T) {
+	if !beaconUsable(true, teslaMinConnectRSSI+1) {
+		t.Fatal("RSSI just above the Tesla floor is a live approach")
+	}
+	if beaconUsable(true, teslaMinConnectRSSI) {
+		t.Fatal("RSSI <= -95 must not keep discovery hot (2026-09-26 6.5h scan)")
+	}
+	if beaconUsable(true, -100) || beaconUsable(false, -40) {
+		t.Fatal("missing or floor RSSI is not usable")
+	}
+	if teslaMinConnectRSSI != bluez.MinFreshRSSI {
+		t.Fatal("connect floor and watcher stamp floor diverged")
 	}
 }
 

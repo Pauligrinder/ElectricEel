@@ -18,6 +18,12 @@ import (
 // an absent vehicle does not wake the process ten times per second.
 const pollInterval = 100 * time.Millisecond
 
+// MinFreshRSSI is Tesla Android's background-scan floor. At or below this,
+// a Device1 RSSI is not a fresh approach advertisement. Phone logs on
+// 2026-09-26 stayed on -96..-100 for 6.5h, which kept LE discovery running
+// until bluetoothd returned AuthFailed.
+const MinFreshRSSI int16 = -95
+
 // ScanResult describes a discovered vehicle beacon. Path is the org.bluez
 // Device1 object path (the identifier Connect needs).
 type ScanResult struct {
@@ -112,6 +118,11 @@ type Watcher struct {
 	detachSigs  func()
 	ifaceMatch  []dbus.MatchOption
 	propsMatch  []dbus.MatchOption
+	// lastRSSIUpdate is the last time handleSignal accepted a live
+	// advertisement RSSI. GetManagedObjects / Peek may still report a
+	// leftover RSSI property after ads stop; this timestamp is what
+	// distinguishes a fresh advert from that cache.
+	lastRSSIUpdate time.Time
 }
 
 // newWatcher subscribes before starting discovery so no first advertisement
@@ -203,6 +214,18 @@ func (w *Watcher) AdapterPath() dbus.ObjectPath {
 	return w.adapterPath
 }
 
+// LastRSSIUpdateAge is how long since a live advertisement RSSI signal.
+// Returns -1 when the watcher has never accepted one (a leftover Device1
+// seeded at start does not count).
+func (w *Watcher) LastRSSIUpdateAge() time.Duration {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.lastRSSIUpdate.IsZero() {
+		return -1
+	}
+	return time.Since(w.lastRSSIUpdate)
+}
+
 // ForgetStale RemoveDevice's a cached vehicle Device1 that is not
 // advertising. Presence must not call this: sleeping VCSEC drops RSSI
 // between ads, and RemoveDevice is what filled the 2026-09-17 logs and
@@ -212,7 +235,10 @@ func (w *Watcher) ForgetStale(ctx context.Context) bool {
 	if forgotten == "" {
 		return false
 	}
+	w.mu.Lock()
 	w.devicePath = ""
+	w.lastRSSIUpdate = time.Time{}
+	w.mu.Unlock()
 	return true
 }
 
@@ -255,6 +281,7 @@ func (w *Watcher) ForgetCached(ctx context.Context) bool {
 	if w.devicePath == result.Path {
 		w.devicePath = ""
 	}
+	w.lastRSSIUpdate = time.Time{}
 	w.mu.Unlock()
 	return true
 }
@@ -385,6 +412,13 @@ func (w *Watcher) resultFromDeviceProperties(ctx context.Context, path dbus.Obje
 	}
 	if !hasName {
 		name = w.name
+	}
+	// A signal at or below MinFreshRSSI is not a fresh approach. Stamping
+	// it would keep recycle/forget from aging out the 2026-09-26 leftover.
+	if rssi > MinFreshRSSI {
+		w.mu.Lock()
+		w.lastRSSIUpdate = time.Now()
+		w.mu.Unlock()
 	}
 	return &ScanResult{Path: path, LocalName: name, RSSI: rssi, HasRSSI: true}, false, true
 }

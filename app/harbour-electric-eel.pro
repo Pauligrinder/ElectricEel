@@ -8,7 +8,7 @@ QT += dbus
 # this (and helper/Cargo.toml) from the same git tag, so a matched pair
 # reports equal versions. Keep in sync with helper/Cargo.toml when bumping
 # outside a release.
-VERSION = 0.2.26
+VERSION = 0.2.27
 
 DEFINES += APP_VERSION=\\\"$$VERSION\\\"
 
