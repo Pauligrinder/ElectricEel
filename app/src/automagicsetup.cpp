@@ -1,0 +1,328 @@
+#include "automagicsetup.h"
+
+#include <QDir>
+#include <QFile>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QLocalSocket>
+#include <QSaveFile>
+#include <QVariantMap>
+
+extern "C" {
+#include "electriceelcore.h"
+}
+
+namespace {
+
+const char *kPath = "/org/electriceel/PhoneKey";
+const char *kIface = "org.electriceel.PhoneKey";
+const char *kDest = "org.electriceel.PhoneKey";
+
+void keylog(const char *tag, const QString &message)
+{
+    const QByteArray utf8 = message.toUtf8();
+    core_keylog(tag, utf8.constData());
+}
+
+QVariantMap dbusSource(const QString &id, const QString &name, const QString &signal)
+{
+    QVariantMap s;
+    s.insert(QStringLiteral("id"), id);
+    s.insert(QStringLiteral("name"), name);
+    s.insert(QStringLiteral("type"), QStringLiteral("dbus"));
+    s.insert(QStringLiteral("enabled"), true);
+    s.insert(QStringLiteral("trigger"), true);
+    s.insert(QStringLiteral("address"), QStringLiteral("session"));
+    s.insert(QStringLiteral("destination"), QLatin1String(kDest));
+    s.insert(QStringLiteral("path"), QLatin1String(kPath));
+    s.insert(QStringLiteral("interface"), QLatin1String(kIface));
+    s.insert(QStringLiteral("signal"), signal);
+    return s;
+}
+
+// ConnMan Technology.SetProperty(string, variant). automagicd is root and
+// does not drop privileges for dbus_method, so this can toggle tethering.
+// A shell `connmanctl` action runs as the session user, gets Permission
+// denied, and still exits 0.
+QVariantMap dbusTetherAction(const QString &id, const QString &name, bool on)
+{
+    QVariantMap nameArg;
+    nameArg.insert(QStringLiteral("type"), QStringLiteral("s"));
+    nameArg.insert(QStringLiteral("value"), QStringLiteral("Tethering"));
+    QVariantMap valueArg;
+    valueArg.insert(QStringLiteral("type"), QStringLiteral("v:b"));
+    valueArg.insert(QStringLiteral("value"), on);
+
+    QVariantMap a;
+    a.insert(QStringLiteral("id"), id);
+    a.insert(QStringLiteral("name"), name);
+    a.insert(QStringLiteral("type"), QStringLiteral("dbus_method"));
+    a.insert(QStringLiteral("enabled"), true);
+    a.insert(QStringLiteral("address"), QStringLiteral("system"));
+    a.insert(QStringLiteral("destination"), QStringLiteral("net.connman"));
+    a.insert(QStringLiteral("path"), QStringLiteral("/net/connman/technology/wifi"));
+    a.insert(QStringLiteral("interface"), QStringLiteral("net.connman.Technology"));
+    a.insert(QStringLiteral("method"), QStringLiteral("SetProperty"));
+    a.insert(QStringLiteral("timeout"), QStringLiteral("5s"));
+    a.insert(QStringLiteral("args"), QVariantList{ nameArg, valueArg });
+    return a;
+}
+
+QVariantMap actionStep(const QString &id, const QString &actionId)
+{
+    QVariantMap step;
+    step.insert(QStringLiteral("id"), id);
+    step.insert(QStringLiteral("type"), QStringLiteral("action"));
+    step.insert(QStringLiteral("action"), actionId);
+    step.insert(QStringLiteral("goto_alt"), QStringLiteral("end"));
+    return step;
+}
+
+QVariantMap flow(const QString &id, const QString &name,
+                 const QString &trigger, const QVariantList &steps)
+{
+    QVariantMap f;
+    f.insert(QStringLiteral("id"), id);
+    f.insert(QStringLiteral("name"), name);
+    f.insert(QStringLiteral("enabled"), true);
+    f.insert(QStringLiteral("triggers"), QStringList{ trigger });
+    f.insert(QStringLiteral("steps"), steps);
+    return f;
+}
+
+QJsonArray upsertAll(QJsonArray data, const QList<QVariantMap> &items)
+{
+    for (const QVariantMap &item : items) {
+        const QJsonObject obj = QJsonObject::fromVariantMap(item);
+        const QString id = obj.value(QStringLiteral("id")).toString();
+        bool replaced = false;
+        for (int i = 0; i < data.size(); ++i) {
+            if (data.at(i).toObject().value(QStringLiteral("id")).toString() == id) {
+                data.replace(i, obj);
+                replaced = true;
+                break;
+            }
+        }
+        if (!replaced)
+            data.append(obj);
+    }
+    return data;
+}
+
+} // namespace
+
+AutomagicSetup::AutomagicSetup(QObject *parent)
+    : QObject(parent)
+{
+}
+
+QString AutomagicSetup::configDir() const
+{
+    const QString home = QDir::homePath() + QStringLiteral("/.config/app.qml/automagic");
+    if (QDir(home).exists())
+        return home;
+    const QString fallback = QStringLiteral("/home/defaultuser/.config/app.qml/automagic");
+    if (QDir(fallback).exists())
+        return fallback;
+    return home;
+}
+
+bool AutomagicSetup::upsertFile(const QString &fileName, const QList<QVariantMap> &items,
+                                QString *error)
+{
+    const QString path = configDir() + QLatin1Char('/') + fileName;
+    QJsonArray data;
+    int version = 1;
+    QFile in(path);
+    if (in.exists()) {
+        if (!in.open(QIODevice::ReadOnly)) {
+            if (error)
+                *error = QStringLiteral("cannot read %1").arg(fileName);
+            return false;
+        }
+        const QJsonDocument doc = QJsonDocument::fromJson(in.readAll());
+        in.close();
+        if (!doc.isObject()) {
+            if (error)
+                *error = QStringLiteral("%1 is not Automagic JSON").arg(fileName);
+            return false;
+        }
+        const QJsonObject root = doc.object();
+        version = root.value(QStringLiteral("version")).toInt(1);
+        data = root.value(QStringLiteral("data")).toArray();
+    }
+
+    QJsonObject root;
+    root.insert(QStringLiteral("version"), version);
+    root.insert(QStringLiteral("data"), upsertAll(data, items));
+
+    QSaveFile out(path);
+    if (!out.open(QIODevice::WriteOnly)) {
+        if (error)
+            *error = QStringLiteral("cannot write %1").arg(fileName);
+        return false;
+    }
+    out.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
+    if (!out.commit()) {
+        if (error)
+            *error = QStringLiteral("cannot save %1").arg(fileName);
+        return false;
+    }
+    return true;
+}
+
+bool AutomagicSetup::reloadDaemon(const QString &secret, QString *error)
+{
+    QLocalSocket sock;
+    sock.connectToServer(QStringLiteral("/run/automagicd/automagicd.sock"));
+    if (!sock.waitForConnected(1500)) {
+        if (error)
+            *error = QStringLiteral("automagicd not reachable");
+        return false;
+    }
+
+    auto sendLine = [&](const QJsonObject &obj) -> bool {
+        sock.write(QJsonDocument(obj).toJson(QJsonDocument::Compact));
+        sock.write("\n");
+        return sock.waitForBytesWritten(1500);
+    };
+    auto readLine = [&]() -> QJsonObject {
+        if (!sock.waitForReadyRead(2000))
+            return QJsonObject();
+        QByteArray line;
+        while (!line.contains('\n') && sock.waitForReadyRead(500))
+            line += sock.readAll();
+        const int nl = line.indexOf('\n');
+        if (nl >= 0)
+            line = line.left(nl);
+        return QJsonDocument::fromJson(line).object();
+    };
+
+    QJsonObject auth;
+    auth.insert(QStringLiteral("secret"), secret);
+    if (!sendLine(auth)) {
+        if (error)
+            *error = QStringLiteral("automagicd write failed");
+        return false;
+    }
+    const QJsonObject authReply = readLine();
+    if (!authReply.value(QStringLiteral("ok")).toBool()) {
+        if (error)
+            *error = QStringLiteral("automagicd auth failed");
+        return false;
+    }
+
+    QJsonObject reload;
+    reload.insert(QStringLiteral("cmd"), QStringLiteral("reload"));
+    if (!sendLine(reload)) {
+        if (error)
+            *error = QStringLiteral("automagicd reload write failed");
+        return false;
+    }
+    const QJsonObject reloadReply = readLine();
+    if (!reloadReply.value(QStringLiteral("ok")).toBool()) {
+        if (error)
+            *error = QStringLiteral("automagicd reload failed");
+        return false;
+    }
+    return true;
+}
+
+bool AutomagicSetup::install(QString *message)
+{
+    auto fail = [&](const QString &text) -> bool {
+        if (message)
+            *message = text;
+        return false;
+    };
+    auto okMsg = [&](const QString &text) -> bool {
+        if (message)
+            *message = text;
+        return true;
+    };
+
+    const QString dir = configDir();
+    if (!QDir(dir).exists()) {
+        keylog("automagic", QStringLiteral("config dir missing"));
+        return fail(QStringLiteral("Automagic config not found. Open Automagic once, then try again."));
+    }
+
+    QVariantMap presence = dbusSource(QStringLiteral("eel_presence"),
+                                      QStringLiteral("ElectricEel presence"),
+                                      QStringLiteral("Presence"));
+    QVariantList transforms;
+    QVariantMap copy;
+    copy.insert(QStringLiteral("type"), QStringLiteral("copy"));
+    copy.insert(QStringLiteral("in"), QStringLiteral("arg0"));
+    copy.insert(QStringLiteral("out"), QStringLiteral("kind"));
+    transforms.append(copy);
+    presence.insert(QStringLiteral("transformations"), transforms);
+
+    const QList<QVariantMap> sources{
+        dbusSource(QStringLiteral("eel_inside"),
+                   QStringLiteral("ElectricEel inside car"),
+                   QStringLiteral("Inside")),
+        dbusSource(QStringLiteral("eel_far"),
+                   QStringLiteral("ElectricEel walked away"),
+                   QStringLiteral("Far")),
+        dbusSource(QStringLiteral("eel_near"),
+                   QStringLiteral("ElectricEel connected"),
+                   QStringLiteral("Near")),
+        dbusSource(QStringLiteral("eel_auth_ok"),
+                   QStringLiteral("ElectricEel authorized"),
+                   QStringLiteral("AuthOk")),
+        dbusSource(QStringLiteral("eel_handle_pull"),
+                   QStringLiteral("ElectricEel handle pull"),
+                   QStringLiteral("HandlePull")),
+        presence
+    };
+
+    const QList<QVariantMap> actions{
+        dbusTetherAction(QStringLiteral("eel_hotspot_on"),
+                         QStringLiteral("ElectricEel hotspot on"), true),
+        dbusTetherAction(QStringLiteral("eel_hotspot_off"),
+                         QStringLiteral("ElectricEel hotspot off"), false)
+    };
+
+    const QList<QVariantMap> flows{
+        flow(QStringLiteral("eel_flow_hotspot_on"),
+             QStringLiteral("ElectricEel hotspot on"),
+             QStringLiteral("eel_inside"),
+             QVariantList{ actionStep(QStringLiteral("eel_step_hotspot_on"),
+                                      QStringLiteral("eel_hotspot_on")) }),
+        flow(QStringLiteral("eel_flow_hotspot_off"),
+             QStringLiteral("ElectricEel hotspot off"),
+             QStringLiteral("eel_far"),
+             QVariantList{ actionStep(QStringLiteral("eel_step_hotspot_off"),
+                                      QStringLiteral("eel_hotspot_off")) })
+    };
+
+    QString error;
+    if (!upsertFile(QStringLiteral("data_sources.json"), sources, &error)
+            || !upsertFile(QStringLiteral("actions.json"), actions, &error)
+            || !upsertFile(QStringLiteral("flows.json"), flows, &error)) {
+        keylog("automagic", error);
+        return fail(error);
+    }
+
+    QString secret;
+    QFile secretFile(dir + QStringLiteral("/secret.json"));
+    if (secretFile.open(QIODevice::ReadOnly)) {
+        const QJsonObject root = QJsonDocument::fromJson(secretFile.readAll()).object();
+        secret = root.value(QStringLiteral("data")).toObject()
+                 .value(QStringLiteral("shared_secret")).toString();
+    }
+    if (secret.isEmpty()) {
+        keylog("automagic", QStringLiteral("wrote JSON, no daemon secret"));
+        return okMsg(QStringLiteral("Wrote Automagic sources, actions, and flows. Open Automagic so the daemon reloads."));
+    }
+
+    if (!reloadDaemon(secret, &error)) {
+        keylog("automagic", error);
+        return okMsg(QStringLiteral("Wrote Automagic flows, but %1. Open Automagic to reload.").arg(error));
+    }
+
+    keylog("automagic", QStringLiteral("installed sources actions flows"));
+    return okMsg(QStringLiteral("Added ElectricEel triggers and hotspot flows to Automagic."));
+}

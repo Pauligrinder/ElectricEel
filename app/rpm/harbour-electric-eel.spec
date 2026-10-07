@@ -1,6 +1,6 @@
 Name:       harbour-electric-eel
 Summary:    Control your Tesla over Bluetooth
-Version:    0.2.27
+Version:    0.2.36
 Release:    1
 License:    ASL 2.0
 URL:        https://github.com/nappa85/ElectricEel
@@ -9,11 +9,13 @@ Requires:   sailfishsilica-qt5 >= 0.10.9
 Requires:   qt5-qtcore
 Requires:   qt5-qtdeclarative
 Requires:   qt5-qtdbus
+Requires:   qt5-qtnetwork
 BuildRequires:  pkgconfig(sailfishapp) >= 1.0.2
 BuildRequires:  pkgconfig(Qt5Core)
 BuildRequires:  pkgconfig(Qt5Qml)
 BuildRequires:  pkgconfig(Qt5Quick)
 BuildRequires:  pkgconfig(Qt5DBus)
+BuildRequires:  pkgconfig(Qt5Network)
 BuildRequires:  desktop-file-utils
 
 %description
@@ -46,8 +48,29 @@ desktop-file-install --delete-original \
 %{_datadir}/%{name}
 %{_datadir}/applications/%{name}.desktop
 %{_datadir}/icons/hicolor/*/apps/%{name}.png
+%{_sysconfdir}/sailjail/permissions/ElectricEelAutomagic.permission
 
 %changelog
+* Sun Oct 04 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.36-1
+- Show the Bluetooth-off cover icon when the adapter is not powered
+* Sun Oct 04 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.35-1
+- Hold Far for 3 minutes and skip it if Inside arrives first
+* Sun Oct 04 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.34-1
+- Drop the uncancellable 3m wait from the Automagic hotspot-off flow
+* Sun Oct 04 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.33-1
+- Toggle hotspot via ConnMan D-Bus as automagicd (shell connmanctl is denied for the user)
+* Sun Oct 04 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.32-1
+- Do not whitelist /run in the Automagic sailjail profile (that hides the compositor)
+* Sun Oct 04 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.31-1
+- Install Automagic sailjail permission under /etc so the config dir is visible
+* Sun Oct 04 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.30-1
+- Settings button to install Automagic sources, hotspot actions, and flows
+* Sun Oct 04 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.29-1
+- Treat cabin-strength Peek RSSI as live so idle-poll does not refuse Connect
+- Drop built-in hotspot and drive-app launch; emit session D-Bus signals for Automagic
+* Sun Oct 04 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.28-1
+- Treat cabin-strength Peek RSSI as live so idle-poll does not refuse Connect
+- Drop built-in hotspot and drive-app launch; emit session D-Bus signals for Automagic
 * Thu Oct 01 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.27-1
 - Gate presence_inside on 45s GATT settle + VCSEC userPresence (not cabin RSSI)
 - Idle-poll when only weak RSSI (≤ -95) remains, so discovery does not run for hours

@@ -37,6 +37,9 @@ Page {
         onConfigSaved: {
             page.statusText = ok ? qsTr("Saved") : qsTr("Save failed: %1").arg(errorMessage)
         }
+        onAutomagicSetupFinished: {
+            page.statusText = message
+        }
     }
 
     Component.onCompleted: teslaClient.refreshConfig()
@@ -142,39 +145,32 @@ Page {
                 valueText: value + qsTr(" s")
             }
 
-            TextSwitch {
-                width: parent.width
-                text: qsTr("Hotspot when driving")
-                description: qsTr("Turns the Wi-Fi hotspot on once you have been connected for a bit and the car reports a driver present. Turns it off a few minutes after you walk away, if it was off before.")
-                checked: teslaClient.driveHotspotEnabled
-                onCheckedChanged: {
-                    if (checked !== teslaClient.driveHotspotEnabled)
-                        teslaClient.driveHotspotEnabled = checked
-                }
+            SectionHeader { text: qsTr("Automagic") }
+
+            Label {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.margins: Theme.horizontalPageMargin
+                wrapMode: Text.Wrap
+                color: Theme.secondaryColor
+                font.pixelSize: Theme.fontSizeExtraSmall
+                text: qsTr("ElectricEel does not turn the hotspot on or launch apps itself. The button below adds harbour-automagic triggers for the session D-Bus signals and two flows: hotspot on when you are in the car, hotspot off 3 minutes after you walk away (the Far signal is held in the app and skipped if you get back in the car). Extra triggers (Near, AuthOk, HandlePull, Presence) are added so you can attach your own flows, such as launching an app.")
             }
 
-            TextSwitch {
-                id: driveAppSwitch
-                width: parent.width
-                text: qsTr("Launch app when driving")
-                description: qsTr("Starts a chosen app once you have been connected for a bit and the car reports a driver present.")
-                checked: teslaClient.driveAppEnabled
-                onCheckedChanged: {
-                    if (checked !== teslaClient.driveAppEnabled)
-                        teslaClient.driveAppEnabled = checked
-                }
+            Button {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: qsTr("Add Automagic flows")
+                onClicked: teslaClient.installAutomagicFlows()
             }
 
-            // App picker only when the feature is on.
-            ValueButton {
-                width: parent.width
-                visible: driveAppSwitch.checked
-                label: qsTr("App")
-                value: teslaClient.driveAppName.length > 0
-                       ? teslaClient.driveAppName
-                       : qsTr("Not selected")
-                onClicked: pageStack.push(Qt.resolvedUrl("AppPickerPage.qml"),
-                                          { teslaClient: teslaClient })
+            Label {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.margins: Theme.horizontalPageMargin
+                wrapMode: Text.Wrap
+                color: Theme.secondaryColor
+                font.pixelSize: Theme.fontSizeExtraSmall
+                text: qsTr("Manual trigger: protocol DBUS, Act as Trigger, Address session, Path /org/electriceel/PhoneKey, Interface org.electriceel.PhoneKey. Signals: Inside, Far, Near, AuthOk, HandlePull, Presence (arg0 is the kind). ElectricEel must stay running.")
             }
 
             Button {

@@ -1,6 +1,6 @@
 #include "teslaclient.h"
-#include "drivehotspot.h"
-#include "driveapplauncher.h"
+#include "automagicsetup.h"
+#include "phonekeybus.h"
 
 #include <QDebug>
 #include <QDateTime>
@@ -40,6 +40,17 @@ const char *appStateName(Qt::ApplicationState state)
     default:
         return "Unknown";
     }
+}
+
+// Same phrases tesla-session's adapterPowerDenied uses. The cover badge
+// treats this as bluetooth-off, not a generic red "error" (which shares
+// the scanning wifi-off glyph and so looks unchanged).
+bool adapterOffStatus(const QString &errorMessage)
+{
+    return errorMessage.contains(QLatin1String("adapter not powered"))
+            || errorMessage.contains(QLatin1String("power on adapter"))
+            || errorMessage.contains(QLatin1String("NotPowered"))
+            || errorMessage.contains(QLatin1String("RFKILL"));
 }
 
 // Binaries the core spawns live under the app's data dir in the RPM. The Go
@@ -460,15 +471,7 @@ TeslaClient::TeslaClient(QObject *parent)
 
     m_helperVersion = QString::fromUtf8(core_version());
 
-    m_driveHotspot = new DriveHotspot(this);
-    connect(m_driveHotspot, &DriveHotspot::enabledChanged,
-            this, &TeslaClient::driveHotspotEnabledChanged);
-
-    m_driveAppLauncher = new DriveAppLauncher(this);
-    connect(m_driveAppLauncher, &DriveAppLauncher::enabledChanged,
-            this, &TeslaClient::driveAppEnabledChanged);
-    connect(m_driveAppLauncher, &DriveAppLauncher::desktopFileChanged,
-            this, &TeslaClient::driveAppDesktopFileChanged);
+    m_phoneKeyBus = new PhoneKeyBus(this);
 }
 
 TeslaClient::~TeslaClient()
@@ -553,61 +556,20 @@ void TeslaClient::onPhoneKeyEvent(const QString &kind, const QString &vin,
     else if (kind == QStringLiteral("presence_stopped"))
         status = QStringLiteral("Phone key stopped");
     else if (kind == QStringLiteral("presence_error")
-             || kind == QStringLiteral("presence_auth_failed"))
-        status = errorMessage.isEmpty()
-                 ? QStringLiteral("Phone key error")
-                 : QStringLiteral("Phone key error: %1").arg(errorMessage);
-    if (m_driveHotspot)
-        m_driveHotspot->onPhoneKeyEvent(kind);
-    if (m_driveAppLauncher)
-        m_driveAppLauncher->onPhoneKeyEvent(kind);
+             || kind == QStringLiteral("presence_auth_failed")) {
+        if (adapterOffStatus(errorMessage))
+            status = QStringLiteral("Phone key Bluetooth off");
+        else
+            status = errorMessage.isEmpty()
+                     ? QStringLiteral("Phone key error")
+                     : QStringLiteral("Phone key error: %1").arg(errorMessage);
+    }
+    if (m_phoneKeyBus)
+        m_phoneKeyBus->publish(kind);
     if (status.isEmpty() || m_phoneKeyStatus == status)
         return;
     m_phoneKeyStatus = status;
     emit phoneKeyStatusChanged();
-}
-
-bool TeslaClient::driveHotspotEnabled() const
-{
-    return m_driveHotspot && m_driveHotspot->enabled();
-}
-
-void TeslaClient::setDriveHotspotEnabled(bool enabled)
-{
-    if (m_driveHotspot)
-        m_driveHotspot->setEnabled(enabled);
-}
-
-bool TeslaClient::driveAppEnabled() const
-{
-    return m_driveAppLauncher && m_driveAppLauncher->enabled();
-}
-
-void TeslaClient::setDriveAppEnabled(bool enabled)
-{
-    if (m_driveAppLauncher)
-        m_driveAppLauncher->setEnabled(enabled);
-}
-
-QString TeslaClient::driveAppDesktopFile() const
-{
-    return m_driveAppLauncher ? m_driveAppLauncher->desktopFile() : QString();
-}
-
-void TeslaClient::setDriveAppDesktopFile(const QString &path)
-{
-    if (m_driveAppLauncher)
-        m_driveAppLauncher->setDesktopFile(path);
-}
-
-QString TeslaClient::driveAppName() const
-{
-    return m_driveAppLauncher ? m_driveAppLauncher->appName() : QString();
-}
-
-QVariantList TeslaClient::installedApps() const
-{
-    return m_driveAppLauncher ? m_driveAppLauncher->installedApps() : QVariantList();
 }
 
 void TeslaClient::onApplicationStateChanged(Qt::ApplicationState state)
@@ -694,6 +656,14 @@ void TeslaClient::refreshHelperAvailable()
     // In-process: availability is fixed at core_new time; nothing to probe.
     // Keep the slot so QML callers need no edits.
     emit helperAvailableChanged();
+}
+
+void TeslaClient::installAutomagicFlows()
+{
+    AutomagicSetup setup;
+    QString message;
+    const bool ok = setup.install(&message);
+    emit automagicSetupFinished(ok, message);
 }
 
 void TeslaClient::refreshHelperVersion()

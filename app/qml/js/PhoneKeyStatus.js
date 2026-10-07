@@ -8,7 +8,9 @@
 function isBluetoothOff(status) {
     if (!status)
         return false
-    return status.indexOf("NotPowered") >= 0
+    return status.indexOf("Bluetooth off") >= 0
+        || status.indexOf("adapter not powered") >= 0
+        || status.indexOf("NotPowered") >= 0
         || status.indexOf("RFKILL") >= 0
         || status.indexOf("power on adapter") >= 0
 }
