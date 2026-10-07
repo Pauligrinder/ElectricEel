@@ -2,8 +2,10 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"testing"
 
+	"github.com/godbus/dbus"
 	"github.com/teslamotors/vehicle-command/pkg/protocol"
 	universal "github.com/teslamotors/vehicle-command/pkg/protocol/protobuf/universalmessage"
 	"google.golang.org/protobuf/encoding/protowire"
@@ -165,5 +167,14 @@ func TestSessionDroppedError(t *testing.T) {
 	}
 	if !sessionDroppedError(protocol.ErrNoSession) {
 		t.Fatal("ErrNoSession should count as dropped")
+	}
+	for _, name := range []string{"org.bluez.Error.NotConnected", "org.freedesktop.DBus.Error.UnknownObject"} {
+		err := dbus.Error{Name: name, Body: []interface{}{"Not connected"}}
+		if !sessionDroppedError(fmt.Errorf("write: %w", err)) || !sessionDroppedError(&err) {
+			t.Fatalf("%s should rebuild the session (value and pointer errors)", name)
+		}
+	}
+	if sessionDroppedError(dbus.Error{Name: "org.bluez.Error.NotPermitted"}) {
+		t.Fatal("permission denial must not count as a dropped link")
 	}
 }

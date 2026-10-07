@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/godbus/dbus"
 	"github.com/teslamotors/vehicle-command/pkg/connector"
 	"github.com/teslamotors/vehicle-command/pkg/protocol"
 	universal "github.com/teslamotors/vehicle-command/pkg/protocol/protobuf/universalmessage"
@@ -226,6 +227,18 @@ func sendAuthenticationResponse(ctx context.Context, car *vehicle.Vehicle, level
 func sessionDroppedError(err error) bool {
 	if err == nil {
 		return false
+	}
+	var dbErr dbus.Error
+	var dbErrPtr *dbus.Error
+	if errors.As(err, &dbErr) {
+		if dbErr.Name == "org.bluez.Error.NotConnected" || dbErr.Name == "org.freedesktop.DBus.Error.UnknownObject" {
+			return true
+		}
+	}
+	if errors.As(err, &dbErrPtr) && dbErrPtr != nil {
+		if dbErrPtr.Name == "org.bluez.Error.NotConnected" || dbErrPtr.Name == "org.freedesktop.DBus.Error.UnknownObject" {
+			return true
+		}
 	}
 	return errors.Is(err, protocol.ErrNotConnected) ||
 		errors.Is(err, protocol.ErrNoSession) ||

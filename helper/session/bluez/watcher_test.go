@@ -130,6 +130,9 @@ func TestWatcherRSSIUpdateSignalsAreDistinctFromCachedSnapshots(t *testing.T) {
 	}
 	// Separate channel: watching RSSI must never consume the GATT rxLoop's
 	// copy of a signal, even while both subscribers are registered.
+	gattSignals := make(chan *dbus.Signal, 16)
+	bus.subscribeSignals(gattSignals)
+	defer bus.unsubscribeSignals(gattSignals)
 	sig := &dbus.Signal{
 		Name: propsIface + ".PropertiesChanged",
 		Path: bus.devPath(),
@@ -170,10 +173,9 @@ func TestWatcherRSSIUpdateSignalsAreDistinctFromCachedSnapshots(t *testing.T) {
 		t.Fatal("weak RSSI signal must not wake presence polling")
 	default:
 	}
-	// The original channel has not been read by the Watcher.
-	bus.sig <- sig
+	// The other subscriber retains its own copy.
 	select {
-	case got := <-bus.sig:
+	case got := <-gattSignals:
 		if got != sig {
 			t.Fatal("shared GATT signal was replaced")
 		}
@@ -240,7 +242,6 @@ func TestWatcherWaitFindsDelayedBeacon(t *testing.T) {
 	vin := "5YJ3E1EA0PF000000"
 	bus.dev = &fakeDevice{path: bus.devPath(), name: vehicleBeaconName(vin), rssi: -50}
 	bus.deviceVisible = false
-	bus.deviceAppearCall = 3
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
@@ -251,6 +252,12 @@ func TestWatcherWaitFindsDelayedBeacon(t *testing.T) {
 	}
 	defer w.Stop(ctx)
 
+	bus.emitSignal(&dbus.Signal{
+		Name: objMgrIface + ".InterfacesAdded", Path: "/",
+		Body: []interface{}{bus.devPath(), map[string]map[string]dbus.Variant{
+			deviceIface: {"Name": dbus.MakeVariant(bus.dev.name), "RSSI": dbus.MakeVariant(int16(-50))},
+		}},
+	})
 	res, err := w.Wait(ctx)
 	if err != nil {
 		t.Fatalf("Wait: %v", err)

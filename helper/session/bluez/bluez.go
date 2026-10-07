@@ -71,10 +71,7 @@ const rxTimeout = time.Second
 type dbusBus interface {
 	// object returns a handle for method calls/property access on dest/path.
 	object(dest string, path dbus.ObjectPath) dbusCaller
-	// signals returns the channel on which incoming D-Bus signals arrive.
-	signals() <-chan *dbus.Signal
-	// subscribeSignals registers an independent channel: the GATT rxLoop
-	// must remain the sole reader of signals() while connected.
+	// subscribeSignals registers an independent, lifetime-scoped channel.
 	subscribeSignals(chan *dbus.Signal)
 	unsubscribeSignals(chan *dbus.Signal)
 	// addMatch/removeMatch register/unregister a signal match rule.
@@ -125,21 +122,16 @@ func variantInt16(v dbus.Variant) (int16, bool) {
 
 // godbusConn adapts a *dbus.Conn to dbusBus.
 type godbusConn struct {
-	c   *dbus.Conn
-	sig chan *dbus.Signal
+	c *dbus.Conn
 }
 
 func adaptConn(conn *dbus.Conn) *godbusConn {
-	sig := make(chan *dbus.Signal, 64)
-	conn.Signal(sig)
-	return &godbusConn{c: conn, sig: sig}
+	return &godbusConn{c: conn}
 }
 
 func (g *godbusConn) object(dest string, path dbus.ObjectPath) dbusCaller {
 	return &godbusObject{obj: g.c.Object(dest, path)}
 }
-
-func (g *godbusConn) signals() <-chan *dbus.Signal { return g.sig }
 
 func (g *godbusConn) subscribeSignals(ch chan *dbus.Signal)   { g.c.Signal(ch) }
 func (g *godbusConn) unsubscribeSignals(ch chan *dbus.Signal) { g.c.RemoveSignal(ch) }
@@ -186,8 +178,8 @@ func (o *godbusObject) setProp(ctx context.Context, iface, prop string, value in
 }
 
 // Conn is a handle to a system-bus connection prepared for org.bluez calls.
-// It shares one D-Bus signal registration across Scan/Connect, so callers
-// should create one Conn and reuse it for the lifetime of the app.
+// Watchers and GATT links own independent signal subscriptions; callers
+// reuse the bus connection for the lifetime of the app.
 type Conn struct {
 	raw *dbus.Conn
 	bus dbusBus

@@ -33,6 +33,7 @@ import (
 	"github.com/teslamotors/vehicle-command/pkg/connector"
 	"github.com/teslamotors/vehicle-command/pkg/connector/ble"
 	"github.com/teslamotors/vehicle-command/pkg/protocol"
+	"github.com/teslamotors/vehicle-command/pkg/protocol/protobuf/vcsec"
 	"github.com/teslamotors/vehicle-command/pkg/vehicle"
 )
 
@@ -115,6 +116,7 @@ type session struct {
 	presenceCancel     context.CancelFunc
 	presenceGeneration uint64
 	presenceCfg        presenceConfig
+	watcher            *bluez.Watcher
 
 	// authCancel / authInbox drive the passive-entry AuthenticationRequest
 	// responder while presence mode holds a live BlueZ session. Cleared by
@@ -138,7 +140,10 @@ type session struct {
 	// while presence holds a session. StartSession alone is not enough for
 	// handle-pull: the vehicle only treats the key as present after a VCSEC
 	// GET_STATUS, which is what a dashboard status query happened to send.
-	lastVCSECPrime time.Time
+	lastVCSECPrime   time.Time
+	connectedAt      time.Time
+	lastUserPresence vcsec.UserPresence_E
+	insideEmitted    bool
 
 	// writeMu serializes stdout writes: dispatch's replies and the presence
 	// loop's unsolicited events both encode onto enc from different
@@ -168,6 +173,9 @@ func (s *session) teardownLocked() {
 		s.conn = nil
 	}
 	s.lastVCSECPrime = time.Time{}
+	s.connectedAt = time.Time{}
+	s.lastUserPresence = vcsec.UserPresence_E_VEHICLE_USER_PRESENCE_UNKNOWN
+	s.insideEmitted = false
 }
 
 // closeBluezLocked releases the system-bus connection held for the bluez
@@ -297,6 +305,9 @@ func (s *session) ensureConnectedLocked(ctx context.Context, cmd string, target 
 		if err := s.ensureBluezLocked(); err != nil {
 			return err
 		}
+		if s.watcher != nil {
+			s.watcher.Pause(connCtx)
+		}
 		conn, err = s.bluez.Connect(connCtx, s.adapterID, s.vin, target)
 		if err != nil {
 			keylog("connect", "GATT failed: %v", err)
@@ -346,6 +357,7 @@ func (s *session) ensureConnectedLocked(ctx context.Context, cmd string, target 
 		s.enableTrustedLocked()
 	}
 	keylog("connect", "ready cmd=%q", cmd)
+	s.connectedAt = time.Now()
 	return nil
 }
 
@@ -484,13 +496,40 @@ func (s *session) primeVCSECLocked(ctx context.Context) {
 	if s.car == nil {
 		return
 	}
-	_, err := s.car.BodyControllerState(ctx)
+	s.lastUserPresence = vcsec.UserPresence_E_VEHICLE_USER_PRESENCE_UNKNOWN
+	status, err := s.car.BodyControllerState(ctx)
 	if err != nil {
 		keylog("auth", "VCSEC prime failed: %v", err)
+		if sessionDroppedError(err) {
+			s.teardownLocked()
+			s.emitPresenceDisconnectedLocked(err)
+		}
 		return
 	}
 	s.lastVCSECPrime = time.Now()
-	keylog("auth", "VCSEC primed")
+	s.lastUserPresence = status.GetUserPresence()
+	keylog("auth", "VCSEC primed userPresence=%s", s.lastUserPresence.String())
+}
+
+// Match the fork's settled user-presence event. It is a vehicle-reported
+// occupancy heuristic, not a location measurement of this particular phone.
+const insideSettleDuration = 45 * time.Second
+
+func readyForInside(connectedAt, statusAt, now time.Time, presence vcsec.UserPresence_E) bool {
+	return !connectedAt.IsZero() && !statusAt.IsZero() &&
+		presence == vcsec.UserPresence_E_VEHICLE_USER_PRESENCE_PRESENT &&
+		!now.Before(connectedAt.Add(insideSettleDuration)) &&
+		!now.Before(statusAt) && now.Sub(statusAt) <= 2*vcsecPrimeInterval
+}
+
+// Caller holds mu, so teardown/reconnect cannot interleave with the event.
+func (s *session) emitInsideLocked(now time.Time) {
+	if s.car == nil || s.presenceCancel == nil || s.insideEmitted ||
+		!readyForInside(s.connectedAt, s.lastVCSECPrime, now, s.lastUserPresence) {
+		return
+	}
+	s.insideEmitted = true
+	s.emitEvent("presence_inside", nil)
 }
 
 func (s *session) vcsecPrimeDueLocked(now time.Time) bool {
@@ -848,6 +887,12 @@ func (s *session) authResponderLoop(ctx context.Context, inbox <-chan []byte) {
 			}
 			keylog("auth", "request level=%s token=%dB", authLevelName(req.RequestedLevel), len(req.Token))
 			s.mu.Lock()
+			// A cancelled responder may have waited behind reconnect while
+			// holding an old request. Never grant it on the replacement link.
+			if ctx.Err() != nil || s.authInbox != inbox {
+				s.mu.Unlock()
+				return
+			}
 			car := s.car
 			if car == nil {
 				s.mu.Unlock()
@@ -911,7 +956,15 @@ func (s *session) presenceLoop(ctx context.Context, cfg presenceConfig, generati
 			return
 		}
 		watchCtx, watchCancel := context.WithTimeout(ctx, s.connectTimeout)
+		s.mu.Lock()
 		watcher, err := s.bluez.Watch(watchCtx, s.adapterID, s.vin)
+		if err == nil {
+			s.watcher = watcher
+			if s.car != nil {
+				watcher.Pause(watchCtx)
+			}
+		}
+		s.mu.Unlock()
 		watchCancel()
 		if err != nil {
 			keylog("presence", "watcher start failed: %v (retrying)", err)
@@ -924,13 +977,23 @@ func (s *session) presenceLoop(ctx context.Context, cfg presenceConfig, generati
 			continue
 		}
 		keylog("presence", "watcher started")
-		s.runPresenceWatcher(ctx, cfg, watcher)
+		watcher = s.runPresenceWatcher(ctx, cfg, watcher)
 		watcher.Stop(context.Background())
 	}
 }
 
-func (s *session) runPresenceWatcher(ctx context.Context, cfg presenceConfig, watcher *bluez.Watcher) {
+func (s *session) runPresenceWatcher(ctx context.Context, cfg presenceConfig, watcher *bluez.Watcher) *bluez.Watcher {
 	watcher.SetNearRSSI(cfg.nearRSSI)
+	s.mu.Lock()
+	s.watcher = watcher
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		if s.watcher == watcher {
+			s.watcher = nil
+		}
+		s.mu.Unlock()
+	}()
 	var (
 		near            bool
 		consecNear      int
@@ -949,7 +1012,15 @@ func (s *session) runPresenceWatcher(ctx context.Context, cfg presenceConfig, wa
 		keylog("presence", "restarting watcher after peek errors")
 		watcher.Stop(context.Background())
 		watchCtx, watchCancel := context.WithTimeout(ctx, s.connectTimeout)
+		s.mu.Lock()
 		newWatcher, err := s.bluez.Watch(watchCtx, s.adapterID, s.vin)
+		if err == nil {
+			s.watcher = newWatcher
+			if s.car != nil {
+				newWatcher.Pause(watchCtx)
+			}
+		}
+		s.mu.Unlock()
 		watchCancel()
 		if err != nil {
 			s.emitEvent("presence_error", err)
@@ -963,7 +1034,7 @@ func (s *session) runPresenceWatcher(ctx context.Context, cfg presenceConfig, wa
 
 	for {
 		if ctx.Err() != nil {
-			return
+			return watcher
 		}
 		loopNow := time.Now()
 		if !lastLoopTick.IsZero() && loopNow.Sub(lastLoopTick) > 10*time.Second {
@@ -994,16 +1065,19 @@ func (s *session) runPresenceWatcher(ctx context.Context, cfg presenceConfig, wa
 		// advertising after connect, and BlueZ aborts the LE link
 		// (Dropped / le-connection-abort-by-local) if discovery restarts.
 		if gattUp {
+			pauseCtx, pauseCancel := context.WithTimeout(ctx, 400*time.Millisecond)
+			watcher.Pause(pauseCtx)
+			pauseCancel()
 			// Scanning is paused while connected; capture the arrival window.
-			if stats := watcher.TakeStats(); stats.Polls > 0 {
-				keylog("bluez", "scan window polls=%d beacons=%d rssiSnapshots=%d rssiUpdateSignals=%d lastRSSIUpdateAge=%s restarts=%d objectReadTotal=%s objectReadMax=%s", stats.Polls, stats.BeaconResults, stats.RSSIResults, stats.RSSIUpdates, stats.LastRSSIUpdateAge, stats.Restarts, stats.ReadTotal.Round(time.Millisecond), stats.ReadMax.Round(time.Millisecond))
+			if stats := watcher.TakeStats(); stats.Polls > 0 || stats.AdvertisementUpdates > 0 {
+				keylog("bluez", "event scan window polls=%d beacons=%d rssiSnapshots=%d advertisementSignals=%d rssiUpdateSignals=%d lastRSSIUpdateAge=%s restarts=%d objectReadTotal=%s objectReadMax=%s", stats.Polls, stats.BeaconResults, stats.RSSIResults, stats.AdvertisementUpdates, stats.RSSIUpdates, stats.LastRSSIUpdateAge, stats.Restarts, stats.ReadTotal.Round(time.Millisecond), stats.ReadMax.Round(time.Millisecond))
 			}
 			near = true
 			lastSeen = time.Now()
 			if bzConn != nil {
 				select {
 				case <-ctx.Done():
-					return
+					return watcher
 				case <-bzConn.Dropped():
 					s.mu.Lock()
 					if bz, ok := s.conn.(*bluez.Connection); ok && bz == bzConn {
@@ -1041,7 +1115,7 @@ func (s *session) runPresenceWatcher(ctx context.Context, cfg presenceConfig, wa
 			} else {
 				select {
 				case <-ctx.Done():
-					return
+					return watcher
 				case <-time.After(cfg.scanInterval):
 				}
 			}
@@ -1060,10 +1134,18 @@ func (s *session) runPresenceWatcher(ctx context.Context, cfg presenceConfig, wa
 				}
 				s.resetIdleTimerLocked()
 			}
+			s.emitInsideLocked(time.Now())
 			s.mu.Unlock()
 			continue
 		}
 		linkDownStreak = 0
+		s.mu.Lock()
+		if s.car != nil {
+			s.mu.Unlock()
+			continue // a manual command connected since the previous snapshot
+		}
+		watcher.Resume()
+		s.mu.Unlock()
 
 		now := time.Now()
 		// Wait (not a single Peek) so the first advertisement is caught
@@ -1076,7 +1158,7 @@ func (s *session) runPresenceWatcher(ctx context.Context, cfg presenceConfig, wa
 			peekErrors++
 			keylog("presence", "peek error (%d): %v", peekErrors, err)
 			if peekErrors >= 5 && !restartWatcher() {
-				return
+				return watcher
 			}
 			continue
 		}
@@ -1097,7 +1179,7 @@ func (s *session) runPresenceWatcher(ctx context.Context, cfg presenceConfig, wa
 		s.mu.Unlock()
 		if now.Sub(lastScanSummary) >= 30*time.Second {
 			stats := watcher.TakeStats()
-			keylog("bluez", "scan window polls=%d beacons=%d rssiSnapshots=%d rssiUpdateSignals=%d lastRSSIUpdateAge=%s restarts=%d objectReadTotal=%s objectReadMax=%s (RSSI snapshots may be cached)", stats.Polls, stats.BeaconResults, stats.RSSIResults, stats.RSSIUpdates, stats.LastRSSIUpdateAge, stats.Restarts, stats.ReadTotal.Round(time.Millisecond), stats.ReadMax.Round(time.Millisecond))
+			keylog("bluez", "event scan window polls=%d beacons=%d rssiSnapshots=%d advertisementSignals=%d rssiUpdateSignals=%d lastRSSIUpdateAge=%s restarts=%d objectReadTotal=%s objectReadMax=%s", stats.Polls, stats.BeaconResults, stats.RSSIResults, stats.AdvertisementUpdates, stats.RSSIUpdates, stats.LastRSSIUpdateAge, stats.Restarts, stats.ReadTotal.Round(time.Millisecond), stats.ReadMax.Round(time.Millisecond))
 			lastScanSummary = now
 		}
 
@@ -1128,9 +1210,15 @@ func (s *session) runPresenceWatcher(ctx context.Context, cfg presenceConfig, wa
 			if connErr == nil {
 				s.clearConnectBackoffLocked()
 				s.ensureAuthTapLocked(ctx)
-				s.primeVCSECLocked(connCtx)
+				primeCtx, primeCancel := context.WithTimeout(ctx, s.commandTimeout)
+				s.primeVCSECLocked(primeCtx)
+				primeCancel()
 				s.resetIdleTimerLocked()
-			} else {
+				if s.car == nil {
+					connErr = protocol.ErrNotConnected
+				}
+			}
+			if connErr != nil {
 				s.scheduleConnectBackoffLocked()
 			}
 			s.mu.Unlock()
@@ -1154,7 +1242,7 @@ func (s *session) runPresenceWatcher(ctx context.Context, cfg presenceConfig, wa
 		// calls GetManagedObjects each time. A missing beacon already made
 		// Wait block for scanInterval, so only pause when it returned one.
 		if !pauseAfterBeacon(ctx, cfg.scanInterval, result, watcher.NearUpdates()) {
-			return
+			return watcher
 		}
 	}
 }

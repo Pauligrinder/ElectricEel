@@ -36,17 +36,11 @@ type Connection struct {
 	mu        sync.Mutex // serializes Send
 	closeOnce sync.Once
 	done      chan struct{}
-	// loopDone is closed by rxLoop when it returns. Close() waits on it
-	// before returning: rxLoop reads directly off the dbusBus's single
-	// process-lifetime signal channel (shared by every Connection created
-	// from the same bluez.Conn, see bluez.go's adaptConn), so without this
-	// wait a caller that tears down and immediately reconnects (idle
-	// timeout followed by a fresh command, or presenceLoop's arrival
-	// reconnect) could start a new rxLoop that races the outgoing one for
-	// that same channel, occasionally losing a signal to the goroutine
-	// that's on its way out. nil (left unset) when no rxLoop was ever
-	// started, e.g. connection_test.go's newTestConnection - Close() must
-	// not block forever waiting for a close that will never come.
+	// Each link gets a fresh signal subscription. Reusing a process-lifetime
+	// queue would replay Connected=false from the previous link on reconnect.
+	// Close waits for rxLoop before releasing the subscription. loopDone is
+	// nil when no RX loop was started (e.g. framing-only tests).
+	signalCh    chan *dbus.Signal
 	loopDone    chan struct{}
 	match       []dbus.MatchOption
 	deviceMatch []dbus.MatchOption
@@ -148,7 +142,7 @@ func (c *Connection) AllowedLatency() time.Duration {
 // fails while blockLength is still at the assumed maximum MTU, blockLength is
 // shrunk to the guaranteed minimum (ATT MTU 23 - 3) and the chunk is retried
 // once. Thread-safe.
-func (c *Connection) Send(_ context.Context, buffer []byte) error {
+func (c *Connection) Send(ctx context.Context, buffer []byte) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -157,11 +151,17 @@ func (c *Connection) Send(_ context.Context, buffer []byte) error {
 	out = append(out, buffer...)
 
 	for len(out) > 0 {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		blk := len(out)
 		if c.blockLength < blk {
 			blk = c.blockLength
 		}
-		if err := c.writeChunk(out[:blk]); err != nil {
+		if err := c.writeChunk(ctx, out[:blk]); err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			if c.blockLength <= defaultMTU-3 {
 				return err
 			}
@@ -184,22 +184,24 @@ func (c *Connection) Send(_ context.Context, buffer []byte) error {
 // rejects, since the test fake never validated the argument's D-Bus type.
 // "type": "request" asks for a write-with-response, matching upstream
 // ble.go's use of WithResponse writes.
-func (c *Connection) writeChunk(b []byte) error {
+func (c *Connection) writeChunk(ctx context.Context, b []byte) error {
 	options := map[string]dbus.Variant{"type": dbus.MakeVariant("request")}
-	_, err := c.bus.object(bluezService, c.txPath).call(context.Background(), gattChrIface+".WriteValue", b, options)
+	_, err := c.bus.object(bluezService, c.txPath).call(ctx, gattChrIface+".WriteValue", b, options)
 	return err
 }
 
 // Close tears down the RX subscription and the device link. Idempotent.
 // Blocks until rxLoop has actually exited (see loopDone's doc comment) so a
-// caller that reconnects right after Close() returns can't race the old
-// rxLoop for the shared signal channel.
+// the old RX loop and its observer have stopped before reconnecting.
 func (c *Connection) Close() {
 	c.closeOnce.Do(func() {
 		c.notifyDropped()
 		close(c.done)
 		if c.loopDone != nil {
 			<-c.loopDone
+		}
+		if c.signalCh != nil {
+			c.bus.unsubscribeSignals(c.signalCh)
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
@@ -220,9 +222,13 @@ func (c *Connection) rxLoop() {
 		select {
 		case <-c.done:
 			return
-		case sig, ok := <-c.bus.signals():
+		case sig, ok := <-c.signalCh:
 			if !ok {
+				c.notifyDropped()
 				return
+			}
+			if sig == nil {
+				continue
 			}
 			c.handleSignal(sig)
 		}

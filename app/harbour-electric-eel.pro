@@ -27,6 +27,7 @@ DISTFILES += \
     rpm/harbour-electric-eel.spec \
     harbour-electric-eel.desktop \
     qml/harbour-electric-eel.qml \
+    qml/PhoneKeyEvents.qml \
     qml/cover/CoverPage.qml \
     qml/pages/*.qml \
     qml/js/*.js \

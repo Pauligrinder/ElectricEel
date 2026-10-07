@@ -324,7 +324,7 @@ func TestDroppedClosesOnDeviceDisconnectSignal(t *testing.T) {
 	c := cc.(*Connection)
 	defer c.Close()
 
-	bus.sig <- &dbus.Signal{
+	bus.emitSignal(&dbus.Signal{
 		Name: propsIface + ".PropertiesChanged",
 		Path: bus.devPath(),
 		Body: []interface{}{
@@ -332,10 +332,95 @@ func TestDroppedClosesOnDeviceDisconnectSignal(t *testing.T) {
 			map[string]dbus.Variant{"Connected": dbus.MakeVariant(false)},
 			[]string{},
 		},
-	}
+	})
 	select {
 	case <-c.Dropped():
 	case <-time.After(time.Second):
 		t.Fatal("expected Dropped() after Connected=false signal")
+	}
+}
+
+func TestReconnectDoesNotReplayOldDisconnect(t *testing.T) {
+	bus := newFakeBluez()
+	vin := "5YJ3E1EA0PF000000"
+	bus.dev = &fakeDevice{path: bus.devPath(), name: vehicleBeaconName(vin)}
+	bus.deviceVisible, bus.servicesResolved, bus.gattReady = true, true, true
+	ctx := context.Background()
+	cc, err := connect(ctx, bus, "hci0", vin, &ScanResult{Path: bus.devPath()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := cc.(*Connection)
+	old.Close()
+	// A watcher keeps a broad PropertiesChanged match active while the
+	// old link's Disconnect emits its final signal. The previous permanent
+	// RX subscription would retain this until the next connection started.
+	watchSignals := make(chan *dbus.Signal, 16)
+	bus.subscribeSignals(watchSignals)
+	defer bus.unsubscribeSignals(watchSignals)
+	bus.emitSignal(&dbus.Signal{
+		Name: propsIface + ".PropertiesChanged", Path: bus.devPath(),
+		Body: []interface{}{deviceIface, map[string]dbus.Variant{"Connected": dbus.MakeVariant(false)}, []string{}},
+	})
+	select {
+	case <-old.signalCh:
+		t.Fatal("closed link still receives disconnect signals")
+	default:
+	}
+	cc, err = connect(ctx, bus, "hci0", vin, &ScanResult{Path: bus.devPath()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	next := cc.(*Connection)
+	defer next.Close()
+	bus.notify(next.rxPath, []byte{0, 3, 'n', 'e', 'w'})
+	select {
+	case msg := <-next.Receive():
+		if string(msg) != "new" {
+			t.Fatalf("received %q", msg)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("replacement link did not receive notification")
+	}
+	select {
+	case <-next.Dropped():
+		t.Fatal("old disconnect poisoned replacement link")
+	default:
+	}
+}
+
+type blockedWriteBus struct{ *fakeBluez }
+type blockedWriteCaller struct{ dbusCaller }
+
+func (b blockedWriteBus) object(dest string, path dbus.ObjectPath) dbusCaller {
+	return blockedWriteCaller{b.fakeBluez.object(dest, path)}
+}
+
+func (c blockedWriteCaller) call(ctx context.Context, method string, args ...interface{}) ([]interface{}, error) {
+	if method == gattChrIface+".WriteValue" {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	return c.dbusCaller.call(ctx, method, args...)
+}
+
+func TestSendHonorsWriteDeadline(t *testing.T) {
+	bus := newFakeBluez()
+	c := newTestConnection(bus)
+	c.bus = blockedWriteBus{bus}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- c.Send(ctx, []byte("status")) }()
+	select {
+	case err := <-done:
+		if err != context.DeadlineExceeded {
+			t.Fatalf("Send = %v; want deadline exceeded", err)
+		}
+		if c.blockLength != maxExpectedMTU-3 {
+			t.Fatal("deadline must not trigger an MTU fallback/retry")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("blocked Bluetooth write ignored command deadline")
 	}
 }

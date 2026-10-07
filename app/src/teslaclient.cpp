@@ -30,7 +30,7 @@ const char *kBleBackend = "bluez";
 // Record Qt's app lifecycle in the same file as the Go phone-key diagnostics.
 // A display turning off need not emit ApplicationSuspended; the absence of a
 // transition is useful evidence too when compared with the presence loop.
-void logApplicationState(Qt::ApplicationState state)
+void logUIEvent(const QString &event)
 {
     const QString logDir = QString::fromUtf8(qgetenv("ELECTRIC_EEL_LOG_DIR"));
     if (logDir.isEmpty())
@@ -43,6 +43,12 @@ void logApplicationState(Qt::ApplicationState state)
         return;
     if (newFile)
         file.write("# ElectricEel phone-key log\n# tags: session presence connect auth link bluez core ui\n");
+    file.write(QDateTime::currentDateTime().toString(QStringLiteral("HH:mm:ss.zzz")).toUtf8()
+               + "  ui          " + event.toUtf8() + "\n");
+}
+
+void logApplicationState(Qt::ApplicationState state)
+{
     const char *name = "unknown";
     switch (state) {
     case Qt::ApplicationActive: name = "active"; break;
@@ -50,8 +56,7 @@ void logApplicationState(Qt::ApplicationState state)
     case Qt::ApplicationHidden: name = "hidden"; break;
     case Qt::ApplicationSuspended: name = "suspended"; break;
     }
-    file.write(QDateTime::currentDateTime().toString(QStringLiteral("HH:mm:ss.zzz")).toUtf8()
-               + "  ui          applicationState=" + name + "\n");
+    logUIEvent(QStringLiteral("applicationState=") + QString::fromLatin1(name));
 }
 
 // Converts a Rust-owned C string from an output slot into a QString and frees
@@ -489,6 +494,7 @@ void TeslaClient::onInitialized(bool ok, const QString &errorMessage)
 
 void TeslaClient::onPhoneKeyStarted(bool active, const QString &errorMessage)
 {
+    setPhoneKeyActive(active);
     const QString status = active
             ? QStringLiteral("Phone key scanning")
             : (errorMessage.isEmpty()
@@ -503,8 +509,14 @@ void TeslaClient::onPhoneKeyStarted(bool active, const QString &errorMessage)
 void TeslaClient::onPhoneKeyEvent(const QString &kind, const QString &vin,
                                   const QString &time, const QString &errorMessage)
 {
-    Q_UNUSED(vin)
-    Q_UNUSED(time)
+    // Integrations need every event, including repeated authorization and
+    // events that do not change the dashboard's status text.
+    emit phoneKeyEvent(kind, vin, time, errorMessage);
+    if (kind == QStringLiteral("presence_stopped"))
+        setPhoneKeyActive(false);
+    else if (kind == QStringLiteral("presence_restarted")
+             || kind == QStringLiteral("presence_near"))
+        setPhoneKeyActive(true);
     QString status;
     if (kind == QStringLiteral("presence_near"))
         status = QStringLiteral("Phone key connected");
@@ -527,6 +539,19 @@ void TeslaClient::onPhoneKeyEvent(const QString &kind, const QString &vin,
         return;
     m_phoneKeyStatus = status;
     emit phoneKeyStatusChanged();
+}
+
+void TeslaClient::setPhoneKeyActive(bool active)
+{
+    if (m_phoneKeyActive == active)
+        return;
+    m_phoneKeyActive = active;
+    emit phoneKeyActiveChanged();
+}
+
+void TeslaClient::logPowerState(const QString &state)
+{
+    logUIEvent(state);
 }
 
 void TeslaClient::onApplicationStateChanged(Qt::ApplicationState state)

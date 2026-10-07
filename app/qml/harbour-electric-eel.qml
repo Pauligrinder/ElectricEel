@@ -2,6 +2,7 @@ import QtQuick 2.6
 import Sailfish.Silica 1.0
 import Sailfish.Share 1.0
 import Nemo.DBus 2.0
+import Nemo.KeepAlive 1.2
 import harbour.electriceel 1.0
 import "cover" as CoverDir
 import "pages"
@@ -19,6 +20,21 @@ ApplicationWindow
     TeslaClient {
         id: teslaClientInstance
     }
+
+    // Passive entry must run with the screen off, including while away.
+    // This prevents CPU suspend while phone-key mode is active; it does
+    // not prevent display blanking. Released when the app/key mode stops.
+    KeepAlive {
+        enabled: teslaClientInstance.phoneKeyActive
+        onEnabledChanged: teslaClientInstance.logPowerState("keepalive requested=" + enabled)
+    }
+    Connections {
+        target: DisplayBlanking
+        onStatusChanged: teslaClientInstance.logPowerState("display status=" + DisplayBlanking.status)
+    }
+    Component.onCompleted: teslaClientInstance.logPowerState("display status=" + DisplayBlanking.status)
+
+    PhoneKeyEvents { client: teslaClientInstance }
 
     // Text received via Sailfish Share while the app wasn't showing the
     // Navigation page. Opened on arrival (activate() brings the window

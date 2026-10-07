@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "data": [
+    {
+      "id": "electric_eel_phonekey1_log",
+      "name": "Log ElectricEel event",
+      "type": "log",
+      "enabled": true,
+      "message": "ElectricEel {{kind}} ({{vin}}) at {{event_time}}"
+    }
+  ]
+}

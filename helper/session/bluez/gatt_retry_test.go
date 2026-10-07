@@ -153,6 +153,56 @@ func TestConnectAbortsPendingLinkOnFailure(t *testing.T) {
 	}
 }
 
+func TestConnectWaitsForScannerAndReleasesOrphanLink(t *testing.T) {
+	bus := newFakeBluez()
+	vin := "5YJ3E1EA0PF000000"
+	bus.dev = &fakeDevice{path: bus.devPath(), name: vehicleBeaconName(vin)}
+	bus.deviceVisible, bus.servicesResolved, bus.gattReady = true, true, true
+	bus.discovering, bus.connected = true, true
+	bus.stopDiscoveryPolls = 3
+	bus.rejectDiscoveryConnect = true
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	cc, err := connect(ctx, bus, "hci0", vin, &ScanResult{Path: bus.devPath()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cc.Close()
+	disconnectAt, connectAt := -1, -1
+	for i, call := range bus.calls {
+		if call == deviceIface+".Disconnect" && disconnectAt < 0 {
+			disconnectAt = i
+		}
+		if call == deviceIface+".Connect" && connectAt < 0 {
+			connectAt = i
+		}
+	}
+	if disconnectAt < 0 || disconnectAt >= connectAt || bus.stopDiscoveryPolls != 0 {
+		t.Fatal("new Connect raced old link/scanner cleanup")
+	}
+}
+
+func TestConnectUsesNegotiatedMTU(t *testing.T) {
+	bus := newFakeBluez()
+	vin := "5YJ3E1EA0PF000000"
+	bus.dev = &fakeDevice{path: bus.devPath(), name: vehicleBeaconName(vin)}
+	bus.deviceVisible, bus.servicesResolved, bus.gattReady = true, true, true
+	bus.mtu = 247
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	cc, err := connect(ctx, bus, "hci0", vin, &ScanResult{Path: bus.devPath()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cc.Close()
+	if err := cc.Send(ctx, make([]byte, 500)); err != nil {
+		t.Fatal(err)
+	}
+	if len(bus.writes) != 3 || len(bus.writes[0]) != 244 || len(bus.writes[1]) != 244 || len(bus.writes[2]) != 14 {
+		t.Fatal("writes did not use negotiated MTU minus ATT overhead")
+	}
+}
+
 func TestServicesTimeoutReportsDeviceStateBeforeDisconnect(t *testing.T) {
 	bus := newFakeBluez()
 	vin := "5YJ3E1EA0PF000000"

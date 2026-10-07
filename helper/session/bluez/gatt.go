@@ -79,6 +79,22 @@ func tryConnect(ctx context.Context, bus dbusBus, adapterID, vin string, target 
 	// restarts discovery on the next Peek if this attempt fails.
 	diagnostic("connect stopping discovery before Device1.Connect")
 	stopDiscovery(ctx, bus, adapterPath)
+	if err := waitDiscoveryStopped(ctx, bus, adapterPath); err != nil {
+		return nil, true, err
+	}
+	// Do not let completion of an old Disconnect tear down the new link.
+	if connected, err := deviceConnected(ctx, bus, devPath); err == nil && connected {
+		abortDeviceConnect(bus, devPath)
+		if err := waitDeviceDisconnected(ctx, bus, devPath); err != nil {
+			return nil, true, err
+		}
+	}
+	// BlueZ's Discovering property can change before the controller settles.
+	select {
+	case <-ctx.Done():
+		return nil, true, ctx.Err()
+	case <-time.After(150 * time.Millisecond):
+	}
 	diagnostic("connect Device1.Connect begin")
 	if err := connectDevice(ctx, bus, devPath); err != nil {
 		abortDeviceConnect(bus, devPath)
@@ -121,7 +137,13 @@ func tryConnect(ctx context.Context, bus dbusBus, adapterID, vin string, target 
 	// DeviceConnected from the presence loop.
 	_ = bus.addMatch(deviceMatch...)
 
+	// Subscribe only after the new link is resolved, but before StartNotify
+	// can deliver data. Signals queued during old-link cleanup stay out of
+	// this connection's RX loop.
+	signalCh := make(chan *dbus.Signal, 128)
+	bus.subscribeSignals(signalCh)
 	if _, err := bus.object(bluezService, rxPath).call(ctx, gattChrIface+".StartNotify"); err != nil {
+		bus.unsubscribeSignals(signalCh)
 		_ = bus.removeMatch(match...)
 		_ = bus.removeMatch(deviceMatch...)
 		abortDeviceConnect(bus, devPath)
@@ -139,12 +161,58 @@ func tryConnect(ctx context.Context, bus dbusBus, adapterID, vin string, target 
 		blockLength: maxExpectedMTU - 3,
 		done:        make(chan struct{}),
 		loopDone:    make(chan struct{}),
+		signalCh:    signalCh,
 		match:       match,
 		deviceMatch: deviceMatch,
 		dropped:     make(chan struct{}),
 	}
+	if v, err := bus.object(bluezService, txPath).getProp(ctx, gattChrIface, "MTU"); err == nil {
+		if mtu, ok := v.Value().(uint16); ok && mtu >= defaultMTU {
+			c.blockLength = int(mtu) - 3
+		}
+	}
 	go c.rxLoop()
 	return c, false, nil
+}
+
+func deviceConnected(ctx context.Context, bus dbusBus, path dbus.ObjectPath) (bool, error) {
+	v, err := bus.object(bluezService, path).getProp(ctx, deviceIface, "Connected")
+	if err != nil {
+		return false, err
+	}
+	connected, ok := variantBool(v)
+	if !ok {
+		return false, fmt.Errorf("bluez: invalid Connected property")
+	}
+	return connected, nil
+}
+
+func waitDeviceDisconnected(ctx context.Context, bus dbusBus, path dbus.ObjectPath) error {
+	for {
+		connected, err := deviceConnected(ctx, bus, path)
+		if err != nil || !connected {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+}
+
+func waitDiscoveryStopped(ctx context.Context, bus dbusBus, path dbus.ObjectPath) error {
+	for {
+		discovering, err := adapterIsDiscovering(ctx, bus, path)
+		if err != nil || !discovering {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
 }
 
 // findDevice locates the scanned-for device in the object tree.

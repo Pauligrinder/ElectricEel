@@ -12,11 +12,14 @@ import (
 // implements enough of the D-Bus surface (via dbusBus/dbusCaller) for the
 // transport logic to be unit-tested without a system bus: method calls are
 // dispatched by name against a small device/state model, and tests can pump
-// PropertiesChanged signals (e.g. GATT notification Values) into signals().
+// PropertiesChanged signals (e.g. GATT notification Values) to subscribers.
 type fakeBluez struct {
-	adapterID   string
-	powered     bool
-	discovering bool
+	adapterID              string
+	powered                bool
+	discovering            bool
+	stopDiscoveryPolls     int
+	rejectDiscoveryConnect bool
+	mtu                    uint16
 
 	dev                 *fakeDevice
 	deviceVisible       bool // device present in GetManagedObjects (turn on after discovery)
@@ -40,7 +43,6 @@ type fakeBluez struct {
 
 	writes       [][]byte
 	calls        []string
-	sig          chan *dbus.Signal
 	subscribers  []chan *dbus.Signal
 	matches      int
 	removedMatch bool
@@ -57,15 +59,12 @@ func newFakeBluez() *fakeBluez {
 	return &fakeBluez{
 		adapterID: "hci0",
 		powered:   true,
-		sig:       make(chan *dbus.Signal, 16),
 	}
 }
 
 func (f *fakeBluez) object(dest string, path dbus.ObjectPath) dbusCaller {
 	return &fakeCaller{b: f, path: path}
 }
-
-func (f *fakeBluez) signals() <-chan *dbus.Signal { return f.sig }
 
 func (f *fakeBluez) subscribeSignals(ch chan *dbus.Signal) {
 	f.subscribers = append(f.subscribers, ch)
@@ -95,7 +94,7 @@ func (f *fakeBluez) removeMatch(_ ...dbus.MatchOption) error {
 // notify simulates an org.bluez GattCharacteristic1 PropertiesChanged signal
 // carrying a notification Value.
 func (f *fakeBluez) notify(path dbus.ObjectPath, value []byte) {
-	f.sig <- &dbus.Signal{
+	f.emitSignal(&dbus.Signal{
 		Name: propsIface + ".PropertiesChanged",
 		Path: path,
 		Body: []interface{}{
@@ -103,7 +102,7 @@ func (f *fakeBluez) notify(path dbus.ObjectPath, value []byte) {
 			map[string]dbus.Variant{"Value": dbus.MakeVariant(value)},
 			[]string{},
 		},
-	}
+	})
 }
 
 // devPath returns the device object path used by default fixtures.
@@ -207,9 +206,14 @@ func (fc *fakeCaller) call(ctx context.Context, method string, args ...interface
 		if fc.b.rejectCancelledStop && ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		fc.b.discovering = false
+		if fc.b.stopDiscoveryPolls == 0 {
+			fc.b.discovering = false
+		}
 		return nil, nil
 	case deviceIface + ".Connect":
+		if fc.b.rejectDiscoveryConnect && fc.b.discovering {
+			return nil, errors.New("scanner has not stopped")
+		}
 		if fc.b.connectErr != nil {
 			return nil, fc.b.connectErr
 		}
@@ -254,13 +258,29 @@ func (fc *fakeCaller) getProp(ctx context.Context, iface, prop string) (dbus.Var
 	case "Powered":
 		return dbus.MakeVariant(fc.b.powered), nil
 	case "Discovering":
+		if fc.b.stopDiscoveryPolls > 0 {
+			fc.b.stopDiscoveryPolls--
+			if fc.b.stopDiscoveryPolls == 0 {
+				fc.b.discovering = false
+			}
+		}
 		return dbus.MakeVariant(fc.b.discovering), nil
+	case "MTU":
+		if fc.b.mtu > 0 {
+			return dbus.MakeVariant(fc.b.mtu), nil
+		}
+		return dbus.Variant{}, errors.New("MTU unavailable")
 	case "Power":
 		return dbus.Variant{}, fmt.Errorf("org.freedesktop.DBus.Error.InvalidArgs: No such property '%s'", prop)
 	case "ServicesResolved":
 		return dbus.MakeVariant(fc.b.servicesResolved), nil
 	case "Connected":
 		return dbus.MakeVariant(fc.b.connected), nil
+	case "RSSI":
+		if fc.b.dev != nil && !fc.b.dev.omitRSSI {
+			return dbus.MakeVariant(fc.b.dev.rssi), nil
+		}
+		return dbus.Variant{}, errors.New("RSSI unavailable")
 	case "Trusted":
 		return dbus.MakeVariant(fc.b.trusted), nil
 	case "AutoConnect":

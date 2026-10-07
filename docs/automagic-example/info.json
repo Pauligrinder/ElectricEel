@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "data": {
+    "name": "ElectricEel phone-key event demo",
+    "description": "Logs inside and away notifications from org.electriceel.PhoneKey1.PhoneKeyEvent. Configure app launch actions in Automagic."
+  }
+}
