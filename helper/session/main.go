@@ -588,6 +588,15 @@ const (
 	idlePollBurst = 12 * time.Second
 	idlePollMin   = 30 * time.Second
 	idlePollMax   = 2 * time.Minute
+	// idlePollWeak is the discovery-off gap when a Device1 is still on
+	// the adapter but only at ≤ -95. The empty-adapter backoff (30s/2m)
+	// missed the 2026-10-04 walk-up: Peek already showed -43 after the
+	// first idle, then recycle tore the live Device1 down.
+	idlePollWeak = 15 * time.Second
+	// cabinLiveRSSI is strong enough that a Peek Device1 cannot be the
+	// frozen leftover we recycle. The 18:00 hang was leftover -94;
+	// sitting in the car at Peek -43 is not that.
+	cabinLiveRSSI int16 = -80
 	// shortSessionLimit: a GATT link that dies this fast was a last-gasp
 	// bounce (2026-09-25 21:17:56–21:18:16). The next -93 reconnect hung
 	// Device.Connect 39s and killed ads.
@@ -623,16 +632,28 @@ func rssiSignalAge(updateAge, waitSilence time.Duration) time.Duration {
 
 // leftoverFrozen is a Device1 whose RSSI property is still present but has
 // not been refreshed by a live advert signal. Peek/GetManagedObjects alone
-// cannot tell that cache from a fresh beacon (nappa's stale-RSSI insight).
-func leftoverFrozen(hasCachedRSSI bool, signalAge, staleAfter time.Duration) bool {
-	return hasCachedRSSI && signalAge >= staleAfter
+// cannot tell a stale -94 from a fresh -94 (nappa's stale-RSSI insight).
+// Cabin-strength RSSI is not that leftover: BlueZ does not jump a dead
+// cache from -96 to -43 without a new advert.
+func leftoverFrozen(hasCachedRSSI bool, rssi int16, signalAge, staleAfter time.Duration) bool {
+	if !hasCachedRSSI || peekIsCabinLive(true, rssi) {
+		return false
+	}
+	return signalAge >= staleAfter
+}
+
+// peekIsCabinLive is a GetManagedObjects RSSI that means the phone is at
+// the car, even if the watcher missed the PropertiesChanged (idle-poll
+// Pause, or StartDiscovery updating Device1 before our match).
+func peekIsCabinLive(hasRSSI bool, rssi int16) bool {
+	return hasRSSI && rssi >= cabinLiveRSSI
 }
 
 // shouldRecycleDiscovery is only for a leftover Device1 that still has a
 // cached RSSI and no live signals. An empty adapter (car away) must keep
 // discovery running — Stop+Start then misses the arrival.
-func shouldRecycleDiscovery(hasCachedRSSI bool, signalAge time.Duration, last time.Time, now time.Time, completed int) bool {
-	if !leftoverFrozen(hasCachedRSSI, signalAge, discoveryRecycleAfter) {
+func shouldRecycleDiscovery(hasCachedRSSI bool, rssi int16, signalAge time.Duration, last time.Time, now time.Time, completed int) bool {
+	if !leftoverFrozen(hasCachedRSSI, rssi, signalAge, discoveryRecycleAfter) {
 		return false
 	}
 	wait := discoveryRecycleWait(completed)
@@ -641,8 +662,8 @@ func shouldRecycleDiscovery(hasCachedRSSI bool, signalAge time.Duration, last ti
 
 // shouldForgetCached RemoveDevice's a frozen leftover once per silent
 // stretch. Repeating it (0.2.19 21:20) is the 2026-09-17 ForgetStale loop.
-func shouldForgetCached(hasCachedRSSI, alreadyForgot bool, signalAge time.Duration) bool {
-	return leftoverFrozen(hasCachedRSSI, signalAge, discoveryForgetAfter) && !alreadyForgot
+func shouldForgetCached(hasCachedRSSI bool, rssi int16, alreadyForgot bool, signalAge time.Duration) bool {
+	return leftoverFrozen(hasCachedRSSI, rssi, signalAge, discoveryForgetAfter) && !alreadyForgot
 }
 
 // shouldIdlePoll leaves continuous LE discovery once the car has been away
@@ -658,6 +679,16 @@ func shouldIdlePoll(away bool, silentFor time.Duration) bool {
 // the away timer: 2026-09-26 logged 2700+ such ticks and never idle-polled.
 func beaconUsable(hasRSSI bool, rssi int16) bool {
 	return hasRSSI && rssi > teslaMinConnectRSSI
+}
+
+// idlePollSleep is the discovery-off gap. Empty adapter uses the long
+// backoff; a weak leftover Device1 only sleeps idlePollWeak so a walk-up
+// is heard on the next burst instead of two minutes later.
+func idlePollSleep(weakOnly bool, completed int) time.Duration {
+	if weakOnly {
+		return idlePollWeak
+	}
+	return idlePollWait(completed)
 }
 
 // idlePollWait is the gap with discovery off between bursts. 30s, 60s, 2m…
@@ -1605,6 +1636,18 @@ func (s *session) runPresenceWatcher(ctx context.Context, cfg presenceConfig, wa
 				rssi = result.RSSI
 			}
 			live := result != nil && beaconUsable(result.HasRSSI, rssi)
+			// Idle-poll Pause means Wait often returns nil even when
+			// BlueZ already refreshed Device1.RSSI to cabin strength
+			// (2026-10-04 15:57 rssi=-43, rssiSignalAge=2m9s — never
+			// Connect until the app was restarted).
+			if !live {
+				if peeked, peekErr := watcher.Peek(ctx); peekErr == nil && peeked != nil && peekIsCabinLive(peeked.HasRSSI, peeked.RSSI) {
+					result = peeked
+					rssi = peeked.RSSI
+					live = true
+					keylog("presence", "cabin Device1 rssi=%d without a fresh advert signal — treating as live", rssi)
+				}
+			}
 			s.mu.Lock()
 			if live {
 				s.lastBeacon = result
@@ -1644,7 +1687,11 @@ func (s *session) runPresenceWatcher(ctx context.Context, cfg presenceConfig, wa
 					leftover, _ = watcher.Peek(ctx)
 				}
 				hasCachedRSSI := leftover != nil && leftover.HasRSSI
-				if shouldForgetCached(hasCachedRSSI, forgotCached, signalAge) {
+				var leftoverRSSI int16
+				if hasCachedRSSI {
+					leftoverRSSI = leftover.RSSI
+				}
+				if shouldForgetCached(hasCachedRSSI, leftoverRSSI, forgotCached, signalAge) {
 					if watcher.ForgetCached(ctx) {
 						keylog("presence", "forgot leftover Device1 after %s without live adverts (rssiSignalAge=%s)",
 							silentFor.Truncate(time.Second), signalAge.Truncate(time.Second))
@@ -1654,7 +1701,7 @@ func (s *session) runPresenceWatcher(ctx context.Context, cfg presenceConfig, wa
 					}
 					forgotCached = true
 				}
-				if shouldRecycleDiscovery(hasCachedRSSI, signalAge, lastRecycle, now, recycleCount) {
+				if shouldRecycleDiscovery(hasCachedRSSI, leftoverRSSI, signalAge, lastRecycle, now, recycleCount) {
 					if err := watcher.RecycleDiscovery(ctx); err != nil {
 						keylog("presence", "recycle discovery: %v", err)
 					} else {
@@ -1670,7 +1717,7 @@ func (s *session) runPresenceWatcher(ctx context.Context, cfg presenceConfig, wa
 					// Continuous LE scan with nothing usable is what preceded
 					// Powered going false on 2026-09-25/26 (6.5h of rssi<=-95).
 					// Pause the radio and only burst-listen on a longer cadence.
-					sleep := idlePollWait(idlePolls)
+					sleep := idlePollSleep(weakOnly, idlePolls)
 					idlePolls++
 					why := "empty"
 					if weakOnly {

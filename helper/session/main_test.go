@@ -589,20 +589,24 @@ func TestPresenceConnectOKDropHold(t *testing.T) {
 
 func TestShouldRecycleDiscovery(t *testing.T) {
 	now := time.Now()
-	if shouldRecycleDiscovery(false, 2*time.Minute, time.Time{}, now, 0) {
+	const leftover = int16(-94)
+	if shouldRecycleDiscovery(false, leftover, 2*time.Minute, time.Time{}, now, 0) {
 		t.Fatal("car away (no leftover) must not StopDiscovery")
 	}
-	if shouldRecycleDiscovery(true, 19*time.Second, time.Time{}, now, 0) {
+	if shouldRecycleDiscovery(true, leftover, 19*time.Second, time.Time{}, now, 0) {
 		t.Fatal("must not recycle before 20s without a live RSSI signal")
 	}
-	if !shouldRecycleDiscovery(true, 20*time.Second, time.Time{}, now, 0) {
+	if !shouldRecycleDiscovery(true, leftover, 20*time.Second, time.Time{}, now, 0) {
 		t.Fatal("first recycle at 20s for a frozen leftover")
 	}
-	if shouldRecycleDiscovery(true, 40*time.Second, now.Add(-20*time.Second), now, 1) {
+	if shouldRecycleDiscovery(true, leftover, 40*time.Second, now.Add(-20*time.Second), now, 1) {
 		t.Fatal("second recycle must wait 40s, not 20s")
 	}
-	if !shouldRecycleDiscovery(true, 60*time.Second, now.Add(-40*time.Second), now, 1) {
+	if !shouldRecycleDiscovery(true, leftover, 60*time.Second, now.Add(-40*time.Second), now, 1) {
 		t.Fatal("second recycle after 40s")
+	}
+	if shouldRecycleDiscovery(true, -43, 3*time.Minute, time.Time{}, now, 0) {
+		t.Fatal("cabin-strength Peek RSSI must not recycle (2026-10-04 -43)")
 	}
 	if discoveryRecycleWait(0) != 20*time.Second || discoveryRecycleWait(1) != 40*time.Second {
 		t.Fatalf("recycle wait 0=%s 1=%s", discoveryRecycleWait(0), discoveryRecycleWait(1))
@@ -613,17 +617,21 @@ func TestShouldRecycleDiscovery(t *testing.T) {
 }
 
 func TestShouldForgetCached(t *testing.T) {
-	if shouldForgetCached(false, false, time.Minute) {
+	const leftover = int16(-94)
+	if shouldForgetCached(false, leftover, false, time.Minute) {
 		t.Fatal("no leftover Device1 must not be forgotten")
 	}
-	if shouldForgetCached(true, false, 20*time.Second) {
+	if shouldForgetCached(true, leftover, false, 20*time.Second) {
 		t.Fatal("must not RemoveDevice at the first recycle (sleeping-car RSSI gap)")
 	}
-	if !shouldForgetCached(true, false, 40*time.Second) {
+	if !shouldForgetCached(true, leftover, false, 40*time.Second) {
 		t.Fatal("frozen leftover after 40s without live RSSI signal must be forgotten once")
 	}
-	if shouldForgetCached(true, true, time.Minute) {
+	if shouldForgetCached(true, leftover, true, time.Minute) {
 		t.Fatal("must not ForgetCached again in the same silent stretch")
+	}
+	if shouldForgetCached(true, -43, false, time.Minute) {
+		t.Fatal("cabin-strength Peek RSSI must not be forgotten (2026-10-04 -43)")
 	}
 }
 
@@ -637,14 +645,27 @@ func TestRssiSignalAgeFallsBackToWaitSilence(t *testing.T) {
 }
 
 func TestLeftoverFrozenNeedsStaleSignalNotJustCachedRSSI(t *testing.T) {
-	if leftoverFrozen(true, 5*time.Second, discoveryRecycleAfter) {
+	const leftover = int16(-94)
+	if leftoverFrozen(true, leftover, 5*time.Second, discoveryRecycleAfter) {
 		t.Fatal("fresh advert signal must not look frozen")
 	}
-	if !leftoverFrozen(true, discoveryRecycleAfter, discoveryRecycleAfter) {
+	if !leftoverFrozen(true, leftover, discoveryRecycleAfter, discoveryRecycleAfter) {
 		t.Fatal("cached RSSI with no recent signal is frozen")
 	}
-	if leftoverFrozen(false, time.Minute, discoveryRecycleAfter) {
+	if leftoverFrozen(false, leftover, time.Minute, discoveryRecycleAfter) {
 		t.Fatal("empty adapter is not a frozen leftover")
+	}
+	if leftoverFrozen(true, -43, 3*time.Minute, discoveryRecycleAfter) {
+		t.Fatal("cabin-strength Peek RSSI is not a frozen leftover")
+	}
+}
+
+func TestPeekIsCabinLive(t *testing.T) {
+	if !peekIsCabinLive(true, -43) || !peekIsCabinLive(true, cabinLiveRSSI) {
+		t.Fatal("at-the-car Peek RSSI must count as live")
+	}
+	if peekIsCabinLive(true, -81) || peekIsCabinLive(false, -40) {
+		t.Fatal("walk-up leftover or missing RSSI is not cabin-live")
 	}
 }
 
@@ -663,6 +684,12 @@ func TestShouldIdlePoll(t *testing.T) {
 	}
 	if idlePollWait(8) != idlePollMax {
 		t.Fatalf("idle poll wait cap %s, want %s", idlePollWait(8), idlePollMax)
+	}
+	if idlePollSleep(true, 8) != idlePollWeak {
+		t.Fatalf("weak leftover must keep a short idle, got %s", idlePollSleep(true, 8))
+	}
+	if idlePollSleep(false, 0) != idlePollMin {
+		t.Fatalf("empty adapter still uses the long idle backoff")
 	}
 }
 
