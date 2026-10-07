@@ -17,7 +17,7 @@ use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use wait_timeout::ChildExt;
 
@@ -56,10 +56,13 @@ pub struct Core {
     /// enables it) - None means `run()` behaves exactly as one-shot did,
     /// not "session client that always fails over".
     session: Option<SessionClient>,
-    /// Whether the `BlueZ` proximity/authentication service is currently
-    /// started. `compare_exchange` serializes concurrent `start_phone_key`
-    /// calls; a plain `Mutex<bool>` was overkill for a single flag.
+    /// Serializes lifecycle/config/key mutations. Always acquired before cfg;
+    /// a second start waits for the first caller's actual outcome.
+    phone_key_gate: Mutex<()>,
+    /// Whether the `BlueZ` proximity/authentication service is currently started.
     phone_key_started: AtomicBool,
+    phone_key_enabled: AtomicBool,
+    phone_key_retry_at: Mutex<Option<Instant>>,
 }
 
 impl Core {
@@ -82,25 +85,21 @@ impl Core {
                 config_path.display()
             ))
         })?;
-        // Older schema versions are migrated up to CURRENT and persisted at
-        // that version. Pairing is also healed whenever a VIN is configured
-        // and both key files are already on disk: V0 installs never had
-        // `vin_state`, and later files can still say `unpaired` after a
-        // Settings save or a Generate Key reuse that used to wipe the flag.
-        // Either way the key was enrolled through the pairing page, so do
-        // not force another NFC tap just to start phone-key presence.
+        // Only V0 lacked explicit enrollment state. Never override an explicit
+        // unpaired state or rewrite a schema from a newer build.
         let mut dirty = false;
-        if cfg.version < ConfigVersion::CURRENT {
-            cfg.version = ConfigVersion::CURRENT;
-            dirty = true;
-        }
-        if cfg.vin_state == VinState::Unpaired
+        if cfg.version == ConfigVersion::V0
+            && cfg.vin_state == VinState::Unpaired
             && !cfg.vin.is_empty()
             && Self::key_files_in(&state_dir)
         {
             cfg.vin_state = VinState::Paired;
             dirty = true;
-            crate::keylog::log("core", "vin_state healed to paired (key files present)");
+            crate::keylog::log("core", "migrated pre-phone-key enrollment state");
+        }
+        if cfg.version < ConfigVersion::CURRENT {
+            cfg.version = ConfigVersion::CURRENT;
+            dirty = true;
         }
         if dirty {
             if let Err(e) = cfg.save(&config_path) {
@@ -113,7 +112,10 @@ impl Core {
             bin_dir,
             state_dir,
             session,
+            phone_key_gate: Mutex::new(()),
             phone_key_started: AtomicBool::new(false),
+            phone_key_enabled: AtomicBool::new(false),
+            phone_key_retry_at: Mutex::new(None),
         })
     }
 
@@ -175,35 +177,43 @@ impl Core {
         if !is_known_command(cmd) {
             return Err(HelperError::UnknownCommand(cmd.to_string()));
         }
-        for a in args {
-            if a.starts_with('-') {
-                return Err(HelperError::InvalidArgument(format!(
-                    "arguments may not start with '-': {a}"
-                )));
-            }
-        }
+        // Go's JSON dispatcher consumes positional strings, and the CLI
+        // fallback stops parsing flags at the known command name. Negative
+        // coordinates and end-only time intervals are legitimate arguments.
         validate_arg_ranges(cmd, args)?;
-
-        let (common, timeout, vin, connect_timeout_sec, command_timeout_sec) = {
-            let cfg = self.cfg.lock().unwrap();
-            let common = self.common_args_locked(&cfg)?;
-            // i64 before the sum, not i32: an overflowing i32 sum here used
-            // to be able to turn into a negative (already-cancelled)
-            // deadline - a previously-fixed bug, preserved here.
-            let secs = i64::from(cfg.connect_timeout_sec) + i64::from(cfg.command_timeout_sec) + 10;
-            (
-                common,
-                Duration::from_secs(secs.cast_unsigned()),
-                cfg.vin.clone(),
-                cfg.connect_timeout_sec,
-                cfg.command_timeout_sec,
-            )
-        };
 
         let _permit = self
             .ble_sem
             .try_lock()
             .map_err(|_| HelperError::Busy("another BLE command is in progress".to_string()))?;
+        let _gate = self
+            .phone_key_gate
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+        let (common, timeout, vin, connect_timeout_sec, command_timeout_sec) = {
+            let cfg = self
+                .cfg
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let common = self.common_args_locked(&cfg)?;
+            // i64 before the sum, not i32: an overflowing i32 sum here used
+            // to be able to turn into a negative (already-cancelled)
+            // deadline - a previously-fixed bug, preserved here. Clamped at
+            // zero so a hand-edited negative timeout can never cast into a
+            // near-infinite u64 deadline.
+            let secs =
+                (i64::from(cfg.connect_timeout_sec) + i64::from(cfg.command_timeout_sec) + 10)
+                    .max(0)
+                    .cast_unsigned();
+            (
+                common,
+                Duration::from_secs(secs),
+                cfg.vin.clone(),
+                cfg.connect_timeout_sec,
+                cfg.command_timeout_sec,
+            )
+        };
 
         let mut command_argv = common;
         command_argv.push(cmd.to_string());
@@ -271,23 +281,17 @@ impl Core {
     /// isn't exec'd at all. Without a session it falls back to exec'ing
     /// tesla-keygen, the pre-session behavior.
     pub(crate) fn generate_key(&self, force: bool) -> Result<String, OperationError> {
+        let _gate = self
+            .phone_key_gate
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.cfg
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .ensure_writable()
+            .map_err(OperationError::Persist)?;
         let private_existed = self.private_key_path().is_file();
         let replacing = force || !private_existed;
-        // tesla-session reprints an existing key when force is unset. That
-        // is not a new key, so keep vin_state and the live phone-key session.
-        if !replacing {
-            if let Ok(pubkey) = std::fs::read_to_string(self.public_key_path()) {
-                let pubkey = pubkey.trim();
-                if !pubkey.is_empty() {
-                    eprintln!("Core: generate_key reused existing key");
-                    return Ok(pubkey.to_string());
-                }
-            }
-        }
-
-        if replacing {
-            self.stop_phone_key();
-        }
         // Holds the config mutex for the whole call, same as the original -
         // GenerateKey doesn't read Config, but this still serializes
         // concurrent key generation against writing the same key files.
@@ -297,7 +301,25 @@ impl Core {
         // exactly what happened here before this fix (Generate Key hanging
         // indefinitely on the QML side, since the worker thread never
         // returns to emit keyGenerated).
-        let mut cfg = self.cfg.lock().unwrap();
+        let mut cfg = self
+            .cfg
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+        if replacing {
+            // Persist the enrollment reset before a potentially destructive
+            // key write. A failure must never leave a new key marked paired.
+            let mut candidate = cfg.clone();
+            candidate.vin_state = VinState::Unpaired;
+            candidate
+                .save(&self.config_path())
+                .map_err(OperationError::Persist)?;
+            self.stop_phone_key_locked(&cfg);
+            *cfg = candidate;
+            if let Some(session) = &self.session {
+                session.invalidate();
+            }
+        }
 
         let key_path = self.private_key_path().to_string_lossy().into_owned();
 
@@ -315,10 +337,8 @@ impl Core {
                 generate_key_one_shot(&self.bin_dir, &key_path, &self.public_key_path(), force)?
             }
             Some(session) => {
-                // Pure crypto, so the hci-vs-bluez no-fallback question
-                // doesn't apply here; still, the session path is preferred
-                // so tesla-keygen stops being exec'd (Phases 3-4). Only
-                // falls back to the one-shot when the session errored.
+                // Never retry a possibly completed key rotation through a
+                // different binary after a transport failure.
                 match session.keygen(
                     force,
                     &key_path,
@@ -331,7 +351,10 @@ impl Core {
                         // Persist the public half to the file Pair()
                         // reads from (and the app's pubkey location).
                         let pubkey = outcome.stdout.trim().to_string();
-                        if let Err(e) = std::fs::write(self.public_key_path(), &pubkey) {
+                        if let Err(e) = crate::config::write_atomic(
+                            self.public_key_path().as_path(),
+                            pubkey.as_bytes(),
+                        ) {
                             return Err(OperationError::WritePubkey(e));
                         }
                         pubkey
@@ -342,25 +365,13 @@ impl Core {
                         ));
                     }
                     Err(e) => {
-                        eprintln!(
-                            "Core: persistent session unavailable ({e}); falling back to one-shot tesla-keygen"
-                        );
-                        generate_key_one_shot(
-                            &self.bin_dir,
-                            &key_path,
-                            &self.public_key_path(),
-                            force,
-                        )?
+                        return Err(OperationError::KeygenFailed(e.to_string()));
                     }
                 }
             }
         };
 
         if replacing {
-            cfg.vin_state = VinState::Unpaired;
-            if let Err(e) = cfg.save(&self.config_path()) {
-                return Err(OperationError::Persist(e));
-            }
             // A live persistent session (if any) loaded the private key into
             // memory at connect time - the file on disk just changed under it,
             // so it must reconnect rather than keep signing with a stale key.
@@ -374,32 +385,63 @@ impl Core {
     /// Enrolls the current public key with the vehicle via BLE, requiring
     /// physical NFC-card approval at the center console (matches the
     /// official app's "add key" flow).
+    #[allow(clippy::too_many_lines)]
     pub(crate) fn pair(&self) -> Result<(bool, String, String), HelperError> {
-        self.stop_phone_key();
-        let (common, vin, key_path, connect_timeout_sec, command_timeout_sec, timeout) = {
-            let cfg = self.cfg.lock().unwrap();
-            let common = self.common_args_locked(&cfg)?;
+        let Ok(_permit) = self.ble_sem.try_lock() else {
+            return Ok((
+                false,
+                String::new(),
+                "another BLE command is in progress".to_string(),
+            ));
+        };
+        let gate = self
+            .phone_key_gate
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let session = self.session.as_ref().ok_or_else(|| {
+            HelperError::SessionUnavailable(
+                "pairing requires a persistent session to confirm NFC enrollment".to_string(),
+            )
+        })?;
+        self.cfg
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .ensure_writable()
+            .map_err(|e| HelperError::SessionUnavailable(e.to_string()))?;
+        {
+            let cfg = self
+                .cfg
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            self.stop_phone_key_locked(&cfg);
+        }
+        let (vin, key_path, connect_timeout_sec, command_timeout_sec, timeout) = {
+            let cfg = self
+                .cfg
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            self.common_args_locked(&cfg)?;
             // Same envelope as Run() (connect + command + 10s), plus an
             // allowance that covers the physical NFC-card tap at the
             // center console this command waits for. The persistent
-            // session (tesla-session, helper/session/main.go) deliberately
-            // holds the BLE connection open for 90s *after* a successful
-            // add-key-request so the operator has time to walk up and tap
-            // the card, and only then replies - so the deadline here must
-            // exceed that 90s grace period, or the core kills the session
-            // in the middle of pairing and reports a spurious timeout.
+            // session holds the connection for up to 90s after transmission
+            // while checking vehicle enrollment and authentication. The
+            // deadline must include that approval window.
             // (A flat 30s used to be added, which under the 90s grace was
             // less than the real reply latency even at default timeouts:
             // 20+5+10+30 = 65s < 90s.) 95s comfortably tops the 90s grace.
+            // Clamped at zero like run() so a negative timeout can never
+            // cast into a near-infinite deadline.
             let secs =
-                i64::from(cfg.connect_timeout_sec) + i64::from(cfg.command_timeout_sec) + 10 + 95;
+                (i64::from(cfg.connect_timeout_sec) + i64::from(cfg.command_timeout_sec) + 10 + 95)
+                    .max(0)
+                    .cast_unsigned();
             (
-                common,
                 cfg.vin.clone(),
                 self.private_key_path().to_string_lossy().into_owned(),
                 cfg.connect_timeout_sec,
                 cfg.command_timeout_sec,
-                Duration::from_secs(secs.cast_unsigned()),
+                Duration::from_secs(secs),
             )
         };
         let pubkey_path = self.public_key_path();
@@ -419,80 +461,54 @@ impl Core {
         // makes the vehicle treat the connected session as a phone key, which
         // authorizes both unlock and drive - no NFC tap needed to drive.
         let pair_args = [
-            "add-key-request",
             pubkey_path.to_string_lossy().as_ref(),
             "owner",
             "android_device",
         ]
-        .map(str::to_string)
-        .to_vec();
+        .map(str::to_string);
 
         eprintln!("Core: pair()");
-        // Unlike run()'s Busy case, this is intentionally a normal (non-error)
-        // reply, matching the original implementation.
-        let Ok(_permit) = self.ble_sem.try_lock() else {
-            return Ok((
-                false,
-                String::new(),
-                "another BLE command is in progress".to_string(),
-            ));
-        };
-
-        let outcome = if let Some(session) = &self.session {
-            // Route through the (possibly bluez) persistent session: the
-            // add-key-request command is vendored in commands_vendor.go and
-            // inherits whatever transport the session was spawned with. This
-            // is what makes bluez pairing work (previously blocked as
-            // unsupported - now it's exactly the run() path).
-            // No fallback in bluez mode: a one-shot tesla-control would
-            // take exclusive adapter control and drop the other
-            // connections (e.g. a soundbar) bluez mode exists to keep.
-            match session.run(
-                &pair_args[0],
-                &pair_args[1..],
-                &vin,
-                &key_path,
-                connect_timeout_sec,
-                command_timeout_sec,
-                timeout,
-            ) {
-                Ok(o) => RunOutcome {
-                    ok: o.ok,
-                    stdout: o.stdout,
-                    stderr: o.stderr,
-                    exit_code: o.exit_code,
-                },
-                Err(e) if session.ble_backend() == "bluez" => {
-                    return Err(HelperError::SessionUnavailable(format!(
-                        "bluez persistent session failed during pairing: {e}"
-                    )));
-                }
-                Err(e) => {
-                    eprintln!(
-                        "Core: persistent session unavailable ({e}); falling back to one-shot tesla-control for pair"
-                    );
-                    let mut argv = common;
-                    argv.extend(pair_args.iter().cloned());
-                    run_binary(&self.bin_dir, "tesla-control", &argv, timeout)
-                }
+        // Only the persistent dispatcher confirms vehicle enrollment. A lost
+        // response must not replay the request through an unverified fallback.
+        let outcome = match session.run(
+            "pair",
+            &pair_args,
+            &vin,
+            &key_path,
+            connect_timeout_sec,
+            command_timeout_sec,
+            timeout,
+        ) {
+            Ok(o) => RunOutcome {
+                ok: o.ok,
+                stdout: o.stdout,
+                stderr: o.stderr,
+                exit_code: o.exit_code,
+            },
+            Err(e) => {
+                return Err(HelperError::SessionUnavailable(format!(
+                    "persistent session failed during pairing: {e}"
+                )));
             }
-        } else {
-            let mut argv = common;
-            argv.extend(pair_args.iter().cloned());
-            run_binary(&self.bin_dir, "tesla-control", &argv, timeout)
         };
         if !outcome.ok {
             return Ok((false, outcome.stdout, outcome.stderr.trim().to_string()));
         }
         {
-            let mut cfg = self.cfg.lock().unwrap();
-            cfg.vin_state = VinState::Paired;
-            cfg.save(&self.config_path()).map_err(|e| {
+            let mut cfg = self
+                .cfg
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let mut candidate = cfg.clone();
+            candidate.vin_state = VinState::Paired;
+            candidate.save(&self.config_path()).map_err(|e| {
                 HelperError::SessionUnavailable(format!(
                     "paired key but could not persist phone-key state: {e}"
                 ))
             })?;
+            *cfg = candidate;
         }
+        drop(gate);
         if let Err(start_error) = self.start_phone_key() {
             return Ok((
                 false,
@@ -506,11 +522,24 @@ impl Core {
     /// Starts the background `BlueZ` proximity/authentication service when the
     /// current key is paired to the configured VIN. Idempotent.
     pub(crate) fn start_phone_key(&self) -> Result<(), OperationError> {
-        if self.phone_key_started.load(Ordering::SeqCst) {
+        let _gate = self
+            .phone_key_gate
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if self.phone_key_started.load(Ordering::SeqCst)
+            && self
+                .session
+                .as_ref()
+                .is_some_and(SessionClient::is_presence_active)
+        {
             return Ok(());
         }
+        let was_started = self.phone_key_started.swap(false, Ordering::SeqCst);
         let (vin, key_path, connect_timeout_sec, command_timeout_sec, eligible) = {
-            let cfg = self.cfg.lock().unwrap();
+            let cfg = self
+                .cfg
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             (
                 cfg.vin.clone(),
                 self.private_key_path().to_string_lossy().into_owned(),
@@ -533,15 +562,12 @@ impl Core {
             crate::keylog::log("core", "phone-key start refused: requires bluez");
             return Err(OperationError::RequiresBluez);
         }
-        // Claim the flag before the (blocking) start so a second concurrent
-        // caller returns Ok instead of starting the service twice.
-        if self
-            .phone_key_started
-            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-            .is_err()
-        {
-            return Ok(());
+        if was_started && !session.is_presence_active() {
+            // Retire a dead/non-presence generation before starting scanning.
+            // Its pending stopped event must not restart the replacement again.
+            session.invalidate();
         }
+        self.phone_key_enabled.store(true, Ordering::SeqCst);
         crate::keylog::log(
             "core",
             &format!("phone-key start vin={vin} connect={connect_timeout_sec}s"),
@@ -554,11 +580,17 @@ impl Core {
             Duration::from_secs(10),
         ) {
             Ok(outcome) if outcome.ok => {
+                self.phone_key_started.store(true, Ordering::SeqCst);
+                *self
+                    .phone_key_retry_at
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
                 crate::keylog::log("core", "phone-key presence started");
                 Ok(())
             }
             Ok(outcome) => {
                 self.phone_key_started.store(false, Ordering::SeqCst);
+                self.schedule_phone_key_retry();
                 crate::keylog::log(
                     "core",
                     &format!("phone-key start failed: {}", outcome.stderr.trim()),
@@ -569,6 +601,7 @@ impl Core {
             }
             Err(e) => {
                 self.phone_key_started.store(false, Ordering::SeqCst);
+                self.schedule_phone_key_retry();
                 crate::keylog::log("core", &format!("phone-key start error: {e}"));
                 Err(OperationError::PresenceFailed(e.to_string()))
             }
@@ -577,12 +610,28 @@ impl Core {
 
     /// Stops proximity mode and closes its live BLE connection. Idempotent.
     pub(crate) fn stop_phone_key(&self) {
+        let _gate = self
+            .phone_key_gate
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let cfg = self
+            .cfg
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.stop_phone_key_locked(&cfg);
+    }
+
+    fn stop_phone_key_locked(&self, cfg: &Config) {
+        self.phone_key_enabled.store(false, Ordering::SeqCst);
+        *self
+            .phone_key_retry_at
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
         if !self.phone_key_started.load(Ordering::SeqCst) {
             return;
         }
         crate::keylog::log("core", "phone-key stop");
         if let Some(session) = &self.session {
-            let cfg = self.cfg.lock().unwrap();
             let result = session.stop_presence(
                 &cfg.vin,
                 &self.private_key_path().to_string_lossy(),
@@ -597,8 +646,29 @@ impl Core {
         self.phone_key_started.store(false, Ordering::SeqCst);
     }
 
+    fn schedule_phone_key_retry(&self) {
+        *self
+            .phone_key_retry_at
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) =
+            Some(Instant::now() + Duration::from_secs(5));
+    }
+
     pub(crate) fn poll_phone_key_event(&self) -> Option<SessionEvent> {
         let mut event = self.session.as_ref().and_then(SessionClient::poll_event);
+        let retry_due = self
+            .phone_key_retry_at
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .is_some_and(|deadline| Instant::now() >= deadline);
+        if event.is_none() && retry_due && self.phone_key_enabled.load(Ordering::SeqCst) {
+            event = Some(SessionEvent {
+                kind: "presence_stopped".to_string(),
+                vin: self.get_config().0,
+                time: String::new(),
+                error: String::new(),
+            });
+        }
         if let Some(event) = &event {
             crate::keylog::log(
                 "core",
@@ -613,8 +683,32 @@ impl Core {
                 ),
             );
         }
+        if let Some(event) = &mut event {
+            if event.vin.is_empty() {
+                event.vin = self.get_config().0;
+            }
+        }
         if event.as_ref().is_some_and(|e| e.kind == "presence_stopped") {
+            let gate = self
+                .phone_key_gate
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             self.phone_key_started.store(false, Ordering::SeqCst);
+            if !self.phone_key_enabled.load(Ordering::SeqCst) {
+                return event;
+            }
+            if self
+                .phone_key_retry_at
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .is_some_and(|deadline| Instant::now() < deadline)
+            {
+                return event;
+            }
+            if let Some(session) = &self.session {
+                session.invalidate();
+            }
+            drop(gate);
             match self.start_phone_key() {
                 Ok(()) => {
                     if let Some(event) = &mut event {
@@ -626,7 +720,8 @@ impl Core {
                     if let Some(event) = &mut event {
                         let msg = error.to_string();
                         if !msg.is_empty() {
-                            event.kind = "presence_error".to_string();
+                            // Preserve stopped so Qt releases its keepalive
+                            // request while the bounded retry timer runs.
                             event.error = msg;
                         }
                     }
@@ -645,6 +740,10 @@ impl Core {
     /// timeout. Idempotent and safe to call even when no child exists or no
     /// session is configured.
     pub(crate) fn handle_resume(&self) {
+        let gate = self
+            .phone_key_gate
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         crate::keylog::log("core", "resume from suspend - recycling BLE session");
         eprintln!("Core: handle_resume - device woke from suspend, recycling stale BLE session");
         // Allow `start_phone_key` to claim the flag again after we killed its
@@ -660,6 +759,7 @@ impl Core {
         // command recreates the child. Failures are just logged - the next
         // periodic `poll_phone_key_event` or explicit user action will retry
         // and `start_phone_key` already emits a descriptive error.
+        drop(gate);
         let _ = self.start_phone_key();
     }
 
@@ -679,20 +779,29 @@ impl Core {
             command_timeout_sec,
         )?;
 
-        self.stop_phone_key();
-        let mut cfg = self.cfg.lock().unwrap();
+        let gate = self
+            .phone_key_gate
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut cfg = self
+            .cfg
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let vin_changed = cfg.vin != vin.trim();
-        cfg.vin = vin.trim().to_string();
-        cfg.model = model.trim().to_ascii_lowercase();
-        cfg.key_name = key_name.trim().to_string();
-        cfg.connect_timeout_sec = connect_timeout_sec;
-        cfg.command_timeout_sec = command_timeout_sec;
+        let mut candidate = cfg.clone();
+        candidate.vin = vin.trim().to_string();
+        candidate.model = model.trim().to_ascii_lowercase();
+        candidate.key_name = key_name.trim().to_string();
+        candidate.connect_timeout_sec = connect_timeout_sec;
+        candidate.command_timeout_sec = command_timeout_sec;
         if vin_changed {
-            cfg.vin_state = VinState::Unpaired;
+            candidate.vin_state = VinState::Unpaired;
         }
-        if let Err(e) = cfg.save(&self.config_path()) {
+        if let Err(e) = candidate.save(&self.config_path()) {
             return Err(OperationError::Persist(e));
         }
+        self.stop_phone_key_locked(&cfg);
+        *cfg = candidate;
         eprintln!(
             "Core: set_config(vin={}, model={:?}, keyName={:?}, connectTimeout={}s, commandTimeout={}s)",
             cfg.vin, cfg.model, cfg.key_name, connect_timeout_sec, command_timeout_sec
@@ -705,6 +814,7 @@ impl Core {
             session.invalidate();
         }
         drop(cfg);
+        drop(gate);
         if !vin_changed {
             let _ = self.start_phone_key();
         }
@@ -739,21 +849,35 @@ impl Core {
     ) -> Result<(bool, String, String), HelperError> {
         let dest =
             parse_shared_text(text).map_err(|e| HelperError::InvalidArgument(e.to_string()))?;
+        let _permit = self
+            .ble_sem
+            .try_lock()
+            .map_err(|_| HelperError::Busy("another BLE command is in progress".to_string()))?;
+        let _gate = self
+            .phone_key_gate
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let (vin, key_path, connect_timeout_sec, command_timeout_sec, timeout) = {
-            let cfg = self.cfg.lock().unwrap();
+            let cfg = self
+                .cfg
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             if cfg.vin.is_empty() {
                 return Err(HelperError::NotConfigured(
                     "VIN is not set; call SetConfig first".to_string(),
                 ));
             }
-            // Same envelope as run(): connect + command + 10s.
-            let secs = i64::from(cfg.connect_timeout_sec) + i64::from(cfg.command_timeout_sec) + 10;
+            // Same envelope as run(): connect + command + 10s, clamped at zero.
+            let secs =
+                (i64::from(cfg.connect_timeout_sec) + i64::from(cfg.command_timeout_sec) + 10)
+                    .max(0)
+                    .cast_unsigned();
             (
                 cfg.vin.clone(),
                 self.private_key_path().to_string_lossy().into_owned(),
                 cfg.connect_timeout_sec,
                 cfg.command_timeout_sec,
-                Duration::from_secs(secs.cast_unsigned()),
+                Duration::from_secs(secs),
             )
         };
         let Some(session) = &self.session else {
@@ -761,10 +885,6 @@ impl Core {
                 "persistent BLE session is unavailable".to_string(),
             ));
         };
-        let _permit = self
-            .ble_sem
-            .try_lock()
-            .map_err(|_| HelperError::Busy("another BLE command is in progress".to_string()))?;
         let args: Vec<String> = match dest {
             Destination::LatLon { lat, lon } => {
                 vec!["gps".to_string(), format!("{lat}"), format!("{lon}")]
@@ -791,11 +911,17 @@ impl Core {
     }
 
     pub(crate) fn get_config(&self) -> GetConfigReply {
-        let cfg = self.cfg.lock().unwrap();
-        let (has_key, pub_key) = match std::fs::read_to_string(self.public_key_path()) {
-            Ok(data) => (true, data),
-            Err(_) => (false, String::new()),
-        };
+        let cfg = self
+            .cfg
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        // A usable key needs both halves present and non-empty: public alone
+        // (or an empty file left by a crashed keygen) must not report "Key
+        // ready" and then fail every run() with NoKey.
+        let pub_key = std::fs::read_to_string(self.public_key_path()).unwrap_or_default();
+        let has_key = !pub_key.trim().is_empty()
+            && self.private_key_path().is_file()
+            && std::fs::metadata(self.private_key_path()).is_ok_and(|m| m.len() > 0);
         (
             cfg.vin.clone(),
             cfg.model.clone(),
@@ -852,35 +978,138 @@ fn generate_key_one_shot(
     }
 }
 
-/// Rejects out-of-range numeric arguments for the few commands with a
-/// well-defined value range, before anything reaches the wired session or
-/// the subprocess. This is server-side defense-in-depth: the QML sliders in
+/// Rejects out-of-range numeric arguments for commands with a well-defined
+/// value range, before anything reaches the wired session or the subprocess.
+/// This is server-side defense-in-depth: the QML sliders in
 /// `ArgumentDialog.qml` already bound these, but the JSON stdin path accepts
 /// arbitrary args, and the vendored upstream handlers (`commands_vendor.go`)
 /// do `Atoi` to `int32` with no range check, so a huge value would wrap or be
 /// sent to the vehicle. Keep the per-command bounds here in sync with the
 /// `min`/`max` in `app/qml/js/CommandCatalog.js`.
+#[allow(clippy::too_many_lines)]
 fn validate_arg_ranges(cmd: &str, args: &[String]) -> Result<(), HelperError> {
-    let bounds: Option<(i64, i64)> = match cmd {
-        "charging-set-limit" => Some((50, 100)),
-        "charging-set-amps" => Some((1, 48)),
-        _ => None,
-    };
-    let Some((lo, hi)) = bounds else {
-        return Ok(());
-    };
-    let arg = args.first().ok_or_else(|| {
-        HelperError::InvalidArgument(format!("{cmd} requires a numeric argument"))
-    })?;
-    let value: i64 = arg.trim().parse().map_err(|_| {
-        HelperError::InvalidArgument(format!("{cmd} argument must be an integer: {arg}"))
-    })?;
-    if !(lo..=hi).contains(&value) {
-        return Err(HelperError::InvalidArgument(format!(
-            "{cmd} argument {value} out of range [{lo}, {hi}]"
-        )));
+    fn invalid(cmd: &str, arg: &str) -> HelperError {
+        HelperError::InvalidArgument(format!("{cmd} argument out of range or invalid: {arg}"))
     }
-    Ok(())
+    fn parse_int_arg(arg: &str) -> Option<i64> {
+        arg.trim().parse().ok()
+    }
+    fn parse_float_arg(arg: &str) -> Option<f64> {
+        let v: f64 = arg.trim().parse().ok()?;
+        v.is_finite().then_some(v)
+    }
+    // Strip an optional single-letter unit suffix (e.g. "21C" -> ("21", Some('C'))).
+    fn strip_unit(arg: &str) -> (&str, Option<char>) {
+        let t = arg.trim();
+        match t.chars().last() {
+            Some(c) if c.is_ascii_alphabetic() => (&t[..t.len() - c.len_utf8()], Some(c)),
+            _ => (t, None),
+        }
+    }
+    match cmd {
+        "charging-set-limit" => {
+            let arg = args.first().ok_or_else(|| {
+                HelperError::InvalidArgument(format!("{cmd} requires a numeric argument"))
+            })?;
+            let value: i64 = arg.trim().parse().map_err(|_| {
+                HelperError::InvalidArgument(format!("{cmd} argument must be an integer: {arg}"))
+            })?;
+            if !(50..=100).contains(&value) {
+                return Err(HelperError::InvalidArgument(format!(
+                    "{cmd} argument {value} out of range [50, 100]"
+                )));
+            }
+            Ok(())
+        }
+        "charging-set-amps" => {
+            let arg = args.first().ok_or_else(|| {
+                HelperError::InvalidArgument(format!("{cmd} requires a numeric argument"))
+            })?;
+            let value: i64 = arg.trim().parse().map_err(|_| {
+                HelperError::InvalidArgument(format!("{cmd} argument must be an integer: {arg}"))
+            })?;
+            if !(1..=48).contains(&value) {
+                return Err(HelperError::InvalidArgument(format!(
+                    "{cmd} argument {value} out of range [1, 48]"
+                )));
+            }
+            Ok(())
+        }
+        "charging-schedule" => {
+            let arg = args.first().ok_or_else(|| {
+                HelperError::InvalidArgument(format!("{cmd} requires a numeric argument"))
+            })?;
+            let value = parse_int_arg(arg).ok_or_else(|| invalid(cmd, arg))?;
+            if !(0..=1439).contains(&value) {
+                return Err(invalid(cmd, arg));
+            }
+            Ok(())
+        }
+        "media-set-volume" => {
+            let arg = args.first().ok_or_else(|| {
+                HelperError::InvalidArgument(format!("{cmd} requires a numeric argument"))
+            })?;
+            let value = parse_float_arg(arg).ok_or_else(|| invalid(cmd, arg))?;
+            if !(0.0..=10.0).contains(&value) {
+                return Err(invalid(cmd, arg));
+            }
+            Ok(())
+        }
+        "climate-set-temp" => {
+            let arg = args.first().ok_or_else(|| {
+                HelperError::InvalidArgument(format!("{cmd} requires a numeric argument"))
+            })?;
+            let (num, unit) = strip_unit(arg);
+            let value = parse_float_arg(num).ok_or_else(|| invalid(cmd, arg))?;
+            // QML only sends Celsius, but upstream also accepts Fahrenheit.
+            let (lo, hi) = match unit.map(|c| c.to_ascii_uppercase()) {
+                Some('F') => (59.0, 82.0),
+                _ => (15.0, 28.0),
+            };
+            if !(lo..=hi).contains(&value) {
+                return Err(invalid(cmd, arg));
+            }
+            Ok(())
+        }
+        "software-update-start" => {
+            let arg = args.first().ok_or_else(|| {
+                HelperError::InvalidArgument(format!("{cmd} requires a numeric argument"))
+            })?;
+            // Signed coordinates are valid positional values, but a negative
+            // delay is never valid, including Go's minute/hour duration forms.
+            if arg.trim().starts_with('-') {
+                return Err(invalid(cmd, arg));
+            }
+            let (num, unit) = strip_unit(arg);
+            match unit.map(|c| c.to_ascii_lowercase()) {
+                // Seconds form QML sends ("600s").
+                Some('s') | None => {
+                    let value = parse_int_arg(if unit.is_some() { num } else { arg })
+                        .ok_or_else(|| invalid(cmd, arg))?;
+                    if !(0..=3600).contains(&value) {
+                        return Err(invalid(cmd, arg));
+                    }
+                    Ok(())
+                }
+                // Go durations ("10m", "2h"): let upstream parse them.
+                _ => Ok(()),
+            }
+        }
+        "charging-schedule-add" | "precondition-schedule-add" => {
+            // [DAYS, TIME, LATITUDE, LONGITUDE, ...]: only the coordinates
+            // have machine-checkable ranges here.
+            for (idx, (lo, hi)) in [(2usize, (-90.0, 90.0)), (3usize, (-180.0, 180.0))] {
+                if let Some(arg) = args.get(idx) {
+                    let value = parse_float_arg(arg).ok_or_else(|| invalid(cmd, arg))?;
+                    if !(lo..=hi).contains(&value) {
+                        return Err(invalid(cmd, arg));
+                    }
+                }
+            }
+            Ok(())
+        }
+        _ => Ok(()),
+    }
 }
 
 /// Execs a bundled binary with a hard deadline, returning combined exit
@@ -913,16 +1142,22 @@ pub(crate) fn run_binary(
 
     // Drain stdout/stderr on their own threads *before* waiting, so a child
     // that fills the OS pipe buffer can't deadlock us against wait_timeout.
+    // Bounded at 1 MiB per stream: vehicle state is kilobytes, and an
+    // unbounded read_to_string would let a buggy child OOM the core.
     let mut stdout_pipe = child.stdout.take().expect("piped stdout");
     let mut stderr_pipe = child.stderr.take().expect("piped stderr");
     let stdout_thread = thread::spawn(move || {
         let mut buf = String::new();
-        let _ = stdout_pipe.read_to_string(&mut buf);
+        let _ = (&mut stdout_pipe)
+            .take(1024 * 1024)
+            .read_to_string(&mut buf);
         buf
     });
     let stderr_thread = thread::spawn(move || {
         let mut buf = String::new();
-        let _ = stderr_pipe.read_to_string(&mut buf);
+        let _ = (&mut stderr_pipe)
+            .take(1024 * 1024)
+            .read_to_string(&mut buf);
         buf
     });
 
@@ -956,6 +1191,205 @@ pub(crate) fn run_binary(
 #[cfg(test)]
 mod tests {
     use super::Core;
+
+    #[test]
+    fn negative_software_update_durations_remain_rejected() {
+        for delay in ["-1s", "-1m", "-1h", " -1h "] {
+            assert!(
+                super::validate_arg_ranges("software-update-start", &[delay.to_string()]).is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn concurrent_phone_key_starts_share_one_confirmed_service() {
+        use std::sync::{Arc, Barrier};
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().to_string_lossy().into_owned();
+        let response =
+            r#"{"type":"response","id":"{ID}","ok":true,"stdout":"","stderr":"","exit_code":0}"#
+                .to_string();
+        let (session, requests, peer) = crate::session_client::tests::accept_mock(
+            dir.path(),
+            vec![r#"{"type":"hello","v":1}"#.to_string()],
+            vec![response.clone(), response],
+        );
+        let core = Arc::new(Core::new(state_dir.clone(), state_dir, Some(session)).unwrap());
+        std::fs::write(core.private_key_path(), "private").unwrap();
+        {
+            let mut cfg = core.cfg.lock().unwrap();
+            cfg.vin = "5YJ3E1EA0PF000000".to_string();
+            cfg.vin_state = crate::config::VinState::Paired;
+        }
+        let barrier = Arc::new(Barrier::new(2));
+        let callers: Vec<_> = (0..2)
+            .map(|_| {
+                let core = Arc::clone(&core);
+                let barrier = Arc::clone(&barrier);
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    core.start_phone_key()
+                })
+            })
+            .collect();
+        for caller in callers {
+            caller.join().unwrap().unwrap();
+        }
+        let request: serde_json::Value =
+            serde_json::from_str(&requests.try_recv().unwrap()).unwrap();
+        assert_eq!(request["cmd"], "presence-start");
+        assert!(
+            requests.try_recv().is_err(),
+            "concurrent starts created duplicate services"
+        );
+        core.stop_phone_key();
+        core.session.as_ref().unwrap().invalidate();
+        peer.join().unwrap();
+    }
+
+    #[test]
+    fn phone_key_loss_retries_without_reporting_active_or_spinning() {
+        use std::sync::atomic::Ordering;
+        use std::time::Instant;
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().to_string_lossy().into_owned();
+        let (session, _requests, peer) = crate::session_client::tests::accept_mock(
+            dir.path(),
+            vec![r#"{"type":"hello","v":1}"#.to_string()],
+            vec![r#"{"type":"response","id":"{ID}","ok":true,"stdout":"","stderr":"","exit_code":0}"#.to_string()],
+        );
+        let core = Core::new(state_dir.clone(), state_dir, Some(session)).unwrap();
+        std::fs::write(core.private_key_path(), "private").unwrap();
+        {
+            let mut cfg = core.cfg.lock().unwrap();
+            cfg.vin = "5YJ3E1EA0PF000000".to_string();
+            cfg.vin_state = crate::config::VinState::Paired;
+        }
+        core.start_phone_key().unwrap();
+        assert!(core.phone_key_started.load(Ordering::SeqCst));
+        // The scripted peer exits on the next request, simulating transport loss.
+        assert!(core.run("ping", &[]).is_err());
+        peer.join().unwrap();
+        let stopped = core.poll_phone_key_event().unwrap();
+        assert_eq!(stopped.kind, "presence_stopped");
+        assert_eq!(stopped.vin, "5YJ3E1EA0PF000000");
+        assert!(!core.phone_key_started.load(Ordering::SeqCst));
+        assert!(core.phone_key_enabled.load(Ordering::SeqCst));
+        assert!(core.phone_key_retry_at.lock().unwrap().is_some());
+        assert!(
+            core.poll_phone_key_event().is_none(),
+            "failed startup must not spin the event poll"
+        );
+        *core.phone_key_retry_at.lock().unwrap() = Some(Instant::now());
+        assert_eq!(
+            core.poll_phone_key_event().unwrap().kind,
+            "presence_stopped"
+        );
+        core.stop_phone_key();
+        assert!(!core.phone_key_enabled.load(Ordering::SeqCst));
+        assert!(core.phone_key_retry_at.lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn unknown_config_schema_refuses_settings_keys_and_pairing() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        let original = r#"{"version":99,"vin":"5YJ3E1EA0PF000000","model":"","key_name":"phone","connect_timeout_sec":20,"command_timeout_sec":5,"vin_state":"paired","future_setting":true}"#;
+        std::fs::write(&path, original).unwrap();
+        let state_dir = dir.path().to_string_lossy().into_owned();
+        let core = Core::new(state_dir.clone(), state_dir, None).unwrap();
+        assert!(core
+            .set_config("5YJ3E1EA0PF111111", "", "phone", 20, 5)
+            .is_err());
+        assert!(core.generate_key(true).is_err());
+        assert!(core.pair().is_err());
+        assert_eq!(std::fs::read_to_string(path).unwrap(), original);
+        assert!(!core.private_key_path().exists());
+    }
+
+    #[test]
+    fn review_vin_change_stays_unpaired_after_restart() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().to_string_lossy().into_owned();
+        let core = Core::new(state_dir.clone(), state_dir.clone(), None).unwrap();
+        core.set_config("5YJ3E1EA0PF000000", "", "phone", 20, 5)
+            .unwrap();
+        // A previous vehicle's key files remain when Settings changes VIN.
+        std::fs::write(core.private_key_path(), "previous vehicle private key").unwrap();
+        std::fs::write(core.public_key_path(), "previous vehicle public key").unwrap();
+        core.set_config("5YJ3E1EA0PF111111", "", "phone", 20, 5)
+            .unwrap();
+        drop(core);
+
+        let reopened = Core::new(state_dir.clone(), state_dir, None).unwrap();
+        let result = reopened.start_phone_key();
+        assert!(
+            matches!(result, Err(crate::error::OperationError::NotPaired)),
+            "changing VIN requires enrollment for that vehicle, including after restart: {result:?}"
+        );
+    }
+
+    #[test]
+    fn review_startup_does_not_rewrite_unknown_config_schema() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        let original = r#"{"version":99,"vin":"5YJ3E1EA0PF000000","model":"","key_name":"phone","connect_timeout_sec":20,"command_timeout_sec":5,"vin_state":"unpaired","future_setting":{"keep":true}}"#;
+        std::fs::write(&path, original).unwrap();
+        std::fs::write(dir.path().join("private_key.pem"), "private").unwrap();
+        std::fs::write(dir.path().join("public_key.pem"), "public").unwrap();
+        let state_dir = dir.path().to_string_lossy().into_owned();
+        let _core = Core::new(state_dir.clone(), state_dir, None).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(path).unwrap(),
+            original,
+            "an older build must not destroy fields from a newer config schema"
+        );
+    }
+
+    #[test]
+    fn review_failed_config_save_preserves_running_config() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().to_string_lossy().into_owned();
+        let core = Core::new(state_dir.clone(), state_dir, None).unwrap();
+        core.set_config("5YJ3E1EA0PF000000", "model3", "phone", 20, 5)
+            .unwrap();
+        let before = core.get_config();
+        // Deterministic rename failure, including when tests run as root.
+        std::fs::remove_file(core.config_path()).unwrap();
+        std::fs::create_dir(core.config_path()).unwrap();
+        assert!(core
+            .set_config("5YJ3E1EA0PF111111", "modely", "other", 30, 10)
+            .is_err());
+        assert_eq!(
+            core.get_config(),
+            before,
+            "a rejected save must not silently change the active vehicle/settings"
+        );
+    }
+
+    #[test]
+    fn review_schedule_accepts_signed_coordinates_and_end_only_time() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().to_string_lossy().into_owned();
+        let core = Core::new(state_dir.clone(), state_dir, None).unwrap();
+        core.set_config("5YJ3E1EA0PF000000", "", "phone", 20, 5)
+            .unwrap();
+        std::fs::write(core.private_key_path(), "private").unwrap();
+        for args in [
+            ["all", "22:00-06:00", "-33.8688", "151.2093"],
+            ["all", "22:00-06:00", "37.7749", "-122.4194"],
+            ["all", "-06:00", "48.8584", "2.2945"],
+        ] {
+            let args = args.map(str::to_string);
+            // With no bundled binary the one-shot path returns Ok(ok=false).
+            // This checks that valid positional values reach dispatch at all.
+            let result = core.run("charging-schedule-add", &args);
+            assert!(
+                result.is_ok(),
+                "valid schedule {args:?} rejected: {result:?}"
+            );
+        }
+    }
 
     #[test]
     fn test_get_version_is_semver() {
@@ -1122,7 +1556,7 @@ mod tests {
     }
 
     #[test]
-    fn test_v2_unpaired_with_key_files_is_healed() {
+    fn test_v2_explicit_unpaired_with_key_files_is_preserved() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("private_key.pem"), "private").unwrap();
         std::fs::write(dir.path().join("public_key.pem"), "public").unwrap();
@@ -1137,9 +1571,12 @@ mod tests {
             None,
         )
         .unwrap();
-        assert_eligible_but_no_session(&core);
+        assert!(matches!(
+            core.start_phone_key(),
+            Err(crate::error::OperationError::NotPaired)
+        ));
         let cfg = crate::config::Config::load(&dir.path().join("config.json")).unwrap();
-        assert_eq!(cfg.vin_state, crate::config::VinState::Paired);
+        assert_eq!(cfg.vin_state, crate::config::VinState::Unpaired);
     }
 
     #[test]
@@ -1165,7 +1602,12 @@ mod tests {
 
     #[test]
     fn test_generate_key_reuse_keeps_pairing() {
+        use std::os::unix::fs::PermissionsExt;
         let dir = tempfile::tempdir().unwrap();
+        let keygen = dir.path().join("tesla-keygen");
+        // Stand-in for the no-session keygen backend reprinting the old key.
+        std::fs::write(&keygen, "#!/bin/sh\nexit 0\n").unwrap();
+        std::fs::set_permissions(&keygen, std::fs::Permissions::from_mode(0o755)).unwrap();
         std::fs::write(dir.path().join("private_key.pem"), "private").unwrap();
         std::fs::write(dir.path().join("public_key.pem"), "existing-pem\n").unwrap();
         std::fs::write(
@@ -1181,9 +1623,63 @@ mod tests {
         .unwrap();
         let pubkey = core
             .generate_key(false)
-            .expect("reuse must not invoke tesla-keygen");
+            .expect("reuse must preserve the existing enrollment");
         assert_eq!(pubkey, "existing-pem");
         let cfg = crate::config::Config::load(&dir.path().join("config.json")).unwrap();
         assert_eq!(cfg.vin_state, crate::config::VinState::Paired);
+    }
+
+    #[test]
+    fn test_get_config_has_key_requires_usable_keypair() {
+        // get_config reports has_key from public_key.pem alone, even when it
+        // is empty or private_key.pem is missing. The UI gates every command
+        // on has_key, so a half-present key shows "Key ready" and then every
+        // run() fails with NoKey. has_key must require both files non-empty.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("private_key.pem"), "private").unwrap();
+        std::fs::write(dir.path().join("public_key.pem"), "").unwrap();
+        let core = Core::new(
+            dir.path().to_string_lossy().into_owned(),
+            dir.path().to_string_lossy().into_owned(),
+            None,
+        )
+        .unwrap();
+        let (_, _, _, _, _, has_key, _) = core.get_config();
+        assert!(
+            !has_key,
+            "empty public_key.pem must not count as a usable key"
+        );
+        std::fs::remove_file(dir.path().join("private_key.pem")).unwrap();
+        std::fs::write(dir.path().join("public_key.pem"), "public").unwrap();
+        let (_, _, _, _, _, has_key, _) = core.get_config();
+        assert!(
+            !has_key,
+            "missing private_key.pem must not count as a usable key"
+        );
+    }
+
+    #[test]
+    fn test_validate_arg_ranges_covers_all_bounded_commands() {
+        // CommandCatalog.js bounds climate-set-temp, media-set-volume,
+        // charging-schedule and software-update-start, but the server-side
+        // defense only checks charging-set-limit/amps. The JSON stdin path
+        // bypasses QML sliders, so unvalidated commands accept huge values
+        // that upstream Atoi-to-int32 wraps or forwards to the vehicle.
+        assert!(
+            super::validate_arg_ranges("climate-set-temp", &["999C".into()]).is_err(),
+            "climate-set-temp 999C must be rejected server-side"
+        );
+        assert!(
+            super::validate_arg_ranges("media-set-volume", &["99".into()]).is_err(),
+            "media-set-volume 99 must be rejected server-side"
+        );
+        assert!(
+            super::validate_arg_ranges("charging-schedule", &["9999".into()]).is_err(),
+            "charging-schedule 9999 must be rejected server-side"
+        );
+        assert!(
+            super::validate_arg_ranges("software-update-start", &["99999s".into()]).is_err(),
+            "software-update-start 99999s must be rejected server-side"
+        );
     }
 }

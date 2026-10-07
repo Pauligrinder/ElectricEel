@@ -56,6 +56,7 @@ signals:
                        const QString &errorMessage);
 
 private:
+    void refreshPhoneKeyState();
     Core *m_core;
     QTimer *m_phoneKeyTimer;
 };

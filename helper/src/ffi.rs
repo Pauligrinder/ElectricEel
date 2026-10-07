@@ -49,9 +49,13 @@ fn cstr(ptr: *const c_char) -> Option<String> {
 }
 
 /// Returns a C string that the caller must free with `core_string_free`, or
-/// NULL. Used for output strings.
+/// NULL only on allocation failure. Embedded NULs (valid UTF-8, possible in
+/// subprocess output) are replaced with U+FFFD so command output is never
+/// silently truncated to "" the way a failed `CString::new` would.
+#[allow(clippy::needless_pass_by_value)]
 fn into_cstring(s: String) -> *mut c_char {
-    CString::new(s).map_or(std::ptr::null_mut(), CString::into_raw)
+    let sanitized = s.replace('\0', "\u{FFFD}");
+    CString::new(sanitized).map_or(std::ptr::null_mut(), CString::into_raw)
 }
 
 fn err_str(e: &str) -> *mut c_char {

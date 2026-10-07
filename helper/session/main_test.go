@@ -107,9 +107,9 @@ func TestExecuteReadinessChecks(t *testing.T) {
 func TestCaptureOutputIsolatesAndRestores(t *testing.T) {
 	origOut, origErr := os.Stdout, os.Stderr
 
-	stdout, stderr := captureOutput(func() {
-		fmt.Println("hello stdout")
-		fmt.Fprintln(os.Stderr, "hello stderr")
+	stdout, stderr := captureOutput(context.Background(), func(ctx context.Context) {
+		fmt.Fprintln(commandOutput(ctx).stdout, "hello stdout")
+		writeErr(ctx, "hello stderr")
 	})
 
 	if !strings.Contains(stdout, "hello stdout") {
@@ -125,7 +125,9 @@ func TestCaptureOutputIsolatesAndRestores(t *testing.T) {
 	// A second call must not see leftover state from the first (guards
 	// against the pipe-closing/goroutine-draining logic leaking a stale
 	// reader across calls).
-	stdout2, _ := captureOutput(func() { fmt.Println("second call") })
+	stdout2, _ := captureOutput(context.Background(), func(ctx context.Context) {
+		fmt.Fprintln(commandOutput(ctx).stdout, "second call")
+	})
 	if strings.Contains(stdout2, "hello stdout") {
 		t.Errorf("second capture leaked first call's output: %q", stdout2)
 	}
@@ -638,10 +640,8 @@ func TestDispatchPresenceStopWithoutStartIsSafe(t *testing.T) {
 	}
 }
 
-// TestKeygenReportsMalformedKeyWithoutForce ensures a corrupt existing key
-// doesn't wedge keygen: without -f it regenerates rather than erroring (and
-// without panicking), mirroring upstream's create fall-through.
-func TestKeygenRecoversFromCorruptKey(t *testing.T) {
+// Replacing a corrupt key is supported only after an explicit force request.
+func TestKeygenRecoversFromCorruptKeyWithForce(t *testing.T) {
 	dir := t.TempDir()
 	keyFile := filepath.Join(dir, "private_key.pem")
 	if err := os.WriteFile(keyFile, []byte("garbage\n"), 0644); err != nil {
@@ -649,7 +649,7 @@ func TestKeygenRecoversFromCorruptKey(t *testing.T) {
 	}
 	s := &session{keyFile: keyFile}
 
-	resp := s.dispatch(request{ID: "k1", Cmd: "keygen"})
+	resp := s.dispatch(request{ID: "k1", Cmd: "keygen", Args: []string{"-f"}})
 	if !resp.OK {
 		t.Fatalf("keygen with corrupt existing key failed: %s", resp.Stderr)
 	}

@@ -1,13 +1,9 @@
-// Vendored byte-for-byte from cmd/tesla-control/commands.go at the
+// Based on cmd/tesla-control/commands.go at the
 // teslamotors/vehicle-command v0.4.1 tag (same pin as README.md's release
-// workflow) - sha256 3389a4aca5c2a729f5d40a29a2fc1cad4dee596f1d85ffe7256af41e00926f41.
-// Do not hand-edit. tesla-session (this binary) reuses execute() and the
-// commands map as-is instead of re-encoding tesla-control's ~50 subcommands
-// a third time (they're already duplicated once in
-// app/qml/js/CommandCatalog.js and once in helper/src/commands.rs's
-// allow-list) - only main.go here differs from upstream, and only in how
-// long a *vehicle.Vehicle connection is kept alive across commands.
-// Re-vendor this file if the pinned tag ever moves.
+// workflow) - upstream sha256 3389a4aca5c2a729f5d40a29a2fc1cad4dee596f1d85ffe7256af41e00926f41.
+// Local adaptations: command-scoped output writers, omitted optional positional
+// slots, and default VCSEC enum emission. Preserve these when re-vendoring.
+// Command/argument contract tests read this table directly.
 package main
 
 import (
@@ -226,59 +222,68 @@ func execute(ctx context.Context, acct *account.Account, car *vehicle.Vehicle, a
 	}
 
 	if len(args)-1 < len(info.args) || len(args)-1 > len(info.args)+len(info.optional) {
-		writeErr("Invalid number of command line arguments: %d (%d required, %d optional).", len(args), len(info.args), len(info.optional))
+		writeErr(ctx, "Invalid number of command line arguments: %d (%d required, %d optional).", len(args), len(info.args), len(info.optional))
 		err = ErrCommandLineArgs
 	} else {
-		keywords := make(map[string]string)
-		for i, argInfo := range info.args {
-			keywords[argInfo.name] = args[i+1]
-		}
-		index := len(info.args) + 1
-		for _, argInfo := range info.optional {
-			if index >= len(args) {
-				break
-			}
-			keywords[argInfo.name] = args[index]
-			index++
-		}
+		keywords := keywordArguments(info, args[1:])
 		err = info.handler(ctx, acct, car, keywords)
 	}
 
 	// Print command-specific help
 	if errors.Is(err, ErrCommandLineArgs) {
-		info.Usage(args[0])
+		info.Usage(ctx, args[0])
 	}
 	return err
 }
 
-func (c *Command) Usage(name string) {
-	fmt.Printf("Usage: %s", name)
+// Called only after arity validation. Empty optional slots keep later values in
+// position while leaving defaults to the command handler.
+func keywordArguments(info *Command, args []string) map[string]string {
+	keywords := make(map[string]string)
+	for i, arg := range info.args {
+		keywords[arg.name] = args[i]
+	}
+	for i, arg := range info.optional {
+		index := len(info.args) + i
+		if index >= len(args) {
+			break
+		}
+		if args[index] != "" {
+			keywords[arg.name] = args[index]
+		}
+	}
+	return keywords
+}
+
+func (c *Command) Usage(ctx context.Context, name string) {
+	out := commandOutput(ctx).stdout
+	fmt.Fprintf(out, "Usage: %s", name)
 	maxLength := 0
 	for _, arg := range c.args {
-		fmt.Printf(" %s", arg.name)
+		fmt.Fprintf(out, " %s", arg.name)
 		if len(arg.name) > maxLength {
 			maxLength = len(arg.name)
 		}
 	}
 	if len(c.optional) > 0 {
-		fmt.Printf(" [")
+		fmt.Fprint(out, " [")
 	}
 	for _, arg := range c.optional {
-		fmt.Printf(" %s", arg.name)
+		fmt.Fprintf(out, " %s", arg.name)
 		if len(arg.name) > maxLength {
 			maxLength = len(arg.name)
 		}
 	}
 	if len(c.optional) > 0 {
-		fmt.Printf(" ]")
+		fmt.Fprint(out, " ]")
 	}
-	fmt.Printf("\n%s\n", c.help)
+	fmt.Fprintf(out, "\n%s\n", c.help)
 	maxLength++
 	for _, arg := range c.args {
-		fmt.Printf("    %s:%s%s\n", arg.name, strings.Repeat(" ", maxLength-len(arg.name)), arg.help)
+		fmt.Fprintf(out, "    %s:%s%s\n", arg.name, strings.Repeat(" ", maxLength-len(arg.name)), arg.help)
 	}
 	for _, arg := range c.optional {
-		fmt.Printf("    %s:%s%s\n", arg.name, strings.Repeat(" ", maxLength-len(arg.name)), arg.help)
+		fmt.Fprintf(out, "    %s:%s%s\n", arg.name, strings.Repeat(" ", maxLength-len(arg.name)), arg.help)
 	}
 }
 
@@ -413,7 +418,7 @@ var commands = map[string]*Command{
 			if err := car.SendAddKeyRequestWithRole(ctx, publicKey, keys.Role(role), vcsec.KeyFormFactor(formFactor)); err != nil {
 				return err
 			}
-			fmt.Printf("Sent add-key request to %s. Confirm by tapping NFC card on center console.\n", car.VIN())
+			fmt.Fprintf(commandOutput(ctx).stdout, "Sent add-key request to %s. Confirm by tapping NFC card on center console.\n", car.VIN())
 			return nil
 		},
 	},
@@ -460,7 +465,7 @@ var commands = map[string]*Command{
 			if err != nil {
 				return err
 			}
-			fmt.Println(string(reply))
+			fmt.Fprintln(commandOutput(ctx).stdout, string(reply))
 			return nil
 		},
 	},
@@ -488,7 +493,7 @@ var commands = map[string]*Command{
 			reply, err := acct.Post(ctx, args["ENDPOINT"], jsonBytes)
 			// reply can be set where there's an error; typically a JSON blob providing details
 			if reply != nil {
-				fmt.Println(string(reply))
+				fmt.Fprintln(commandOutput(ctx).stdout, string(reply))
 			}
 			if err != nil {
 				return err
@@ -511,13 +516,13 @@ var commands = map[string]*Command{
 				if mask&1 == 1 {
 					details, err = car.KeyInfoBySlot(ctx, slot)
 					if err != nil {
-						writeErr("Error fetching slot %d: %s", slot, err)
+						writeErr(ctx, "Error fetching slot %d: %s", slot, err)
 						if errors.Is(err, context.DeadlineExceeded) {
 							return err
 						}
 					}
 					if details != nil {
-						fmt.Printf("%02x\t%s\t%s\n", details.GetPublicKey().GetPublicKeyRaw(), details.GetKeyRole(), details.GetMetadataForKey().GetKeyFormFactor())
+						fmt.Fprintf(commandOutput(ctx).stdout, "%02x\t%s\t%s\n", details.GetPublicKey().GetPublicKeyRaw(), details.GetKeyRole(), details.GetMetadataForKey().GetKeyFormFactor())
 					}
 				}
 				slot++
@@ -894,7 +899,7 @@ var commands = map[string]*Command{
 			if err != nil {
 				return err
 			}
-			fmt.Printf("%s\n", info)
+			fmt.Fprintf(commandOutput(ctx).stdout, "%s\n", info)
 			return nil
 		},
 	},
@@ -966,7 +971,7 @@ var commands = map[string]*Command{
 			if err != nil {
 				return err
 			}
-			fmt.Println(string(productsJSON))
+			fmt.Fprintln(commandOutput(ctx).stdout, string(productsJSON))
 			return nil
 		},
 	},
@@ -1030,7 +1035,7 @@ var commands = map[string]*Command{
 				EmitUnpopulated:   false,
 				EmitDefaultValues: true,
 			}
-			fmt.Println(options.Format(info))
+			fmt.Fprintln(commandOutput(ctx).stdout, options.Format(info))
 			return nil
 		},
 	},
@@ -1127,7 +1132,7 @@ var commands = map[string]*Command{
 			if err := car.AddChargeSchedule(ctx, &schedule); err != nil {
 				return err
 			}
-			fmt.Printf("%d\n", schedule.Id)
+			fmt.Fprintf(commandOutput(ctx).stdout, "%d\n", schedule.Id)
 			return nil
 		},
 	},
@@ -1231,7 +1236,7 @@ var commands = map[string]*Command{
 			if err := car.AddPreconditionSchedule(ctx, &schedule); err != nil {
 				return err
 			}
-			fmt.Printf("%d\n", schedule.Id)
+			fmt.Fprintf(commandOutput(ctx).stdout, "%d\n", schedule.Id)
 			return nil
 		},
 	},
@@ -1286,7 +1291,7 @@ var commands = map[string]*Command{
 			if err != nil {
 				return err
 			}
-			fmt.Println(protojson.Format(data))
+			fmt.Fprintln(commandOutput(ctx).stdout, protojson.Format(data))
 			return nil
 		},
 	},

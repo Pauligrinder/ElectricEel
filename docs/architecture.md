@@ -37,8 +37,9 @@ mismatch kills the child instead of parsing unknown frames):
   `event` (unsolicited presence updates), `heartbeat` (every 10 s,
   including mid-command)
 
-stdin/stdout are not the protocol: stdout is plain logs (vendored
-command output is still captured per command for replies). On any
+stdin/stdout are not the protocol: stdout is plain logs. Command handlers
+receive explicit per-command writers, so replies contain only their output
+and background diagnostics cannot race process-wide stdout/stderr swaps. On any
 transport failure the child is dropped and the error surfaces — never
 a silent fallback, never an unbounded buffer. A failed heartbeat
 (dead parent) or closed connection makes the child tear down BLE state
@@ -46,10 +47,31 @@ and exit rather than linger. Any frame gap over 30 s (no response,
 event, or heartbeat) kills the child as wedged instead of hanging the
 caller until the command deadline.
 
+Reader failures also publish `presence_stopped` while idle. The core reaps
+the old reader/process before restarting presence; failed restarts are retried
+at five-second intervals. Intentional stops cancel retries. Optional command
+arguments retain their positional slots: an empty optional value means omitted,
+and only trailing empty slots can be removed from the request.
+
 Child processes are never leaked: explicit kill-and-wait on every error
 path, plus drop-based reaping (`KillOnDrop` for the process,
 `ChildHandle::drop` for the socket path) covering early-returns and
 panics — no async runtime involved, plain threads with blocking waits.
+
+Configuration changes are persisted before runtime settings/session changes.
+Unknown newer schemas are read-only (or rejected if their shape is unsupported).
+Explicit unpaired state survives restarts; only pre-phone-key V0 configurations
+use the legacy key-file migration. Key generation validates reuse and requires
+force to replace an unreadable key. Private/public key replacements are atomic
+and synced, with enrollment reset persisted before key rotation.
+
+Pairing requires the persistent session. After transmitting the NFC request,
+the child checks enrollment of the requested key for up to 90 seconds; pairing
+this phone's key also requires a successful authenticated VCSEC handshake.
+Transmission alone is never persisted as successful pairing.
+The internal `pair` request also checks that the public key belongs to this
+phone's private key before touching BLE, so an interrupted key-file update
+cannot pair a stale public half and mark a different private key enrolled.
 
 ## Bluetooth transport
 

@@ -6,9 +6,9 @@
 // in-process Rust control core - see helper/src/session_client.rs and
 // serve.go for the tagged JSON-lines framing.
 //
-// Every command still goes through commands_vendor.go's execute() and
-// commands map, unmodified - this file only changes when the BLE
-// connect/handshake happens, not what any individual command does.
+// Vehicle commands go through commands_vendor.go's execute() and command map.
+// Local adapters preserve optional slots and write to per-command buffers;
+// connection, pairing confirmation, and phone-key lifecycle live here.
 package main
 
 import (
@@ -36,15 +36,6 @@ import (
 	"github.com/teslamotors/vehicle-command/pkg/protocol/protobuf/vcsec"
 	"github.com/teslamotors/vehicle-command/pkg/vehicle"
 )
-
-// writeErr is referenced by a couple of commands_vendor.go's handlers
-// (list-keys, add-key-request) - identical to upstream cmd/tesla-control/
-// main.go's own definition, needed here because main.go itself wasn't
-// vendored (only commands.go was; see commands_vendor.go's header).
-func writeErr(format string, a ...interface{}) {
-	fmt.Fprintf(os.Stderr, format, a...)
-	fmt.Fprintf(os.Stderr, "\n")
-}
 
 type request struct {
 	Type string   `json:"type"`
@@ -207,9 +198,7 @@ var commandsWithoutSession = map[string]bool{
 	"add-key-request": true,
 }
 
-// addKeyRequestGracePeriod is how long dispatch holds the BLE connection
-// open after a successful add-key-request before disconnecting - see the
-// call site in dispatch.
+// Maximum time to keep the link open awaiting confirmed NFC enrollment.
 const addKeyRequestGracePeriod = 90 * time.Second
 
 // sessionDomains picks which domains StartSession should handshake with for
@@ -573,10 +562,15 @@ func (s *session) dispatchKeygen(req request) response {
 	}
 
 	if !force {
-		if skey, err := protocol.LoadPrivateKey(s.keyFile); err == nil {
+		skey, err := protocol.LoadPrivateKey(s.keyFile)
+		if err == nil {
 			if pub, ok := publicKeyPEM(skey); ok {
 				return response{ID: req.ID, OK: true, Stdout: pub, ExitCode: 0}
 			}
+			return response{ID: req.ID, Stderr: "existing private key is invalid; use -f to replace it", ExitCode: 1}
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return response{ID: req.ID, Stderr: fmt.Sprintf("cannot reuse existing private key: %v; use -f to replace it", err), ExitCode: 1}
 		}
 	}
 
@@ -590,12 +584,16 @@ func (s *session) dispatchKeygen(req request) response {
 	if skey == nil {
 		return response{ID: req.ID, OK: false, Stderr: "failed to build private key from generated scalar\n", ExitCode: 1}
 	}
-	if err := protocol.SavePrivateKey(skey, s.keyFile); err != nil {
-		return response{ID: req.ID, OK: false, Stderr: fmt.Sprintf("Failed to save private key: %s\n", err), ExitCode: 1}
-	}
 	pub, ok := publicKeyPEM(skey)
 	if !ok {
 		return response{ID: req.ID, OK: false, Stderr: "Failed to parse key. The keyring may be corrupted. Run with -f to generate new key.\n", ExitCode: 1}
+	}
+	if err := protocol.SavePrivateKey(skey, s.keyFile); err != nil {
+		return response{ID: req.ID, OK: false, Stderr: fmt.Sprintf("Failed to save private key: %s\n", err), ExitCode: 1}
+	}
+	if force {
+		s.stopPresenceLocked()
+		s.teardownLocked()
 	}
 	return response{ID: req.ID, OK: true, Stdout: pub, ExitCode: 0}
 }
@@ -1305,6 +1303,8 @@ func (s *session) dispatch(req request) response {
 	// manage their own goroutine and locking, independent of the
 	// connect+execute path below.
 	switch req.Cmd {
+	case "pair":
+		return s.dispatchPair(req)
 	case "keygen":
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -1337,21 +1337,15 @@ func (s *session) dispatch(req request) response {
 
 	args := append([]string{req.Cmd}, req.Args...)
 	var execErr error
-	stdout, stderr := captureOutput(func() {
-		execErr = execute(cmdCtx, nil, s.car, args)
+	stdout, stderr := captureOutput(cmdCtx, func(ctx context.Context) {
+		execErr = execute(ctx, nil, s.car, args)
 	})
 
 	if commandsWithoutSession[req.Cmd] {
 		if execErr == nil {
-			// Hold the connection open rather than disconnecting the
-			// instant the write succeeds: SendAddKeyRequestWithRole's own
-			// doc comment warns a nil return only means the request was
-			// transmitted, not that the vehicle did anything with it -
-			// confirmed live, a request sent by a process that then
-			// immediately disconnected produced no visible NFC-confirmation
-			// prompt on the car's screen at all. This also gives the human
-			// operator time to physically walk up and tap the card.
-			time.Sleep(addKeyRequestGracePeriod)
+			enrollmentCtx, enrollmentCancel := context.WithTimeout(context.Background(), addKeyRequestGracePeriod)
+			execErr = s.confirmEnrollment(enrollmentCtx, req.Args[0])
+			enrollmentCancel()
 		}
 		// This connection never called StartSession (see
 		// commandsWithoutSession) - it must not survive to be reused by a
@@ -1373,64 +1367,6 @@ func (s *session) dispatch(req request) response {
 		stderr += fmt.Sprintf("Failed to execute command: %s\n", execErr)
 	}
 	return response{ID: req.ID, OK: false, Stdout: stdout, Stderr: stderr, ExitCode: 1}
-}
-
-// captureOutput redirects the process-wide os.Stdout/os.Stderr for the
-// duration of f, so commands_vendor.go's handlers (which fmt.Println
-// straight to them, same as upstream tesla-control) don't collide with
-// this process's own stdout, which is reserved for the JSON response/event
-// stream. Safe only because its sole production caller - dispatch() - holds
-// session.mu for its entire call, so no two invocations of captureOutput
-// (which swaps process-wide globals) can ever run concurrently; a future
-// caller into execute() that doesn't hold mu would silently break this.
-func captureOutput(f func()) (stdout, stderr string) {
-	origOut, origErr := os.Stdout, os.Stderr
-	outR, outW, err := os.Pipe()
-	if err != nil {
-		f()
-		return "", ""
-	}
-	errR, errW, err := os.Pipe()
-	if err != nil {
-		outR.Close()
-		outW.Close()
-		f()
-		return "", ""
-	}
-	os.Stdout, os.Stderr = outW, errW
-
-	outCh := make(chan string, 1)
-	errCh := make(chan string, 1)
-	go func() { b, _ := io.ReadAll(outR); outCh <- string(b) }()
-	go func() { b, _ := io.ReadAll(errR); errCh <- string(b) }()
-
-	// Run the wrapped handler, but capture any panic and let the cleanup
-	// below run regardless, so a panicking handler can't leave the
-	// process-global os.Stdout/os.Stderr swapped to a pipe (which would
-	// silently swallow every later response/event) or strand the reader
-	// goroutines.
-	var panicValue interface{}
-	func() {
-		defer func() { panicValue = recover() }()
-		f()
-	}()
-
-	// Closing the write ends lets the readers hit EOF and finish; the pipe
-	// is drained only after f returns so a handler that fills the OS buffer
-	// mid-call can't deadlock against us.
-	outW.Close()
-	errW.Close()
-	os.Stdout, os.Stderr = origOut, origErr
-
-	out := <-outCh
-	errOut := <-errCh
-	_ = outR.Close()
-	_ = errR.Close()
-
-	if panicValue != nil {
-		panic(panicValue)
-	}
-	return out, errOut
 }
 
 func main() {

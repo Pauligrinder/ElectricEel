@@ -11,6 +11,7 @@
 //! — one parser, no drift.
 
 use std::fmt;
+use url::{form_urlencoded, Url};
 
 /// A parsed share destination.
 #[derive(Debug, Clone, PartialEq)]
@@ -121,7 +122,6 @@ fn parse_geo_uri(rest: &str) -> Result<Option<Destination>, ShareParseError> {
     // Query may carry the real destination when coords are 0,0.
     let query_addr = query_part
         .and_then(|q| query_param(q, "q"))
-        .map(|s| decode_query_value(&s))
         .filter(|s| !s.trim().is_empty());
 
     if let Some((lat, lon)) = parse_latlon_pair(coords_part.trim()) {
@@ -153,10 +153,9 @@ fn parse_geo_uri(rest: &str) -> Result<Option<Destination>, ShareParseError> {
 /// OSM `#map=17/lat/lon` leads with the zoom, `ll` precedes the portal
 /// `pll` in intel links, viewports precede `!3d/!4d` destinations, and
 /// addresses like "Via Roma 45, ..." contain small numbers. So:
-/// - `pll` wins outright (portal over map center);
-/// - otherwise the first query/fragment value that strictly parses as a
-///   pair (exactly two finite in-range numbers — singles like `z=17` and
-///   4-tuples like `bbox` can never match);
+/// - explicit destinations (`pll`, `destination`, `daddr`) beat all centers;
+/// - only recognized coordinate parameters are used, never route origins or
+///   arbitrary numeric query values;
 /// - `lat`+`lon` split across two params (Bing `cp` uses `~`, `OSMAnd`
 ///   `?lat=&lon=`);
 /// - path patterns `/@lat,lon`, `!3dLAT!4dLON`, and exactly-two
@@ -166,37 +165,36 @@ fn parse_geo_uri(rest: &str) -> Result<Option<Destination>, ShareParseError> {
 ///
 /// Never errors — an unparseable URL is still shareable text.
 fn parse_map_url(url: &str) -> Option<Destination> {
-    // Query + fragment params in order: (name, raw value).
-    let mut params: Vec<(&str, &str)> = Vec::new();
-    for section in [
-        url.split('?').nth(1).unwrap_or(""),
-        url.split('#').nth(1).unwrap_or(""),
-    ] {
-        let query = section.split('#').next().unwrap_or(section);
-        for pair in query.split('&') {
-            if let Some(i) = pair.find('=') {
-                params.push((&pair[..i], &pair[i + 1..]));
-            }
-        }
-    }
+    let parsed = Url::parse(url).ok()?;
+    let params: Vec<_> = parsed
+        .query_pairs()
+        .chain(form_urlencoded::parse(
+            parsed.fragment().unwrap_or("").as_bytes(),
+        ))
+        .collect();
     let param = |key: &str| {
         params
             .iter()
             .find(|(k, _)| k.eq_ignore_ascii_case(key))
-            .map(|(_, v)| decode_query_value(v))
+            .map(|(_, v)| v.as_ref())
     };
 
-    // pll first: the portal, not the map center.
-    if let Some(val) = param("pll") {
-        if let Some((lat, lon)) = parse_latlon_pair(&val) {
+    // A destination may be coordinates OR text; neither may be overridden by
+    // an origin or viewport just because those happen to be numeric.
+    for key in ["pll", "destination", "daddr"] {
+        if let Some(value) = param(key).filter(|v| !v.trim().is_empty()) {
+            return Some(destination_value(value));
+        }
+    }
+    // Search coordinates take precedence over the map center. Text searches
+    // remain a fallback when a URL includes an exact place coordinate.
+    for key in ["q", "query"] {
+        if let Some((lat, lon)) = param(key).and_then(parse_latlon_pair) {
             return Some(Destination::LatLon { lat, lon });
         }
     }
-    // First strictly-parsing pair value wins (URL order).
-    for (_, raw) in &params {
-        if let Some((lat, lon)) = parse_latlon_pair(&decode_query_value(raw)) {
-            return Some(Destination::LatLon { lat, lon });
-        }
+    if let Some((lat, lon)) = google_3d4d_coords(parsed.path()) {
+        return Some(Destination::LatLon { lat, lon });
     }
     // lat + lon split across two params.
     let lat_val = ["lat", "latitude", "mlat"]
@@ -214,11 +212,13 @@ fn parse_map_url(url: &str) -> Option<Destination> {
             }
         }
     }
-    // Path patterns, most specific first.
-    if let Some((lat, lon)) = google_3d4d_coords(url) {
-        return Some(Destination::LatLon { lat, lon });
+    for key in ["ll", "cp"] {
+        if let Some((lat, lon)) = param(key).and_then(parse_latlon_pair) {
+            return Some(Destination::LatLon { lat, lon });
+        }
     }
-    if let Some((lat, lon)) = url_path_at_coords(url) {
+    // Path patterns, most specific first.
+    if let Some((lat, lon)) = url_path_at_coords(parsed.path()) {
         return Some(Destination::LatLon { lat, lon });
     }
     if let Some((lat, lon)) = slash_run_coords(url) {
@@ -226,7 +226,7 @@ fn parse_map_url(url: &str) -> Option<Destination> {
     }
     // A named text param (address or opaque link target) becomes the
     // address; otherwise the caller sends the whole URL.
-    for key in ["pll", "daddr", "destination", "q", "query"] {
+    for key in ["q", "query"] {
         if let Some(val) = param(key) {
             let text = val.trim().to_string();
             if !text.is_empty() {
@@ -235,6 +235,13 @@ fn parse_map_url(url: &str) -> Option<Destination> {
         }
     }
     None
+}
+
+fn destination_value(value: &str) -> Destination {
+    parse_latlon_pair(value).map_or_else(
+        || Destination::Address(value.trim().to_string()),
+        |(lat, lon)| Destination::LatLon { lat, lon },
+    )
 }
 
 /// Coordinates from slash-separated path/fragment segments: the last
@@ -280,6 +287,11 @@ fn slash_run_coords(url: &str) -> Option<(f64, f64)> {
 /// an address. Returns `None` for non-pairs AND for out-of-range pairs
 /// (use [`looks_like_latlon_pair`] to tell those apart).
 fn parse_latlon_pair(s: &str) -> Option<(f64, f64)> {
+    let (lat, lon) = numeric_pair(s)?;
+    valid_latlon(lat, lon).then_some((lat, lon))
+}
+
+fn numeric_pair(s: &str) -> Option<(f64, f64)> {
     let s = s
         .trim()
         .trim_matches(|c: char| c == '(' || c == ')' || c == '[' || c == ']');
@@ -302,14 +314,7 @@ fn parse_latlon_pair(s: &str) -> Option<(f64, f64)> {
     }
     let lat: f64 = parts[0].trim().parse().ok()?;
     let lon: f64 = parts[1].trim().parse().ok()?;
-    if !lat.is_finite() || !lon.is_finite() {
-        return None;
-    }
-    if valid_latlon(lat, lon) {
-        Some((lat, lon))
-    } else {
-        None
-    }
+    Some((lat, lon))
 }
 
 /// True when the string has the SHAPE of a coordinate pair (two comma- or
@@ -317,22 +322,7 @@ fn parse_latlon_pair(s: &str) -> Option<(f64, f64)> {
 /// if the values are out of range. Used to report `OutOfRange` instead of
 /// misrouting "999,999" to the geocoder as an address.
 fn looks_like_latlon_pair(s: &str) -> bool {
-    let s = s.trim();
-    let parts: Vec<&str> = if s.contains(',') {
-        s.split(',').collect()
-    } else if s.contains(';') {
-        s.split(';').collect()
-    } else if s.contains('~') {
-        s.split('~').collect()
-    } else if s.contains('|') {
-        s.split('|').collect()
-    } else {
-        s.split_whitespace().collect()
-    };
-    if parts.len() != 2 {
-        return false;
-    }
-    parts[0].trim().parse::<f64>().is_ok() && parts[1].trim().parse::<f64>().is_ok()
+    numeric_pair(s).is_some()
 }
 
 fn valid_latlon(lat: f64, lon: f64) -> bool {
@@ -359,6 +349,9 @@ fn first_url_token(s: &str) -> Option<String> {
                 || c == '.'
                 || c == ','
                 || c == ';'
+                || c == '!'
+                || c == '?'
+                || c == ':'
         });
         let lower = t.to_ascii_lowercase();
         if lower.starts_with("http://") || lower.starts_with("https://") {
@@ -368,57 +361,15 @@ fn first_url_token(s: &str) -> Option<String> {
     None
 }
 
-/// Raw (still encoded) value of a query parameter in a bare `a=1&b=2`
+/// Decoded value of a query parameter in a bare `a=1&b=2`
 /// query string (geo: URIs).
 fn query_param(query: &str, key: &str) -> Option<String> {
-    for pair in query.split('&') {
-        let (k, v) = match pair.find('=') {
-            Some(i) => (&pair[..i], &pair[i + 1..]),
-            None => continue,
-        };
+    for (k, v) in form_urlencoded::parse(query.as_bytes()) {
         if k.eq_ignore_ascii_case(key) {
-            return Some(v.to_string());
+            return Some(v.into_owned());
         }
     }
     None
-}
-
-/// Decode a query value: `+` → space, then `%XX`. Malformed `%` sequences
-/// are kept literally rather than failing the whole share.
-fn decode_query_value(s: &str) -> String {
-    let plus = s.replace('+', " ");
-    percent_decode(&plus)
-}
-
-fn percent_decode(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    let bytes = s.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'%' && i + 2 < bytes.len() + 1 {
-            if let (Some(h), Some(l)) = (hex_val(bytes.get(i + 1)), hex_val(bytes.get(i + 2))) {
-                out.push(((h << 4) | l) as char);
-                i += 3;
-                continue;
-            }
-        }
-        out.push(bytes[i] as char);
-        i += 1;
-    }
-    // `%XX` may have produced UTF-8 bytes as latin-1 chars; round-trip back.
-    // (Query values from maps URLs are ASCII in practice; this keeps the
-    // common case correct without pulling in a decoding crate.)
-    out
-}
-
-fn hex_val(b: Option<&u8>) -> Option<u8> {
-    let b = *b?;
-    match b {
-        b'0'..=b'9' => Some(b - b'0'),
-        b'a'..=b'f' => Some(b - b'a' + 10),
-        b'A'..=b'F' => Some(b - b'A' + 10),
-        _ => None,
-    }
 }
 
 /// `/@lat,lon` in a Google Maps path (also `/place/.../@lat,lon,zoom`).
@@ -488,7 +439,9 @@ fn google_3d4d_coords(url: &str) -> Option<(f64, f64)> {
 }
 
 fn strip_prefix_case_insensitive<'a>(s: &'a str, prefix: &str) -> Option<&'a str> {
-    if s.len() >= prefix.len() && s[..prefix.len()].eq_ignore_ascii_case(prefix) {
+    if s.get(..prefix.len())
+        .is_some_and(|start| start.eq_ignore_ascii_case(prefix))
+    {
         Some(&s[prefix.len()..])
     } else {
         None
@@ -505,6 +458,34 @@ mod tests {
 
     fn addr(s: &str) -> Destination {
         Destination::Address(s.to_string())
+    }
+
+    #[test]
+    fn review_unicode_addresses_do_not_panic() {
+        for text in ["東京都千代田区", "🏠 Home", "a東京", "서울특별시"] {
+            assert_eq!(parse_shared_text(text), Ok(addr(text)), "input {text:?}");
+        }
+    }
+
+    #[test]
+    fn review_directions_use_destination_not_origin_or_viewport() {
+        let cases = [
+            (
+                "https://www.google.com/maps/dir/?api=1&origin=48.0,2.0&destination=48.8584,2.2945",
+                latlon(48.8584, 2.2945),
+            ),
+            (
+                "https://maps.apple.com/?saddr=48.0,2.0&daddr=48.8584,2.2945",
+                latlon(48.8584, 2.2945),
+            ),
+            (
+                "https://maps.google.com/?ll=48.0,2.0&daddr=Eiffel+Tower",
+                addr("Eiffel Tower"),
+            ),
+        ];
+        for (input, expected) in cases {
+            assert_eq!(parse_shared_text(input), Ok(expected), "input {input:?}");
+        }
     }
 
     // The spike-doc §5 contract vectors.
@@ -706,6 +687,36 @@ mod tests {
             )
             .unwrap(),
             latlon(48.8584, 2.2945)
+        );
+    }
+
+    #[test]
+    fn test_percent_decoding_preserves_utf8() {
+        // %C3%A9 is UTF-8 for é. Decoding each %XX byte as a latin-1 char
+        // yields "CafÃ©" (two codepoints) instead of "Café".
+        assert_eq!(query_param("q=Caf%C3%A9", "q").as_deref(), Some("Café"));
+        assert_eq!(
+            parse_shared_text("https://maps.google.com/?q=Caf%C3%A9").unwrap(),
+            addr("Café")
+        );
+    }
+
+    #[test]
+    fn test_parenthesized_out_of_range_is_not_address() {
+        // parse_latlon_pair trims ()/[] but looks_like_latlon_pair does not,
+        // so a bracketed out-of-range pair falls through to Address instead
+        // of OutOfRange and would be sent to the geocoder.
+        assert_eq!(
+            parse_shared_text("(999,999)"),
+            Err(ShareParseError::OutOfRange)
+        );
+        assert_eq!(
+            parse_shared_text("[999,999]"),
+            Err(ShareParseError::OutOfRange)
+        );
+        assert_eq!(
+            parse_shared_text("(48.8584, 200)"),
+            Err(ShareParseError::OutOfRange)
         );
     }
 }

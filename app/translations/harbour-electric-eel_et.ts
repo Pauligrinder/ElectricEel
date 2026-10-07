@@ -8,13 +8,13 @@
       <translation>Käivita</translation>
     </message>
     <message>
-      <location filename="../qml/pages/ArgumentDialog.qml" line="92" />
-      <location filename="../qml/pages/ArgumentDialog.qml" line="171" />
+      <location filename="../qml/pages/ArgumentDialog.qml" line="109" />
+      <location filename="../qml/pages/ArgumentDialog.qml" line="188" />
       <source> (optional)</source>
       <translation> (valikuline)</translation>
     </message>
     <message>
-      <location filename="../qml/pages/ArgumentDialog.qml" line="96" />
+      <location filename="../qml/pages/ArgumentDialog.qml" line="113" />
       <source>(not set)</source>
       <translation>(määramata)</translation>
     </message>
@@ -22,52 +22,52 @@
   <context>
     <name>CategoryPage</name>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="43" />
+      <location filename="../qml/pages/CategoryPage.qml" line="48" />
       <source>%1 • %2°C inside</source>
       <translation>%1 • %2 °C sees</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="44" />
+      <location filename="../qml/pages/CategoryPage.qml" line="49" />
       <source>Climate on</source>
       <translation>Kliima sees</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="44" />
+      <location filename="../qml/pages/CategoryPage.qml" line="49" />
       <source>Climate off</source>
       <translation>Kliima väljas</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="50" />
+      <location filename="../qml/pages/CategoryPage.qml" line="55" />
       <source>%1% battery%2</source>
       <translation>%1 % akut%2</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="52" />
+      <location filename="../qml/pages/CategoryPage.qml" line="57" />
       <source> • Charging</source>
       <translation> • Laeb</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="57" />
+      <location filename="../qml/pages/CategoryPage.qml" line="62" />
       <source>Doors locked</source>
       <translation>Uksed lukus</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="57" />
+      <location filename="../qml/pages/CategoryPage.qml" line="62" />
       <source>Doors unlocked</source>
       <translation>Uksed lahti</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="69" />
+      <location filename="../qml/pages/CategoryPage.qml" line="74" />
       <source>OK</source>
       <translation>OK</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="69" />
+      <location filename="../qml/pages/CategoryPage.qml" line="74" />
       <source>exit code %1</source>
       <translation>väljumiskood %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="167" />
+      <location filename="../qml/pages/CategoryPage.qml" line="174" />
       <source>Running %1...</source>
       <translation>Käivitan %1...</translation>
     </message>
@@ -516,72 +516,72 @@
   <context>
     <name>NavigationPage</name>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="30" />
+      <location filename="../qml/pages/NavigationPage.qml" line="35" />
       <source>Paste or type a destination first.</source>
       <translation>Kleebi või kirjuta esmalt sihtkoht.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="33" />
+      <location filename="../qml/pages/NavigationPage.qml" line="38" />
       <source>Checking...</source>
       <translation>Kontrollin...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="40" />
+      <location filename="../qml/pages/NavigationPage.qml" line="47" />
       <source>Nothing to send.</source>
       <translation>Pole midagi saata.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="54" />
+      <location filename="../qml/pages/NavigationPage.qml" line="63" />
       <source>Cannot use this: %1</source>
       <translation>Ei saa kasutada: %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="58" />
+      <location filename="../qml/pages/NavigationPage.qml" line="67" />
       <source>Coordinates %1, %2 — navigation will start there.</source>
       <translation>Koordinaadid %1, %2 — navigeerimine algab seal.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="61" />
+      <location filename="../qml/pages/NavigationPage.qml" line="70" />
       <source>Address "%1" — the car will look it up.</source>
       <translation>Aadress „%1“ — auto otsib selle.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="67" />
+      <location filename="../qml/pages/NavigationPage.qml" line="76" />
       <source>Send failed: %1</source>
       <translation>Saatmine ebaõnnestus: %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="87" />
+      <location filename="../qml/pages/NavigationPage.qml" line="96" />
       <source>Car Navigation</source>
       <translation>Auto navigatsioon</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="92" />
+      <location filename="../qml/pages/NavigationPage.qml" line="101" />
       <source>Destination</source>
       <translation>Sihtkoht</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="93" />
+      <location filename="../qml/pages/NavigationPage.qml" line="102" />
       <source>Paste address, coordinates, or map link</source>
       <translation>Kleebi aadress, koordinaadid või kaardilink</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="101" />
+      <location filename="../qml/pages/NavigationPage.qml" line="110" />
       <source>Preview</source>
       <translation>Eelvaade</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="119" />
+      <location filename="../qml/pages/NavigationPage.qml" line="128" />
       <source>Send to Car</source>
       <translation>Saada autosse</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="141" />
+      <location filename="../qml/pages/NavigationPage.qml" line="150" />
       <source>Notes</source>
       <translation>Märkused</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="150" />
+      <location filename="../qml/pages/NavigationPage.qml" line="159" />
       <source>This uses Bluetooth, like lock/unlock — the car must be in range, no internet needed on either side. Coordinates are sent exactly; addresses and links are looked up by the car itself, so unusual spellings may resolve differently than on your phone. From Android apps: copy the address or link, then paste it above.</source>
       <translation>Kasutab Bluetoothi nagu lukustamine/avamine — auto peab olema levialas, internetti pole vaja. Koordinaadid saadetakse täpselt; aadressid ja lingid otsib auto ise, seega ebatavaline kirjapilt võib lahenduda teisiti kui telefonis. Androidi rakendustest: kopeeri aadress või link ja kleebi ülal.</translation>
     </message>
@@ -589,72 +589,72 @@
   <context>
     <name>PairingPage</name>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="24" />
+      <location filename="../qml/pages/PairingPage.qml" line="27" />
       <source>Key generated. Tap "Pair with Vehicle", then tap your NFC card on the center console when prompted on the car's screen.</source>
       <translation>Võti loodud. Puuduta „Seo sõiduk“ ja hoia NFC-kaarti keskkonsooli vastas, kui auto ekraan küsib.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="26" />
+      <location filename="../qml/pages/PairingPage.qml" line="29" />
       <source>Key generation failed: %1</source>
       <translation>Võtme loomine ebaõnnestus: %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="31" />
+      <location filename="../qml/pages/PairingPage.qml" line="34" />
       <source>Paired.</source>
       <translation>Seotud.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="31" />
+      <location filename="../qml/pages/PairingPage.qml" line="34" />
       <source>Pairing failed: %1</source>
       <translation>Sidumine ebaõnnestus: %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="61" />
+      <location filename="../qml/pages/PairingPage.qml" line="64" />
       <source>Pairing &amp; Keys</source>
       <translation>Sidumine ja võtmed</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="68" />
+      <location filename="../qml/pages/PairingPage.qml" line="71" />
       <source>Set the VIN in Settings first. Then generate a key, then pair it with the car over BLE - you'll need to be next to the vehicle and tap the NFC card on the center console to approve.</source>
       <translation>Seadista esmalt VIN Seadetes. Seejärel loo võti ja seo see BLE kaudu autoga - seisa sõiduki kõrval ja hoia kinnitamiseks NFC-kaarti keskkonsooli vastas.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="80" />
+      <location filename="../qml/pages/PairingPage.qml" line="83" />
       <source>Phone key starting...</source>
       <translation>Telefonivõti käivitub...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="108" />
+      <location filename="../qml/pages/PairingPage.qml" line="111" />
       <source>Generating...</source>
       <translation>Loomine...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="108" />
+      <location filename="../qml/pages/PairingPage.qml" line="111" />
       <source>Generate Key</source>
       <translation>Loo võti</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="134" />
+      <location filename="../qml/pages/PairingPage.qml" line="137" />
       <source>Waiting for NFC tap...</source>
       <translation>Ootan NFC-puudet...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="134" />
+      <location filename="../qml/pages/PairingPage.qml" line="137" />
       <source>Pair with Vehicle</source>
       <translation>Seo sõiduk</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="138" />
+      <location filename="../qml/pages/PairingPage.qml" line="141" />
       <source>Requesting pairing over BLE - approve on the car's touchscreen / NFC card now.</source>
       <translation>BLE-sidumine küsitud - kinnita puuteekraanil / NFC-kaardil.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="158" />
+      <location filename="../qml/pages/PairingPage.qml" line="161" />
       <source>Enrolled Keys</source>
       <translation>Registreeritud võtmed</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="162" />
+      <location filename="../qml/pages/PairingPage.qml" line="165" />
       <source>List Enrolled Keys</source>
       <translation>Loetle registreeritud võtmeid</translation>
     </message>

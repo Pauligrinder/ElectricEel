@@ -106,10 +106,7 @@ void CoreWorker::initialize(const QString &binDir, const QString &stateDir, cons
                          : message);
         return;
     }
-    bool active = false;
-    char *phoneKeyError = nullptr;
-    core_start_phone_key(m_core, &active, &phoneKeyError);
-    emit phoneKeyStarted(active, takeCString(phoneKeyError));
+    refreshPhoneKeyState();
 
     m_phoneKeyTimer = new QTimer(this);
     m_phoneKeyTimer->setInterval(1000);
@@ -130,10 +127,19 @@ void CoreWorker::pollPhoneKeyEvents()
         char *error = nullptr;
         const CoreError rc = core_poll_phone_key_event(
             m_core, &hasEvent, &kind, &vin, &time, &error);
-        if (rc != CoreError::Ok || !hasEvent)
+        if (rc != CoreError::Ok) {
+            // BadArg here means a dead core handle; surfacing it keeps a wedged
+            // poll loop visible in the journal instead of silently idle.
+            qWarning() << "CoreWorker::pollPhoneKeyEvents: core_poll failed" << rc;
             return;
+        }
+        if (!hasEvent)
+            return;
+        const QString eventTime = takeCString(time);
         emit phoneKeyEvent(takeCString(kind), takeCString(vin),
-                           takeCString(time), takeCString(error));
+                           eventTime.isEmpty()
+                           ? QDateTime::currentDateTimeUtc().toString(QStringLiteral("yyyy-MM-dd'T'HH:mm:ss.zzz'Z'"))
+                           : eventTime, takeCString(error));
     }
 }
 
@@ -152,11 +158,18 @@ void CoreWorker::handleResume()
     // restarted presence, but we query the resulting state so the UI's
     // phoneKeyStatus property updates immediately instead of waiting for
     // the next 1s poll.
+    refreshPhoneKeyState();
+}
+
+void CoreWorker::refreshPhoneKeyState()
+{
     bool active = false;
-    char *err = nullptr;
-    const CoreError src = core_start_phone_key(m_core, &active, &err);
-    Q_UNUSED(src);
-    emit phoneKeyStarted(active, takeCString(err));
+    char *error = nullptr;
+    const CoreError rc = core_start_phone_key(m_core, &active, &error);
+    QString message = takeCString(error);
+    if (rc != CoreError::Ok && message.isEmpty())
+        message = QStringLiteral("core_start_phone_key failed (ABI error %1)").arg(rc);
+    emit phoneKeyStarted(active, message);
 }
 
 void CoreWorker::shutdown()
@@ -240,15 +253,9 @@ void CoreWorker::generateKey(bool force)
         return;
     }
     emit keyGenerated(ok, takeCString(pem), takeCString(errorMessage));
-    if (ok) {
-        // Reuse of an existing enrolled key leaves vin_state paired, so
-        // presence can keep running. A newly generated key is unpaired
-        // until NFC enrollment; start_phone_key then returns the reason.
-        bool active = false;
-        char *startError = nullptr;
-        core_start_phone_key(m_core, &active, &startError);
-        emit phoneKeyStarted(active, takeCString(startError));
-    }
+    // Reuse preserves enrollment; a new or failed rotated key may be
+    // unpaired. Refresh either outcome rather than retaining stale UI state.
+    refreshPhoneKeyState();
 }
 
 void CoreWorker::pair()
@@ -269,12 +276,9 @@ void CoreWorker::pair()
         return;
     }
     emit paired(ok, takeCString(out), takeCString(errorMessage));
-    if (ok) {
-        bool active = false;
-        char *startError = nullptr;
-        core_start_phone_key(m_core, &active, &startError);
-        emit phoneKeyStarted(active, takeCString(startError));
-    }
+    // Pairing stops presence first. Refresh even on failure, restarting an
+    // already enrolled key or reporting the unpaired/inactive state.
+    refreshPhoneKeyState();
 }
 
 void CoreWorker::setConfig(const QString &vin, const QString &model, const QString &keyName,
@@ -300,12 +304,8 @@ void CoreWorker::setConfig(const QString &vin, const QString &model, const QStri
         return;
     }
     emit configSaved(ok, takeCString(errorMessage));
-    if (ok) {
-        bool active = false;
-        char *startError = nullptr;
-        core_start_phone_key(m_core, &active, &startError);
-        emit phoneKeyStarted(active, takeCString(startError));
-    }
+    if (ok)
+        refreshPhoneKeyState();
 }
 
 void CoreWorker::refreshConfig()
@@ -390,7 +390,8 @@ TeslaClient::TeslaClient(QObject *parent)
     const QString logDir = documents.isEmpty()
             ? QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + QStringLiteral("/logs")
             : documents + QStringLiteral("/ElectricEel");
-    QDir().mkpath(logDir);
+    if (!QDir().mkpath(logDir))
+        qWarning() << "TeslaClient: could not create phone-key log dir" << logDir;
     qputenv("ELECTRIC_EEL_LOG_DIR", logDir.toUtf8());
     qDebug() << "TeslaClient: phone-key logs ->" << logDir;
     logApplicationState(QGuiApplication::applicationState());
@@ -432,7 +433,8 @@ TeslaClient::TeslaClient(QObject *parent)
     // writes config.json + the keypem there). Create it before core_new so
     // the first SetConfig has somewhere to write.
     const QString stateDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
-    QDir().mkpath(stateDir);
+    if (!QDir().mkpath(stateDir))
+        qWarning() << "TeslaClient: could not create state dir" << stateDir;
 
     QMetaObject::invokeMethod(m_worker, "initialize", Qt::QueuedConnection,
                               Q_ARG(QString, QString::fromLatin1(kBinDir)),
@@ -527,7 +529,9 @@ void TeslaClient::onPhoneKeyEvent(const QString &kind, const QString &vin,
     else if (kind == QStringLiteral("presence_auth_ok"))
         status = QStringLiteral("Phone key authorized");
     else if (kind == QStringLiteral("presence_stopped"))
-        status = QStringLiteral("Phone key stopped");
+        status = errorMessage.isEmpty()
+                 ? QStringLiteral("Phone key stopped")
+                 : QStringLiteral("Phone key stopped: %1").arg(errorMessage);
     else if (kind == QStringLiteral("presence_error")
              || kind == QStringLiteral("presence_auth_failed"))
         status = errorMessage.isEmpty()

@@ -33,10 +33,11 @@
 
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Write};
+use std::net::Shutdown;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -160,6 +161,9 @@ pub(crate) struct ChildHandle {
     /// Bound socket path, removed on kill. Unlinked right after accept so
     /// the accept window is the only time the path exists.
     sock_path: PathBuf,
+    alive: Arc<AtomicBool>,
+    cancelled: Arc<AtomicBool>,
+    reader_thread: Option<thread::JoinHandle<()>>,
 }
 
 impl Drop for ChildHandle {
@@ -168,7 +172,21 @@ impl Drop for ChildHandle {
     /// any drop path either. Both halves ignore errors (nothing sensible
     /// to do in Drop, and double unlink/kill is harmless).
     fn drop(&mut self) {
+        self.cancelled.store(true, Ordering::SeqCst);
+        let _ = self.stream.shutdown(Shutdown::Both);
+        if let Some(reader) = self.reader_thread.take() {
+            let _ = reader.join();
+        }
+        drop(self.child.take());
         let _ = std::fs::remove_file(&self.sock_path);
+    }
+}
+
+struct SocketPathGuard(PathBuf);
+
+impl Drop for SocketPathGuard {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
     }
 }
 
@@ -178,15 +196,16 @@ impl Drop for ChildHandle {
 /// `SessionClient::run` a real read-with-timeout despite sockets not
 /// natively supporting one, and what enforces the frame deadline: any
 /// gap longer than `frame_timeout` (no response, event, or heartbeat)
-/// kills the child as wedged rather than hanging the caller. EOF or a
-/// read error just ends the thread; the channel closing is how `run`
-/// finds out.
+/// marks the child dead rather than hanging the caller. EOF/read errors also
+/// publish a stopped event so the core can reap and restart it while idle.
 fn spawn_reader(
     reader: BufReader<UnixStream>,
     events: Arc<Mutex<VecDeque<SessionEvent>>>,
-) -> mpsc::Receiver<String> {
+    alive: Arc<AtomicBool>,
+    cancelled: Arc<AtomicBool>,
+) -> (mpsc::Receiver<String>, thread::JoinHandle<()>) {
     let (tx, rx) = mpsc::channel();
-    thread::spawn(move || {
+    let thread = thread::spawn(move || {
         let mut reader = reader;
         let mut line = String::new();
         loop {
@@ -202,7 +221,9 @@ fn spawn_reader(
                             }
                         }
                         Ok(Frame::Event(event)) => {
-                            let mut queue = events.lock().unwrap();
+                            let mut queue = events
+                                .lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner);
                             if queue.len() == 64 {
                                 queue.pop_front();
                             }
@@ -240,8 +261,21 @@ fn spawn_reader(
                 Err(_) => break,
             }
         }
+        alive.store(false, Ordering::SeqCst);
+        if !cancelled.load(Ordering::SeqCst) {
+            let mut queue = events
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            queue.clear();
+            queue.push_back(SessionEvent {
+                kind: "presence_stopped".to_string(),
+                vin: String::new(),
+                time: String::new(),
+                error: "tesla-session transport closed".to_string(),
+            });
+        }
     });
-    rx
+    (rx, thread)
 }
 
 pub struct SessionClient {
@@ -251,6 +285,7 @@ pub struct SessionClient {
     child: Mutex<Option<ChildHandle>>,
     next_id: AtomicU64,
     events: Arc<Mutex<VecDeque<SessionEvent>>>,
+    presence_active: AtomicBool,
     /// Bound on socket accept + hello handshake.
     handshake_timeout: Duration,
     /// Deadline per frame on an established connection. Must exceed the
@@ -268,6 +303,7 @@ impl SessionClient {
             child: Mutex::new(None),
             next_id: AtomicU64::new(1),
             events: Arc::new(Mutex::new(VecDeque::new())),
+            presence_active: AtomicBool::new(false),
             handshake_timeout: Duration::from_secs(5),
             frame_timeout: Duration::from_secs(30),
         }
@@ -284,11 +320,28 @@ impl SessionClient {
     /// that same lock until the in-flight command finishes, not just until
     /// the child is idle.
     pub(crate) fn invalidate(&self) {
-        if let Ok(mut guard) = self.child.lock() {
-            if let Some(handle) = guard.take() {
-                Self::kill(handle);
-            }
+        let mut guard = self
+            .child
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.presence_active.store(false, Ordering::SeqCst);
+        if let Some(handle) = guard.take() {
+            Self::kill(handle);
         }
+        // Drop joins the old reader, so it cannot enqueue stale events later.
+        self.clear_events();
+    }
+
+    pub(crate) fn is_alive(&self) -> bool {
+        self.child
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_ref()
+            .is_some_and(|handle| handle.alive.load(Ordering::SeqCst))
+    }
+
+    pub(crate) fn is_presence_active(&self) -> bool {
+        self.presence_active.load(Ordering::SeqCst) && self.is_alive()
     }
 
     /// The BLE transport backend this client was constructed with ("hci" or
@@ -328,6 +381,7 @@ impl SessionClient {
         command_timeout_sec: i32,
     ) -> Result<ChildHandle, SessionError> {
         let (listener, sock_path) = self.bind_listener()?;
+        let _cleanup = SocketPathGuard(sock_path.clone());
         // this is made unsafe by libc::prctl
         // Wrapped at birth: every later drop path (including `?`
         // early-outs and panics) reaps the child, not just the explicit
@@ -355,7 +409,7 @@ impl SessionClient {
                 .spawn()
                 .map_err(SessionError::Spawn)?,
         );
-        self.accept_and_handshake(listener, Some(child), sock_path)
+        self.accept_and_handshake(&listener, Some(child), sock_path)
     }
 
     /// Accepts the single child connection and runs the hello handshake.
@@ -363,39 +417,44 @@ impl SessionClient {
     /// reap on failure); production always passes `Some`.
     pub(crate) fn accept_and_handshake(
         &self,
-        listener: UnixListener,
+        listener: &UnixListener,
         child: Option<KillOnDrop>,
         sock_path: PathBuf,
     ) -> Result<ChildHandle, SessionError> {
         let mut child = child;
-        // Accept runs on a thread so a child that never dials can't hang
-        // spawn past the handshake deadline.
-        let accepted = {
-            let (tx, rx) = mpsc::channel();
-            thread::spawn(move || {
-                let _ = tx.send(listener.accept());
-            });
-            let Ok(outcome) = rx.recv_timeout(self.handshake_timeout) else {
-                if let Some(mut c) = child.take() {
-                    let _ = c.kill();
-                    let _ = c.wait();
+        let _cleanup = SocketPathGuard(sock_path.clone());
+        // Non-blocking accept loop with a deadline: a child that never dials
+        // can't hang spawn past the handshake deadline, and unlike the old
+        // thread+recv_timeout helper this leaves no blocked accept thread
+        // behind on timeout.
+        listener
+            .set_nonblocking(true)
+            .map_err(SessionError::Spawn)?;
+        let deadline = std::time::Instant::now() + self.handshake_timeout;
+        let stream = loop {
+            match listener.accept() {
+                Ok((s, _)) => break s,
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    if std::time::Instant::now() >= deadline {
+                        if let Some(mut c) = child.take() {
+                            let _ = c.kill();
+                            let _ = c.wait();
+                        }
+                        let _ = std::fs::remove_file(&sock_path);
+                        return Err(SessionError::Handshake(
+                            "tesla-session did not connect in time".to_string(),
+                        ));
+                    }
+                    thread::sleep(Duration::from_millis(20));
                 }
-                let _ = std::fs::remove_file(&sock_path);
-                return Err(SessionError::Handshake(
-                    "tesla-session did not connect in time".to_string(),
-                ));
-            };
-            outcome
-        };
-        let stream = match accepted {
-            Ok((s, _)) => s,
-            Err(e) => {
-                if let Some(mut c) = child.take() {
-                    let _ = c.kill();
-                    let _ = c.wait();
+                Err(e) => {
+                    if let Some(mut c) = child.take() {
+                        let _ = c.kill();
+                        let _ = c.wait();
+                    }
+                    let _ = std::fs::remove_file(&sock_path);
+                    return Err(SessionError::Handshake(format!("accept failed: {e}")));
                 }
-                let _ = std::fs::remove_file(&sock_path);
-                return Err(SessionError::Handshake(format!("accept failed: {e}")));
             }
         };
         // Unlink right after accept: from here on no new peer can dial in,
@@ -439,12 +498,18 @@ impl SessionClient {
         // reap); production always passes the spawned process. Either way
         // it moves into the handle untouched.
         let events = Arc::clone(&self.events);
-        let rx = spawn_reader(reader, events);
+        let alive = Arc::new(AtomicBool::new(true));
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let (rx, reader_thread) =
+            spawn_reader(reader, events, Arc::clone(&alive), Arc::clone(&cancelled));
         Ok(ChildHandle {
             child,
             stream,
             rx,
             sock_path,
+            alive,
+            cancelled,
+            reader_thread: Some(reader_thread),
         })
     }
 
@@ -455,14 +520,23 @@ impl SessionClient {
     /// socket path was already unlinked at accept; remove it again in
     /// case accept never got that far (spawn failure paths).
     fn kill(handle: ChildHandle) {
-        let mut handle = handle;
-        // Drop the process first (KillOnDrop SIGKILLs and reaps promptly),
-        // then the rest (ChildHandle::drop unlinks the socket path).
-        // Kept as a named function so call sites read as an action: every
-        // error path below funnels the doomed child through here instead
-        // of relying on scope-end Drops scattered across the function.
-        drop(handle.child.take());
+        // Drop first shuts down/joins the reader, then reaps the process.
         drop(handle);
+    }
+
+    fn transport_failed(&self) {
+        self.presence_active.store(false, Ordering::SeqCst);
+        let mut queue = self
+            .events
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        queue.clear();
+        queue.push_back(SessionEvent {
+            kind: "presence_stopped".to_string(),
+            vin: String::new(),
+            time: String::new(),
+            error: "tesla-session transport failed".to_string(),
+        });
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -476,7 +550,17 @@ impl SessionClient {
         command_timeout_sec: i32,
         timeout: Duration,
     ) -> Result<RunOutcome, SessionError> {
-        let mut guard = self.child.lock().unwrap();
+        let mut guard = self
+            .child
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if guard
+            .as_ref()
+            .is_some_and(|handle| !handle.alive.load(Ordering::SeqCst))
+        {
+            Self::kill(guard.take().unwrap());
+            self.transport_failed();
+        }
         if guard.is_none() {
             *guard = Some(self.spawn(vin, key_file, connect_timeout_sec, command_timeout_sec)?);
         }
@@ -495,6 +579,9 @@ impl SessionClient {
         if handle.stream.write_all(line.as_bytes()).is_err() {
             let handle = guard.take().unwrap();
             Self::kill(handle);
+            // The dead child's queued presence events must not replay as if
+            // fresh once a new child is spawned.
+            self.transport_failed();
             return Err(SessionError::BrokenPipe);
         }
 
@@ -509,6 +596,7 @@ impl SessionClient {
                     Err(e) => {
                         let handle = guard.take().unwrap();
                         Self::kill(handle);
+                        self.transport_failed();
                         return Err(SessionError::Decode(e));
                     }
                 };
@@ -521,7 +609,12 @@ impl SessionClient {
                 if resp.id != id {
                     let handle = guard.take().unwrap();
                     Self::kill(handle);
+                    self.transport_failed();
                     return Err(SessionError::IdMismatch);
+                }
+                if resp.ok && (cmd == "presence-start" || cmd == "presence-stop") {
+                    self.presence_active
+                        .store(cmd == "presence-start", Ordering::SeqCst);
                 }
                 Ok(RunOutcome {
                     ok: resp.ok,
@@ -533,6 +626,7 @@ impl SessionClient {
             Err(RecvTimeoutError::Timeout | RecvTimeoutError::Disconnected) => {
                 let handle = guard.take().unwrap();
                 Self::kill(handle);
+                self.transport_failed();
                 Err(SessionError::Timeout)
             }
         }
@@ -611,16 +705,22 @@ impl SessionClient {
     }
 
     pub(crate) fn poll_event(&self) -> Option<SessionEvent> {
-        self.events.lock().unwrap().pop_front()
+        self.events
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .pop_front()
     }
 
     pub(crate) fn clear_events(&self) {
-        self.events.lock().unwrap().clear();
+        self.events
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
     }
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     fn test_client(dir: &std::path::Path) -> SessionClient {
@@ -697,7 +797,7 @@ mod tests {
     /// pre-binds the listener, starts the peer, and runs the real
     /// accept+handshake. Returns the client (with live child slot) and the
     /// peer's received-request channel.
-    fn accept_mock(
+    pub(crate) fn accept_mock(
         dir: &std::path::Path,
         greet: Vec<String>,
         replies: Vec<String>,
@@ -710,7 +810,7 @@ mod tests {
         let (listener, path) = client.bind_listener().expect("bind");
         let (got, peer) = mock_peer(path.clone(), greet, replies);
         let handle = client
-            .accept_and_handshake(listener, None, path)
+            .accept_and_handshake(&listener, None, path)
             .expect("handshake");
         client.child.lock().unwrap().replace(handle);
         (client, got, peer)
@@ -743,7 +843,7 @@ mod tests {
             vec!["{\"type\":\"hello\",\"v\":999,\"ble_backend\":\"bluez\"}".to_string()],
             vec![],
         );
-        match client.accept_and_handshake(listener, None, path.clone()) {
+        match client.accept_and_handshake(&listener, None, path.clone()) {
             Err(SessionError::Handshake(msg)) => assert!(msg.contains("bad hello")),
             Err(e) => panic!("expected Handshake error, got {e:?}"),
             Ok(_) => panic!("expected Handshake error, got Ok"),
@@ -802,7 +902,7 @@ mod tests {
         let (listener, path) = client.bind_listener().expect("bind");
         let (_got, peer) = mock_peer(path.clone(), hello_ok(), vec![]);
         let handle = client
-            .accept_and_handshake(listener, None, path)
+            .accept_and_handshake(&listener, None, path)
             .expect("handshake");
         client.child.lock().unwrap().replace(handle);
         let start = std::time::Instant::now();
@@ -857,10 +957,77 @@ mod tests {
     }
 
     #[test]
+    fn review_spawn_failure_removes_bound_socket() {
+        let dir = tmp_state_dir("spawncleanup");
+        let client = test_client(dir.path());
+        let path = client.sock_path();
+        let result = client.run("ping", &[], "VIN", "/key", 5, 5, Duration::from_secs(1));
+        assert!(matches!(result, Err(SessionError::Spawn(_))));
+        assert!(
+            !path.exists(),
+            "failed spawn leaked socket {}",
+            path.display()
+        );
+    }
+
+    #[test]
+    fn review_idle_child_disconnect_surfaces_presence_stop() {
+        let dir = tmp_state_dir("idledeath");
+        let client = test_client(dir.path());
+        let (listener, path) = client.bind_listener().unwrap();
+        let peer = thread::spawn({
+            let path = path.clone();
+            move || {
+                let mut stream = UnixStream::connect(path).unwrap();
+                writeln!(stream, "{}", hello_ok()[0]).unwrap();
+                // Model a child exiting while no user command is in flight.
+            }
+        });
+        let handle = client.accept_and_handshake(&listener, None, path).unwrap();
+        peer.join().unwrap();
+        // Synchronize with reader termination, rather than sleeping.
+        assert!(matches!(
+            handle.rx.recv_timeout(Duration::from_secs(2)),
+            Err(RecvTimeoutError::Disconnected)
+        ));
+        let event = client.poll_event();
+        assert!(
+            event.is_some_and(|e| e.kind == "presence_stopped"),
+            "an idle transport loss must reach Core's phone-key restart path"
+        );
+    }
+
+    #[test]
     fn test_invalidate_without_a_running_child() {
         let dir = tmp_state_dir("invalidate");
         let client = test_client(dir.path());
         client.invalidate();
         client.invalidate();
+    }
+
+    #[test]
+    fn test_killed_child_does_not_leave_stale_events() {
+        // The reader diverts events into a shared queue that survives child
+        // restarts. run() kills the child on IdMismatch/timeout but never
+        // clears that queue, so a presence_near from the dead child is polled
+        // after the restart as if it were fresh.
+        let dir = tmp_state_dir("stale");
+        let wrong = "{\"type\":\"response\",\"id\":\"nope\",\"ok\":true,\"stdout\":\"\",\"stderr\":\"\",\"exit_code\":0}"
+            .to_string();
+        let (client, _got, peer) = accept_mock(dir.path(), hello_ok(), vec![wrong]);
+        client.events.lock().unwrap().push_back(SessionEvent {
+            kind: "presence_near".to_string(),
+            vin: "V".to_string(),
+            time: "t".to_string(),
+            error: String::new(),
+        });
+        let _ = client.run("lock", &[], "VIN", "/key", 5, 5, Duration::from_secs(5));
+        assert!(
+            client
+                .poll_event()
+                .is_some_and(|event| event.kind == "presence_stopped"),
+            "stale event from the killed child must be dropped, not replayed"
+        );
+        drop(peer);
     }
 }

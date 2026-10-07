@@ -23,6 +23,11 @@ Page {
     property bool sending: false
     property string previewText: ""
     property string resultText: ""
+    // Per-page request ids so two NavigationPages on the stack never consume
+    // each other's replies (fixed "nav:preview"/"nav:send" collided).
+    property int navSeq: 0
+    property string pendingPreviewId: ""
+    property string pendingSendId: ""
 
     function preview() {
         page.resultText = ""
@@ -31,7 +36,9 @@ Page {
             return
         }
         page.previewText = qsTr("Checking...")
-        teslaClient.previewDestination("nav:preview", destField.text)
+        page.navSeq++
+        page.pendingPreviewId = "nav:preview#" + page.navSeq + "@" + Date.now()
+        teslaClient.previewDestination(page.pendingPreviewId, destField.text)
     }
 
     function send() {
@@ -42,13 +49,15 @@ Page {
         }
         page.sending = true
         page.resultText = ""
-        teslaClient.shareDestination("nav:send", text)
+        page.navSeq++
+        page.pendingSendId = "nav:send#" + page.navSeq + "@" + Date.now()
+        teslaClient.shareDestination(page.pendingSendId, text)
     }
 
     Connections {
         target: teslaClient
         onDestinationPreviewed: {
-            if (requestId !== "nav:preview")
+            if (requestId !== page.pendingPreviewId)
                 return
             if (!ok) {
                 page.previewText = qsTr("Cannot use this: %1").arg(errorMessage)
@@ -61,7 +70,7 @@ Page {
                 page.previewText = qsTr("Address \"%1\" — the car will look it up.").arg(value1)
         }
         onShareFinished: {
-            if (requestId !== "nav:send")
+            if (requestId !== page.pendingSendId)
                 return
             page.sending = false
             page.resultText = ok ? output : qsTr("Send failed: %1").arg(errorMessage)

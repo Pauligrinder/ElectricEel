@@ -14,6 +14,9 @@ Page {
     // Gates the Generate Key button: clicking it before the load finished
     // would run with no knowledge of an already-enrolled key.
     property bool configReady: false
+    // Per-page list-keys id so two PairingPages never consume each other's
+    // replies.
+    property string pendingListKeysId: ""
 
     Connections {
         target: teslaClient
@@ -31,12 +34,12 @@ Page {
             page.pairStatus = ok ? (qsTr("Paired.") + "\n" + output) : qsTr("Pairing failed: %1").arg(errorMessage)
         }
         onCommandFinished: {
-            if (requestId !== "list-keys")
+            if (requestId !== page.pendingListKeysId)
                 return
             page.keysListOutput = ok ? stdOut : stdErr
         }
         onCommandError: {
-            if (requestId !== "list-keys")
+            if (requestId !== page.pendingListKeysId)
                 return
             page.keysListOutput = message
         }
@@ -160,7 +163,10 @@ Page {
             Button {
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: qsTr("List Enrolled Keys")
-                onClicked: teslaClient.runCommand("list-keys", "list-keys", [])
+                onClicked: {
+                    page.pendingListKeysId = "list-keys#" + Date.now() + "@" + Math.random()
+                    teslaClient.runCommand(page.pendingListKeysId, "list-keys", [])
+                }
             }
 
             Label {
