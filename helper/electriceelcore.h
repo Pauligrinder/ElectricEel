@@ -139,6 +139,19 @@ enum CoreError core_pair(struct Core *core, bool *ok, char **stdout_out, char **
 enum CoreError core_start_phone_key(struct Core *core, bool *active, char **error_message);
 
 /**
+ * Reports whether phone-key mode is enabled.
+ *
+ * This stays true across presence-loop failures and the bounded retry. It
+ * is false before the first start and after an explicit stop. CPU keepalive
+ * follows this flag rather than whether a presence loop is currently up.
+ *
+ * # Safety
+ * `core` must be valid. `enabled` must be writable, or NULL to ignore the
+ * value.
+ */
+enum CoreError core_phone_key_enabled(const struct Core *core, bool *enabled);
+
+/**
  * Notifies the core that the device resumed from system suspend.
  *
  * Kills any idle `tesla-session` child whose `org.bluez` system-bus socket

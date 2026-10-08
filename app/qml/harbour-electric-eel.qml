@@ -21,18 +21,13 @@ ApplicationWindow
         id: teslaClientInstance
     }
 
-    // Passive entry must run with the screen off, including while away.
-    // This prevents CPU suspend while phone-key mode is active; it does
-    // not prevent display blanking. Released when the app/key mode stops.
-    KeepAlive {
-        enabled: teslaClientInstance.phoneKeyActive
-        onEnabledChanged: teslaClientInstance.logPowerState("keepalive requested=" + enabled)
+    // CPU suspend prevention is held from C++ for the whole time phone-key
+    // mode is enabled. Display blanking stays allowed; this only records it.
+    DisplayBlanking {
+        id: displayBlanking
+        onStatusChanged: teslaClientInstance.logPowerState("display status=" + status)
     }
-    Connections {
-        target: DisplayBlanking
-        onStatusChanged: teslaClientInstance.logPowerState("display status=" + DisplayBlanking.status)
-    }
-    Component.onCompleted: teslaClientInstance.logPowerState("display status=" + DisplayBlanking.status)
+    Component.onCompleted: teslaClientInstance.logPowerState("display status=" + displayBlanking.status)
 
     PhoneKeyEvents { client: teslaClientInstance }
 

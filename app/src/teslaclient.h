@@ -8,6 +8,7 @@
 // Forward declare the opaque cbindgen handle from helper/electriceelcore.h.
 struct Core;
 class QTimer;
+class CpuKeepAlive;
 
 // Worker object that lives on its own QThread (see TeslaClient::setupWorker).
 // Every blocking C ABI call (core_run/core_pair can take up to ~10 minutes)
@@ -57,8 +58,10 @@ signals:
 
 private:
     void refreshPhoneKeyState();
+    void syncPhoneKeyKeepAlive();
     Core *m_core;
     QTimer *m_phoneKeyTimer;
+    CpuKeepAlive *m_cpuKeepAlive = nullptr;
 };
 
 // In-process client for the Rust control core (see docs/architecture.md for

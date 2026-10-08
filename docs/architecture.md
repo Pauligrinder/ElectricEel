@@ -97,12 +97,15 @@ Cached RSSI snapshots seed device identity only; they cannot trigger presence
 connections. GATT links each own a fresh signal queue to avoid replaying an
 old disconnect on a replacement connection.
 
-While phone-key mode runs, QML's `Nemo.KeepAlive` requests CPU suspend
-prevention so scanning/authentication can progress with the display off.
-Display blanking remains enabled. This trades increased screen-off power use
-for prompt passive entry; it is released when phone-key mode stops or the app
-closes. Daily logs include the requested keepalive state and display status
-(`0` unknown, `1` off, `2` dimmed, `3` on), separately from Qt app lifecycle.
+While phone-key mode is enabled, the app holds an MCE CPU-keepalive lease
+(`req_cpu_keepalive_start`, renewed from its own thread) so scanning and
+authentication continue with the display off. The lease follows
+`phone_key_enabled`, including presence retries, and is released when
+phone-key mode stops or the app closes. Display blanking remains enabled.
+This trades increased screen-off power use for prompt passive entry.
+Daily logs include the keepalive period, hold, and failures, plus display
+status (`0` unknown, `1` off, `2` dimmed, `3` on), separately from Qt app
+lifecycle.
 
 Phone-key events are also published on the session bus through
 `org.electriceel.PhoneKey1`, including the fork's settled `presence_inside`
@@ -117,6 +120,7 @@ helper/session/{main,commands_vendor,navigate,auth}.go
 helper/session/bluez/            org.bluez D-Bus transport
 helper/session/thirdparty/vehicle-command/   patched upstream (see vehicle-command-patch.md)
 app/src/teslaclient.{h,cpp}      worker-thread C ABI wrapper
+app/src/cpukeepalive.{h,cpp}     MCE CPU-keepalive lease (screen-off phone key)
 app/qml/{harbour-electric-eel.qml,cover/CoverPage.qml,pages/*.qml,js/*.js}
 app/translations/                qsTr catalogs (see translations.md)
 app/rpm/harbour-electric-eel.spec

@@ -1,7 +1,7 @@
 TARGET = harbour-electric-eel
 
 CONFIG += sailfishapp
-QT += network
+QT += network dbus
 
 # Single source of the app version, surfaced on the Settings page and
 # compared against the core's GetVersion. The release workflow stamps
@@ -20,10 +20,12 @@ LIBS += $$PWD/thirdparty/libelectriceelcore.a -lpthread -ldl -lm
 SOURCES += \
     src/harbour-electric-eel.cpp \
     src/teslaclient.cpp \
+    src/cpukeepalive.cpp \
     src/automagicsetup.cpp
 
 HEADERS += \
     src/teslaclient.h \
+    src/cpukeepalive.h \
     src/automagicsetup.h
 
 DISTFILES += \

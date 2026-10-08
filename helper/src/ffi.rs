@@ -411,6 +411,30 @@ pub unsafe extern "C" fn core_start_phone_key(
     CoreError::Ok
 }
 
+/// Reports whether phone-key mode is enabled.
+///
+/// This stays true across presence-loop failures and the bounded retry. It
+/// is false before the first start and after an explicit stop. CPU keepalive
+/// follows this flag rather than whether a presence loop is currently up.
+///
+/// # Safety
+/// `core` must be valid. `enabled` must be writable, or NULL to ignore the
+/// value.
+#[no_mangle]
+pub unsafe extern "C" fn core_phone_key_enabled(
+    core: *const Core,
+    enabled: *mut bool,
+) -> CoreError {
+    let Some(core) = (unsafe { core.as_ref() }) else {
+        return CoreError::BadArg;
+    };
+    if !enabled.is_null() {
+        // SAFETY: caller-owned slot.
+        unsafe { *enabled = core.phone_key_mode_enabled() };
+    }
+    CoreError::Ok
+}
+
 /// Notifies the core that the device resumed from system suspend.
 ///
 /// Kills any idle `tesla-session` child whose `org.bluez` system-bus socket
@@ -835,6 +859,22 @@ mod tests {
             core_string_free(error);
             core_free(core);
         }
+    }
+
+    #[test]
+    fn test_phone_key_enabled_is_false_until_mode_starts() {
+        let (core, _dir) = tmp_core();
+        assert!(!core.is_null());
+        let mut enabled = true;
+        let rc = unsafe { core_phone_key_enabled(core, ptr::addr_of_mut!(enabled)) };
+        assert_eq!(rc, CoreError::Ok);
+        assert!(!enabled, "unpaired core must not request CPU keepalive");
+        // A null output slot still reports success.
+        let rc = unsafe { core_phone_key_enabled(core, ptr::null_mut()) };
+        assert_eq!(rc, CoreError::Ok);
+        let rc = unsafe { core_phone_key_enabled(ptr::null(), ptr::addr_of_mut!(enabled)) };
+        assert_eq!(rc, CoreError::BadArg);
+        unsafe { core_free(core) };
     }
 
     #[test]

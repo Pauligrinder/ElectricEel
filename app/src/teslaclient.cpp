@@ -1,9 +1,9 @@
 #include "teslaclient.h"
 #include "automagicsetup.h"
+#include "cpukeepalive.h"
 
 #include <QDebug>
 #include <QDateTime>
-#include <QFile>
 #include <QGuiApplication>
 #include <QStandardPaths>
 #include <QThread>
@@ -33,19 +33,7 @@ const char *kBleBackend = "bluez";
 // transition is useful evidence too when compared with the presence loop.
 void logUIEvent(const QString &event)
 {
-    const QString logDir = QString::fromUtf8(qgetenv("ELECTRIC_EEL_LOG_DIR"));
-    if (logDir.isEmpty())
-        return;
-    const QString path = logDir + QStringLiteral("/phone-key-")
-            + QDate::currentDate().toString(QStringLiteral("yyyy-MM-dd")) + QStringLiteral(".log");
-    const bool newFile = !QFile::exists(path);
-    QFile file(path);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Append))
-        return;
-    if (newFile)
-        file.write("# ElectricEel phone-key log\n# tags: session presence connect auth link bluez core ui\n");
-    file.write(QDateTime::currentDateTime().toString(QStringLiteral("HH:mm:ss.zzz")).toUtf8()
-               + "  ui          " + event.toUtf8() + "\n");
+    logPhoneKeyLine(QStringLiteral("ui"), event);
 }
 
 void logApplicationState(Qt::ApplicationState state)
@@ -77,11 +65,14 @@ CoreWorker::CoreWorker(QObject *parent)
     : QObject(parent)
     , m_core(nullptr)
     , m_phoneKeyTimer(nullptr)
+    , m_cpuKeepAlive(new CpuKeepAlive)
 {
 }
 
 CoreWorker::~CoreWorker()
 {
+    delete m_cpuKeepAlive;
+    m_cpuKeepAlive = nullptr;
     if (m_core) {
         core_free(m_core);
         m_core = nullptr;
@@ -113,11 +104,23 @@ void CoreWorker::initialize(const QString &binDir, const QString &stateDir, cons
     m_phoneKeyTimer->setInterval(1000);
     connect(m_phoneKeyTimer, &QTimer::timeout, this, &CoreWorker::pollPhoneKeyEvents);
     m_phoneKeyTimer->start();
+    syncPhoneKeyKeepAlive();
     emit initialized(true, QString());
+}
+
+void CoreWorker::syncPhoneKeyKeepAlive()
+{
+    if (!m_cpuKeepAlive)
+        return;
+    bool enabled = false;
+    if (m_core && core_phone_key_enabled(m_core, &enabled) != CoreError::Ok)
+        enabled = false;
+    m_cpuKeepAlive->setEnabled(enabled);
 }
 
 void CoreWorker::pollPhoneKeyEvents()
 {
+    syncPhoneKeyKeepAlive();
     if (!m_core)
         return;
     for (;;) {
@@ -153,6 +156,7 @@ void CoreWorker::handleResume()
     if (rc != CoreError::Ok) {
         qWarning() << "core_handle_resume failed" << rc;
         emit phoneKeyStarted(false, QStringLiteral("Resume failed"));
+        syncPhoneKeyKeepAlive();
         return;
     }
     // core_handle_resume already invalidated the child and best-effort
@@ -171,10 +175,13 @@ void CoreWorker::refreshPhoneKeyState()
     if (rc != CoreError::Ok && message.isEmpty())
         message = QStringLiteral("core_start_phone_key failed (ABI error %1)").arg(rc);
     emit phoneKeyStarted(active, message);
+    syncPhoneKeyKeepAlive();
 }
 
 void CoreWorker::shutdown()
 {
+    if (m_cpuKeepAlive)
+        m_cpuKeepAlive->setEnabled(false);
     if (m_phoneKeyTimer) {
         m_phoneKeyTimer->stop();
         delete m_phoneKeyTimer;

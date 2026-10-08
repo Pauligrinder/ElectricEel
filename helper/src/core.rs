@@ -519,6 +519,13 @@ impl Core {
         Ok((true, outcome.stdout, String::new()))
     }
 
+    /// True while phone-key mode should keep running. Stays set across a
+    /// failed start and the bounded presence retry, and clears only on an
+    /// explicit stop (or before the first start).
+    pub(crate) fn phone_key_mode_enabled(&self) -> bool {
+        self.phone_key_enabled.load(Ordering::SeqCst)
+    }
+
     /// Starts the background `BlueZ` proximity/authentication service when the
     /// current key is paired to the configured VIN. Idempotent.
     pub(crate) fn start_phone_key(&self) -> Result<(), OperationError> {
@@ -720,8 +727,10 @@ impl Core {
                     if let Some(event) = &mut event {
                         let msg = error.to_string();
                         if !msg.is_empty() {
-                            // Preserve stopped so Qt releases its keepalive
-                            // request while the bounded retry timer runs.
+                            // Leave the kind as presence_stopped so the
+                            // dashboard shows the failure during the bounded
+                            // retry. CPU keepalive follows phone_key_enabled,
+                            // which stays set across this retry.
                             event.error = msg;
                         }
                     }
