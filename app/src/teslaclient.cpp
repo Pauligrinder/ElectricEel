@@ -1,4 +1,5 @@
 #include "teslaclient.h"
+#include "automagicsetup.h"
 #include "commandarguments.h"
 
 #include <QDebug>
@@ -177,4 +178,12 @@ void TeslaClient::onApplicationStateChanged(Qt::ApplicationState state)
     case Qt::ApplicationSuspended: name = "suspended"; break;
     }
     submit({{"op", "application_state"}, {"state", name}});
+}
+
+void TeslaClient::installAutomagicFlows()
+{
+    AutomagicSetup setup;
+    QString message;
+    const bool ok = setup.install(&message);
+    emit automagicSetupFinished(ok, message);
 }

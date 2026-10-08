@@ -45,6 +45,7 @@ public slots:
                    int connectTimeoutSec, int commandTimeoutSec);
     void refreshConfig();
     void logPowerState(const QString &state);
+    void installAutomagicFlows();
 
 signals:
     void commandFinished(const QString &requestId, bool ok, const QString &stdOut,
@@ -66,6 +67,7 @@ signals:
     void statusRefreshRequested();
     void phoneKeyEvent(const QString &kind, const QString &vin,
                        const QString &time, const QString &errorMessage);
+    void automagicSetupFinished(bool ok, const QString &message);
     void destinationPreviewed(const QString &requestId, bool ok, const QString &kind,
                               const QString &value1, const QString &value2,
                               const QString &errorMessage);
