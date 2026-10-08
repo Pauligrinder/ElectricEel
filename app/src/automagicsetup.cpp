@@ -1,5 +1,6 @@
 #include "automagicsetup.h"
 
+#include <QDebug>
 #include <QDir>
 #include <QFile>
 #include <QJsonArray>
@@ -9,23 +10,28 @@
 #include <QSaveFile>
 #include <QVariantMap>
 
-extern "C" {
-#include "electriceelcore.h"
-}
-
 namespace {
 
+const char *kDest = "org.electriceel.harbour-electric-eel";
 const char *kPath = "/org/electriceel/PhoneKey";
-const char *kIface = "org.electriceel.PhoneKey";
-const char *kDest = "org.electriceel.PhoneKey";
+const char *kIface = "org.electriceel.PhoneKey1";
 
-void keylog(const char *tag, const QString &message)
+void note(const QString &message)
 {
-    const QByteArray utf8 = message.toUtf8();
-    core_keylog(tag, utf8.constData());
+    qWarning().noquote() << "automagic:" << message;
 }
 
-QVariantMap dbusSource(const QString &id, const QString &name, const QString &signal)
+QVariantMap copyTransform(const char *in, const char *out)
+{
+    QVariantMap copy;
+    copy.insert(QStringLiteral("type"), QStringLiteral("copy"));
+    copy.insert(QStringLiteral("in"), QLatin1String(in));
+    copy.insert(QStringLiteral("out"), QLatin1String(out));
+    return copy;
+}
+
+// kind empty: fire on every PhoneKeyEvent. Otherwise filter arg0.
+QVariantMap dbusSource(const QString &id, const QString &name, const QString &kind)
 {
     QVariantMap s;
     s.insert(QStringLiteral("id"), id);
@@ -37,7 +43,18 @@ QVariantMap dbusSource(const QString &id, const QString &name, const QString &si
     s.insert(QStringLiteral("destination"), QLatin1String(kDest));
     s.insert(QStringLiteral("path"), QLatin1String(kPath));
     s.insert(QStringLiteral("interface"), QLatin1String(kIface));
-    s.insert(QStringLiteral("signal"), signal);
+    s.insert(QStringLiteral("signal"), QStringLiteral("PhoneKeyEvent"));
+    if (!kind.isEmpty()) {
+        QVariantMap filters;
+        filters.insert(QStringLiteral("arg0"), kind);
+        s.insert(QStringLiteral("filters"), filters);
+    }
+    s.insert(QStringLiteral("transformations"), QVariantList{
+        copyTransform("arg0", "kind"),
+        copyTransform("arg1", "vin"),
+        copyTransform("arg2", "event_time"),
+        copyTransform("arg3", "error"),
+    });
     return s;
 }
 
@@ -244,38 +261,26 @@ bool AutomagicSetup::install(QString *message)
 
     const QString dir = configDir();
     if (!QDir(dir).exists()) {
-        keylog("automagic", QStringLiteral("config dir missing"));
+        note(QStringLiteral("config dir missing"));
         return fail(QStringLiteral("Automagic config not found. Open Automagic once, then try again."));
     }
-
-    QVariantMap presence = dbusSource(QStringLiteral("eel_presence"),
-                                      QStringLiteral("ElectricEel presence"),
-                                      QStringLiteral("Presence"));
-    QVariantList transforms;
-    QVariantMap copy;
-    copy.insert(QStringLiteral("type"), QStringLiteral("copy"));
-    copy.insert(QStringLiteral("in"), QStringLiteral("arg0"));
-    copy.insert(QStringLiteral("out"), QStringLiteral("kind"));
-    transforms.append(copy);
-    presence.insert(QStringLiteral("transformations"), transforms);
 
     const QList<QVariantMap> sources{
         dbusSource(QStringLiteral("eel_inside"),
                    QStringLiteral("ElectricEel inside car"),
-                   QStringLiteral("Inside")),
+                   QStringLiteral("presence_inside")),
         dbusSource(QStringLiteral("eel_far"),
                    QStringLiteral("ElectricEel walked away"),
-                   QStringLiteral("Far")),
+                   QStringLiteral("presence_far")),
         dbusSource(QStringLiteral("eel_near"),
                    QStringLiteral("ElectricEel connected"),
-                   QStringLiteral("Near")),
+                   QStringLiteral("presence_near")),
         dbusSource(QStringLiteral("eel_auth_ok"),
                    QStringLiteral("ElectricEel authorized"),
-                   QStringLiteral("AuthOk")),
-        dbusSource(QStringLiteral("eel_handle_pull"),
-                   QStringLiteral("ElectricEel handle pull"),
-                   QStringLiteral("HandlePull")),
-        presence
+                   QStringLiteral("presence_auth_ok")),
+        dbusSource(QStringLiteral("eel_presence"),
+                   QStringLiteral("ElectricEel presence"),
+                   QString())
     };
 
     const QList<QVariantMap> actions{
@@ -302,7 +307,7 @@ bool AutomagicSetup::install(QString *message)
     if (!upsertFile(QStringLiteral("data_sources.json"), sources, &error)
             || !upsertFile(QStringLiteral("actions.json"), actions, &error)
             || !upsertFile(QStringLiteral("flows.json"), flows, &error)) {
-        keylog("automagic", error);
+        note(error);
         return fail(error);
     }
 
@@ -314,15 +319,15 @@ bool AutomagicSetup::install(QString *message)
                  .value(QStringLiteral("shared_secret")).toString();
     }
     if (secret.isEmpty()) {
-        keylog("automagic", QStringLiteral("wrote JSON, no daemon secret"));
+        note(QStringLiteral("wrote JSON, no daemon secret"));
         return okMsg(QStringLiteral("Wrote Automagic sources, actions, and flows. Open Automagic so the daemon reloads."));
     }
 
     if (!reloadDaemon(secret, &error)) {
-        keylog("automagic", error);
+        note(error);
         return okMsg(QStringLiteral("Wrote Automagic flows, but %1. Open Automagic to reload.").arg(error));
     }
 
-    keylog("automagic", QStringLiteral("installed sources actions flows"));
+    note(QStringLiteral("installed sources actions flows"));
     return okMsg(QStringLiteral("Added ElectricEel triggers and hotspot flows to Automagic."));
 }

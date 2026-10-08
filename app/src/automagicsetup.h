@@ -7,6 +7,7 @@
 // Merges ElectricEel D-Bus triggers, hotspot actions, and flows into
 // harbour-automagic's JSON, then asks automagicd to reload. Does not
 // overwrite unrelated items. SSID/passphrase are never written or logged.
+// Triggers listen for org.electriceel.PhoneKey1.PhoneKeyEvent.
 class AutomagicSetup : public QObject
 {
     Q_OBJECT

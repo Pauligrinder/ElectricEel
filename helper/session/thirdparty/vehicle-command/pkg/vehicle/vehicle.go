@@ -123,6 +123,7 @@ func (v *Vehicle) SessionInfo(ctx context.Context, publicKey *ecdh.PublicKey, do
 	if err != nil {
 		return nil, err
 	}
+	defer recv.Close()
 	select {
 	case reply := <-recv.Recv():
 		if err := protocol.GetError(reply); err != nil {

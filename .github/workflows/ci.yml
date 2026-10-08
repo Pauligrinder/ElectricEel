@@ -4,8 +4,8 @@ name: CI
 # the release packaging workflow (release.yml only builds/publishes the RPM and
 # never exercised the test suites - see the old KNOWN gap where "CI green" did
 # not mean "tests pass"). Gates mirror the local dev commands:
-#   Rust: cargo fmt --check, cargo clippy -- -D warnings, cargo test
-#   Go  : gofmt -l, go vet ./..., go test ./...
+#   Rust: cargo fmt --check, cargo clippy -- -D warnings, cargo test --all-features
+#   Go  : enforce gofmt, go vet ./..., go test -race ./...
 #   QML : qmllint syntax over app/qml
 #   i18n: tools/build-qm.sh --check (catalogs in sync)
 #
@@ -36,7 +36,7 @@ jobs:
           components: clippy, rustfmt
       - run: cargo fmt --check
       - run: cargo clippy --all-targets --all-features -- -D warnings
-      - run: cargo test
+      - run: cargo test --all-features
 
   go:
     name: Go session (gofmt, vet, test)
@@ -50,9 +50,15 @@ jobs:
         with:
           # matches helper/session/go.mod
           go-version: '1.26.5'
-      - run: gofmt -l .
+      - name: Enforce Go formatting
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            printf '%s\n' "$unformatted"
+            exit 1
+          fi
       - run: go vet ./...
-      - run: go test ./...
+      - run: go test -race ./...
 
   qml:
     name: QML lint (qmllint syntax)
@@ -70,6 +76,16 @@ jobs:
           export PATH="$PATH:/usr/lib/qt5/bin:/usr/lib/x86_64-linux-gnu/qt5/bin"
           command -v qmllint
           qmllint app/qml/harbour-electric-eel.qml app/qml/cover/*.qml app/qml/pages/*.qml
+
+  qml-logic:
+    name: QML JavaScript logic regressions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test app/tests/*_test.cjs
 
   i18n:
     name: Translations freshness (lupdate/lrelease)

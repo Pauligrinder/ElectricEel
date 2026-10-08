@@ -71,12 +71,9 @@ const rxTimeout = time.Second
 type dbusBus interface {
 	// object returns a handle for method calls/property access on dest/path.
 	object(dest string, path dbus.ObjectPath) dbusCaller
-	// signals returns the process-lifetime channel used by Connection.rxLoop.
-	signals() <-chan *dbus.Signal
-	// attachSignals registers an extra godbus listener so the phone-key
-	// Watcher can receive advertisements without stealing GATT notifications
-	// from signals(). The returned func unregisters that listener.
-	attachSignals() (<-chan *dbus.Signal, func())
+	// subscribeSignals registers an independent, lifetime-scoped channel.
+	subscribeSignals(chan *dbus.Signal)
+	unsubscribeSignals(chan *dbus.Signal)
 	// addMatch/removeMatch register/unregister a signal match rule.
 	addMatch(options ...dbus.MatchOption) error
 	removeMatch(options ...dbus.MatchOption) error
@@ -125,29 +122,19 @@ func variantInt16(v dbus.Variant) (int16, bool) {
 
 // godbusConn adapts a *dbus.Conn to dbusBus.
 type godbusConn struct {
-	c   *dbus.Conn
-	sig chan *dbus.Signal
+	c *dbus.Conn
 }
 
 func adaptConn(conn *dbus.Conn) *godbusConn {
-	sig := make(chan *dbus.Signal, 64)
-	conn.Signal(sig)
-	return &godbusConn{c: conn, sig: sig}
+	return &godbusConn{c: conn}
 }
 
 func (g *godbusConn) object(dest string, path dbus.ObjectPath) dbusCaller {
 	return &godbusObject{obj: g.c.Object(dest, path)}
 }
 
-func (g *godbusConn) signals() <-chan *dbus.Signal { return g.sig }
-
-func (g *godbusConn) attachSignals() (<-chan *dbus.Signal, func()) {
-	// godbus broadcasts each incoming signal to every registered channel,
-	// so this listener is independent of signals() / rxLoop.
-	ch := make(chan *dbus.Signal, 64)
-	g.c.Signal(ch)
-	return ch, func() { g.c.RemoveSignal(ch) }
-}
+func (g *godbusConn) subscribeSignals(ch chan *dbus.Signal)   { g.c.Signal(ch) }
+func (g *godbusConn) unsubscribeSignals(ch chan *dbus.Signal) { g.c.RemoveSignal(ch) }
 
 func (g *godbusConn) addMatch(options ...dbus.MatchOption) error {
 	return g.c.AddMatchSignal(options...)
@@ -191,8 +178,8 @@ func (o *godbusObject) setProp(ctx context.Context, iface, prop string, value in
 }
 
 // Conn is a handle to a system-bus connection prepared for org.bluez calls.
-// It shares one D-Bus signal registration across Scan/Connect, so callers
-// should create one Conn and reuse it for the lifetime of the app.
+// Watchers and GATT links own independent signal subscriptions; callers
+// reuse the bus connection for the lifetime of the app.
 type Conn struct {
 	raw *dbus.Conn
 	bus dbusBus
@@ -220,17 +207,8 @@ func (c *Conn) Watch(ctx context.Context, adapterID, vin string) (*Watcher, erro
 	return newWatcher(ctx, c.bus, adapterID, vin)
 }
 
-// WaitPowered blocks until a BlueZ adapter we would use is Powered, or ctx
-// ends. Presence uses this so a Bluetooth toggle wakes the 1-minute Watch
-// backoff instead of waiting it out. tesla-session cannot Set Powered
-// itself (Sailfish ConnMan / sailjail AuthFailed).
-func (c *Conn) WaitPowered(ctx context.Context, adapterID string) error {
-	return waitPowered(ctx, c.bus, adapterID)
-}
-
-// Connect connects to the vehicle. A live target (HasRSSI) is Connected
-// directly, matching Tesla Android's reconnect-to-known-MAC. A Device1
-// without RSSI is not Connected; scan waits for a live advertisement.
+// Connect connects to the vehicle. If target is nil, the vehicle's beacon is
+// scanned for first. It returns a live connector.Connector.
 func (c *Conn) Connect(ctx context.Context, adapterID, vin string, target *ScanResult) (connector.Connector, error) {
 	return connect(ctx, c.bus, adapterID, vin, target)
 }

@@ -86,88 +86,26 @@ pub(crate) fn is_pin_command(cmd: &str) -> bool {
     PIN_COMMANDS.contains(&cmd)
 }
 
-// Every command name commands_vendor.go's `commands` map actually
-// contains at the pinned v0.4.1 tag, minus "get"/"post" (generic Fleet-API
-// HTTP passthrough - legitimately never exposed by a BLE-only app, not a
-// drift bug). This is a snapshot, not a live parse of the Go source - it
-// only needs to change when helper/session/commands_vendor.go is
-// re-vendored against a newer tag, at which point regenerate it with:
-//   grep -oP '^\t"[a-z0-9-]+":\s*\{' helper/session/commands_vendor.go \
-//     | grep -oP '"[a-z0-9-]+"' | tr -d '"' | sort
-// This existing exactly, and being checked against both COMMAND_CATALOG
-// and CommandCatalog.js below, is what would have caught the
-// parental-controls-* commands (never existed upstream at all) before
-// they shipped as buttons that always errored.
-#[cfg(test)]
-const KNOWN_UPSTREAM_COMMANDS: &[&str] = &[
-    "add-key",
-    "add-key-request",
-    "auto-seat-and-climate",
-    "autosecure-modelx",
-    "body-controller-state",
-    "charge-port-close",
-    "charge-port-open",
-    "charging-schedule",
-    "charging-schedule-add",
-    "charging-schedule-cancel",
-    "charging-schedule-remove",
-    "charging-set-amps",
-    "charging-set-limit",
-    "charging-start",
-    "charging-stop",
-    "climate-off",
-    "climate-on",
-    "climate-set-temp",
-    "drive",
-    "erase-guest-data",
-    "flash-lights",
-    "frunk-open",
-    "guest-mode-off",
-    "guest-mode-on",
-    "honk",
-    "keep-accessory-power",
-    "list-keys",
-    "lock",
-    "low-power-mode",
-    "media-next-favorite",
-    "media-next-track",
-    "media-previous-favorite",
-    "media-previous-track",
-    "media-set-volume",
-    "media-toggle-playback",
-    "media-volume-down",
-    "media-volume-up",
-    "ping",
-    "precondition-schedule-add",
-    "precondition-schedule-remove",
-    "product-info",
-    "remove-key",
-    "rename-key",
-    "seat-heater",
-    "sentry-mode",
-    "session-info",
-    "software-update-cancel",
-    "software-update-start",
-    "state",
-    "steering-wheel-heater",
-    "tonneau-close",
-    "tonneau-open",
-    "tonneau-stop",
-    "trunk-close",
-    "trunk-move",
-    "trunk-open",
-    "unlock",
-    "valet-mode-off",
-    "valet-mode-on",
-    "wake",
-    "windows-close",
-    "windows-vent",
-];
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::collections::HashSet;
+
+    fn session_commands() -> HashSet<&'static str> {
+        let source = include_str!("../session/commands_vendor.go");
+        let source = source
+            .split_once("var commands = map[string]*Command{")
+            .unwrap()
+            .1;
+        let regex = regex::Regex::new(r#"(?m)^\t"([a-z0-9-]+)":\s*\{"#).unwrap();
+        let commands: HashSet<_> = regex
+            .captures_iter(source)
+            .map(|capture| capture.get(1).unwrap().as_str())
+            .filter(|command| !["get", "post"].contains(command))
+            .collect();
+        assert!(!commands.is_empty(), "session command extraction failed");
+        commands
+    }
 
     #[test]
     fn test_pin_commands_coverage() {
@@ -190,7 +128,7 @@ mod tests {
 
     #[test]
     fn test_command_catalog_matches_upstream() {
-        let known: HashSet<&str> = KNOWN_UPSTREAM_COMMANDS.iter().copied().collect();
+        let known = session_commands();
         let unknown: Vec<&str> = COMMAND_CATALOG
             .iter()
             .copied()
@@ -202,6 +140,8 @@ mod tests {
              v0.4.1 tesla-control (would always fail with \"unrecognized \
              command\"): {unknown:?}"
         );
+        let catalog: HashSet<_> = COMMAND_CATALOG.iter().copied().collect();
+        assert_eq!(catalog, known, "Rust and session command catalogs differ");
     }
 
     // Same check, applied to the QML app's own command catalog - the two
@@ -225,7 +165,7 @@ mod tests {
              stale; fix the test before trusting a green run"
         );
 
-        let known: HashSet<&str> = KNOWN_UPSTREAM_COMMANDS.iter().copied().collect();
+        let known = session_commands();
         let mut unknown: Vec<&str> = js_commands
             .iter()
             .copied()

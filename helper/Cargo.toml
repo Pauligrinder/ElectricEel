@@ -1,7 +1,6 @@
 [package]
 name = "electric-eel-core"
 version = "0.2.36"
-
 edition = "2021"
 description = "In-process BLE control core for harbour-electric-eel"
 
@@ -28,6 +27,7 @@ pedantic = "warn"
 [dependencies]
 procfs = { version = "0.18.0", default-features = false, optional = true }
 regex = "1"
+url = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tempfile = "3.27.0"

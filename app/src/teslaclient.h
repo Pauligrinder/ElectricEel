@@ -8,7 +8,6 @@
 // Forward declare the opaque cbindgen handle from helper/electriceelcore.h.
 struct Core;
 class QTimer;
-class PhoneKeyBus;
 
 // Worker object that lives on its own QThread (see TeslaClient::setupWorker).
 // Every blocking C ABI call (core_run/core_pair can take up to ~10 minutes)
@@ -57,6 +56,7 @@ signals:
                        const QString &errorMessage);
 
 private:
+    void refreshPhoneKeyState();
     Core *m_core;
     QTimer *m_phoneKeyTimer;
 };
@@ -76,6 +76,7 @@ class TeslaClient : public QObject
     // matched build, so the UI's "version mismatch" banner stays quiet.
     Q_PROPERTY(QString helperVersion READ helperVersion NOTIFY helperVersionChanged)
     Q_PROPERTY(QString phoneKeyStatus READ phoneKeyStatus NOTIFY phoneKeyStatusChanged)
+    Q_PROPERTY(bool phoneKeyActive READ phoneKeyActive NOTIFY phoneKeyActiveChanged)
 
 public:
     explicit TeslaClient(QObject *parent = nullptr);
@@ -85,6 +86,7 @@ public:
     QString appVersion() const;
     QString helperVersion() const;
     QString phoneKeyStatus() const;
+    bool phoneKeyActive() const { return m_phoneKeyActive; }
 
 public slots:
     // requestId is caller-chosen and echoed back on commandFinished/
@@ -99,6 +101,7 @@ public slots:
     void refreshConfig();
     void refreshHelperAvailable();
     void refreshHelperVersion();
+    void logPowerState(const QString &state);
     void installAutomagicFlows();
 
 signals:
@@ -114,6 +117,9 @@ signals:
     void helperAvailableChanged();
     void helperVersionChanged();
     void phoneKeyStatusChanged();
+    void phoneKeyActiveChanged();
+    void phoneKeyEvent(const QString &kind, const QString &vin,
+                       const QString &time, const QString &errorMessage);
     void automagicSetupFinished(bool ok, const QString &message);
     void destinationPreviewed(const QString &requestId, bool ok, const QString &kind,
                               const QString &value1, const QString &value2,
@@ -130,13 +136,14 @@ private slots:
 
 private:
     void setHelperAvailable(bool available);
+    void setPhoneKeyActive(bool active);
 
     CoreWorker *m_worker;
     bool m_helperAvailable;
     QString m_helperVersion;
     QString m_phoneKeyStatus;
     bool m_suspended = false;
-    PhoneKeyBus *m_phoneKeyBus = nullptr;
+    bool m_phoneKeyActive = false;
 };
 
 #endif // TESLACLIENT_H

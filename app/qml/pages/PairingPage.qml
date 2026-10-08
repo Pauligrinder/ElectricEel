@@ -1,6 +1,5 @@
 import QtQuick 2.6
 import Sailfish.Silica 1.0
-import "../js/PhoneKeyStatus.js" as PhoneKey
 
 Page {
     id: page
@@ -15,9 +14,9 @@ Page {
     // Gates the Generate Key button: clicking it before the load finished
     // would run with no knowledge of an already-enrolled key.
     property bool configReady: false
-
-    readonly property string phoneKeyKind: PhoneKey.connectionKind(
-            teslaClient ? teslaClient.phoneKeyStatus : "", true)
+    // Per-page list-keys id so two PairingPages never consume each other's
+    // replies.
+    property string pendingListKeysId: ""
 
     Connections {
         target: teslaClient
@@ -35,12 +34,12 @@ Page {
             page.pairStatus = ok ? (qsTr("Paired.") + "\n" + output) : qsTr("Pairing failed: %1").arg(errorMessage)
         }
         onCommandFinished: {
-            if (requestId !== "list-keys")
+            if (requestId !== page.pendingListKeysId)
                 return
             page.keysListOutput = ok ? stdOut : stdErr
         }
         onCommandError: {
-            if (requestId !== "list-keys")
+            if (requestId !== page.pendingListKeysId)
                 return
             page.keysListOutput = message
         }
@@ -79,27 +78,13 @@ Page {
                 anchors.right: parent.right
                 anchors.margins: Theme.horizontalPageMargin
                 wrapMode: Text.Wrap
-                text: PhoneKey.label(teslaClient ? teslaClient.phoneKeyStatus : "", true)
-                      || qsTr("Phone key starting...")
-
+                text: teslaClient.phoneKeyStatus.length > 0
+                      ? teslaClient.phoneKeyStatus
+                      : qsTr("Phone key starting...")
                 font.pixelSize: Theme.fontSizeSmall
-                color: {
-                    if (page.phoneKeyKind === "connected")
-                        return Theme.secondaryHighlightColor
-                    if (page.phoneKeyKind === "error" || page.phoneKeyKind === "bluetooth-off")
-                        return Theme.highlightColor
-                    return Theme.secondaryHighlightColor
-                }
-            }
-
-            Label {
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.margins: Theme.horizontalPageMargin
-                wrapMode: Text.Wrap
-                text: "Phone-key logs: Documents/ElectricEel/phone-key-YYYY-MM-DD.log"
-                font.pixelSize: Theme.fontSizeExtraSmall
-                color: Theme.secondaryColor
+                color: teslaClient.phoneKeyStatus.indexOf("error") >= 0
+                       ? Theme.highlightColor
+                       : Theme.secondaryHighlightColor
             }
 
             Label {
@@ -178,7 +163,10 @@ Page {
             Button {
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: qsTr("List Enrolled Keys")
-                onClicked: teslaClient.runCommand("list-keys", "list-keys", [])
+                onClicked: {
+                    page.pendingListKeysId = "list-keys#" + Date.now() + "@" + Math.random()
+                    teslaClient.runCommand(page.pendingListKeysId, "list-keys", [])
+                }
             }
 
             Label {

@@ -49,9 +49,13 @@ fn cstr(ptr: *const c_char) -> Option<String> {
 }
 
 /// Returns a C string that the caller must free with `core_string_free`, or
-/// NULL. Used for output strings.
+/// NULL only on allocation failure. Embedded NULs (valid UTF-8, possible in
+/// subprocess output) are replaced with U+FFFD so command output is never
+/// silently truncated to "" the way a failed `CString::new` would.
+#[allow(clippy::needless_pass_by_value)]
 fn into_cstring(s: String) -> *mut c_char {
-    CString::new(s).map_or(std::ptr::null_mut(), CString::into_raw)
+    let sanitized = s.replace('\0', "\u{FFFD}");
+    CString::new(sanitized).map_or(std::ptr::null_mut(), CString::into_raw)
 }
 
 fn err_str(e: &str) -> *mut c_char {
@@ -83,23 +87,6 @@ pub extern "C" fn core_version() -> *const c_char {
     CStr::from_bytes_with_nul(concat!(env!("CARGO_PKG_VERSION"), "\0").as_bytes())
         .expect("static version string ends in NUL")
         .as_ptr()
-}
-
-/// Append a line to the phone-key log. Used by the Qt worker for app-state
-/// transitions (suspend/hidden/active) so a SIGTERM of tesla-session can be
-/// correlated with the UI process going away. NULL tag/message are no-ops.
-///
-/// # Safety
-/// Pointers must be NUL-terminated UTF-8 or NULL.
-#[no_mangle]
-pub unsafe extern "C" fn core_keylog(tag: *const c_char, message: *const c_char) {
-    let Some(tag) = cstr(tag) else {
-        return;
-    };
-    let Some(message) = cstr(message) else {
-        return;
-    };
-    crate::keylog::log(&tag, &message);
 }
 
 /// Create the control core.
@@ -863,14 +850,5 @@ mod tests {
         let rc = unsafe { core_handle_resume(ptr::null_mut()) };
         assert_eq!(rc, CoreError::BadArg);
         unsafe { core_free(core) };
-    }
-
-    #[test]
-    fn test_core_keylog_null_is_safe() {
-        unsafe {
-            core_keylog(ptr::null(), ptr::null());
-            let tag = CString::new("core").unwrap();
-            core_keylog(tag.as_ptr(), ptr::null());
-        }
     }
 }

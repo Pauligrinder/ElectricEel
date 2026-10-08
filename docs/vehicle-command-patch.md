@@ -34,6 +34,13 @@ ElectricEel additions on top (same "minimum copy" principle):
   BLE by their client). Hand-encoded with `protowire` (no protoc
   needed); byte-exact tests included. Field-106 and other Teslemetry
   extensions are NOT copied — nothing in this app needs them.
+- `pkg/vehicle/vehicle.go` — `SessionInfo` closes its response receiver on
+  every return path. Pairing polls session information while awaiting NFC
+  approval, so retaining those dispatcher registrations would leak state.
+- `pkg/protocol/key.go` — owner-only, synced atomic private-key replacement,
+  shared by the session and legacy CLI instead of duplicating persistence code.
+- `cmd/tesla-keygen/main.go` — non-forced file-key creation preserves an existing
+  unreadable key and reports the error, matching the session's reuse policy.
 
 Everything else in this directory is byte-identical to v0.4.1
 (`git clone https://github.com/teslamotors/vehicle-command.git &&

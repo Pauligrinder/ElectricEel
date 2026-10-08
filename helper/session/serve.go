@@ -12,8 +12,7 @@
 //	child -> parent  {"type":"heartbeat","unix"}                 (liveness)
 //
 // stdin/stdout are NOT the protocol anymore: stdout is plain logs (the
-// vendored command handlers still print through it, captured per-command
-// by captureOutput), which removes the entire class of
+// command handlers write to explicit per-command writers), removing
 // response-vs-command-output interleaving bugs the old stdio transport
 // had. Heartbeats flow even mid-command, so they prove the process is
 // alive as well as the connection; a failed heartbeat write means the
@@ -67,6 +66,7 @@ func (s *session) heartbeatLoop(done <-chan struct{}) {
 // never read it. The process exit lives in main, not here, so tests can
 // drive this loop over net.Pipe.
 func (s *session) serveConn(conn net.Conn) {
+	defer conn.Close()
 	s.enc = json.NewEncoder(conn)
 	if err := s.enc.Encode(helloFrame{Type: "hello", Version: protocolVersion, BLEBackend: s.bleBackend}); err != nil {
 		keylog("session", "hello write failed: %v", err)

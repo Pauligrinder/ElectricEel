@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/teslamotors/vehicle-command/internal/authentication"
 )
@@ -32,7 +33,31 @@ func SavePrivateKey(skey ECDHPrivateKey, filename string) error {
 		return err
 	}
 	pemKey := pem.Block{Type: "EC PRIVATE KEY", Bytes: derKey}
-	return os.WriteFile(filename, pem.EncodeToMemory(&pemKey), 0600)
+	dir := filepath.Dir(filename)
+	tmp, err := os.CreateTemp(dir, ".private-key-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	defer tmp.Close()
+	if _, err := tmp.Write(pem.EncodeToMemory(&pemKey)); err != nil {
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp.Name(), filename); err != nil {
+		return err
+	}
+	parent, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	defer parent.Close()
+	return parent.Sync()
 }
 
 // LoadPublicKey loads a P256 EC public key from a file.

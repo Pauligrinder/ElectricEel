@@ -261,15 +261,13 @@ function trunkClosed(s){ return !s.trunkRearOpen }
 // DAYS is GetDays()'s own dayNamesBitMask keys (case-insensitive): Sun,
 // Mon, Tues, Wed, Thurs, Fri, Sat, or all/weekdays - note "Tues"/"Thurs",
 // not "Tue"/"Thu".
-// REPEAT/ID/ENABLED are genuinely optional upstream (a schedule repeats
-// weekly and gets an auto-generated ID unless told otherwise) - marked
-// optional here relies on ArgumentDialog.qml's "not set" choice actually
-// omitting the arg, not just defaulting to the first enum value / 0.
+// Optional values retain their backend positions. Empty slots mean omitted;
+// only trailing empty slots can be removed from the wire argument list.
 // Note: unlike precondition-schedule-add, charging-schedule-add does NOT
 // honor an ID argument - commands_vendor.go's handler stamps the schedule's
 // Id from time.Now().Unix() and never reads args["ID"] (upstream v0.4.1
-// behavior, commands_vendor.go "charging-schedule-add"). So no ID field is
-// offered here; preconditionScheduleAddArgs() keeps one because its handler
+// behavior, commands_vendor.go "charging-schedule-add"). A hidden empty ID
+// slot preserves the wire layout; preconditionScheduleAddArgs() exposes it because its handler
 // does read it. Use charging-schedule-remove with TYPE "id" to target an
 // existing schedule instead.
 function chargeScheduleAddArgs() {
@@ -279,6 +277,7 @@ function chargeScheduleAddArgs() {
     arg("LATITUDE", "float", { min: -90, max: 90, step: 0.000001, def: 0 }),
     arg("LONGITUDE", "float", { min: -180, max: 180, step: 0.000001, def: 0 }),
     arg("REPEAT", "enum", { values: ["once"], optional: true }),
+    arg("ID", "none", { optional: true, hidden: true }),
     arg("ENABLED", "enum", { values: ["true","false"], optional: true }),
   ]
 }

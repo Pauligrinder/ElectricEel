@@ -39,16 +39,6 @@ void core_string_free(char *ptr);
 const char *core_version(void);
 
 /**
- * Append a line to the phone-key log. Used by the Qt worker for app-state
- * transitions (suspend/hidden/active) so a SIGTERM of tesla-session can be
- * correlated with the UI process going away. NULL tag/message are no-ops.
- *
- * # Safety
- * Pointers must be NUL-terminated UTF-8 or NULL.
- */
-void core_keylog(const char *tag, const char *message);
-
-/**
  * Create the control core.
  *
  * # Arguments

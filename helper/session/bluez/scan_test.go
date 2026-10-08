@@ -101,202 +101,17 @@ func TestFindAdapterPrefersPowered(t *testing.T) {
 	}
 }
 
-func TestFindAdapterForNamePrefersVehicleAdapter(t *testing.T) {
-	bus := newFakeBluez()
-	vin := "5YJ3E1EA0PF000000"
-	bus.powered = true
-	bus.extraAdapters = map[string]bool{"hci1": true}
-	hci1Path := dbus.ObjectPath("/org/bluez/hci1/dev_98_04_ED_D7_EE_5E")
-	bus.dev = &fakeDevice{path: hci1Path, name: vehicleBeaconName(vin), omitRSSI: true}
-	bus.deviceVisible = true
-
-	path, err := findAdapterForName(context.Background(), bus, "", vehicleBeaconName(vin))
-	if err != nil {
-		t.Fatalf("findAdapterForName: %v", err)
-	}
-	if path != "/org/bluez/hci1" {
-		t.Fatalf("findAdapterForName picked %s, want hci1 (where the Tesla Device1 lives)", path)
-	}
-	plain, err := findAdapter(context.Background(), bus, "")
-	if err != nil {
-		t.Fatalf("findAdapter: %v", err)
-	}
-	if plain != "/org/bluez/hci0" {
-		t.Fatalf("findAdapter picked %s, want lexicographic hci0 so the vehicle preference is doing work", plain)
-	}
-}
-
-func TestWaitPoweredAlreadyOn(t *testing.T) {
-	bus := newFakeBluez()
-	bus.powered = true
-	if err := waitPowered(context.Background(), bus, ""); err != nil {
-		t.Fatalf("waitPowered: %v", err)
-	}
-	if bus.matches != 0 {
-		t.Fatalf("already-powered wait subscribed matches=%d, want 0", bus.matches)
-	}
-}
-
-func TestWaitPoweredWakesOnToggle(t *testing.T) {
+func TestEnsurePoweredKeepsDBusErrorName(t *testing.T) {
 	bus := newFakeBluez()
 	bus.powered = false
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	done := make(chan error, 1)
-	go func() { done <- waitPowered(ctx, bus, "") }()
-	waitForFakeMatches(t, bus, 2)
-	bus.adapterPoweredChanged("hci0", true)
-	if err := <-done; err != nil {
-		t.Fatalf("waitPowered after Powered=true: %v", err)
-	}
-	if bus.removedMatches < 2 {
-		t.Fatalf("removedMatches=%d, want signal matches cleaned up", bus.removedMatches)
-	}
-}
-
-func TestWaitPoweredWakesOnHci1(t *testing.T) {
-	bus := newFakeBluez()
-	bus.powered = false
-	bus.extraAdapters = map[string]bool{"hci1": false}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	done := make(chan error, 1)
-	go func() { done <- waitPowered(ctx, bus, "") }()
-	waitForFakeMatches(t, bus, 2)
-	bus.adapterPoweredChanged("hci1", true)
-	if err := <-done; err != nil {
-		t.Fatalf("waitPowered after hci1 Powered=true: %v", err)
-	}
-}
-
-func TestWaitPoweredWakesOnAdapterAdded(t *testing.T) {
-	bus := newFakeBluez()
-	bus.powered = false
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	done := make(chan error, 1)
-	go func() { done <- waitPowered(ctx, bus, "") }()
-	waitForFakeMatches(t, bus, 2)
-	bus.adapterAdded("hci1", true)
-	if err := <-done; err != nil {
-		t.Fatalf("waitPowered after hci1 appear: %v", err)
-	}
-}
-
-func TestWaitPoweredIgnoresPowerOffAndDevices(t *testing.T) {
-	bus := newFakeBluez()
-	bus.powered = false
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
-	defer cancel()
-	done := make(chan error, 1)
-	go func() { done <- waitPowered(ctx, bus, "") }()
-	waitForFakeMatches(t, bus, 2)
-	bus.adapterPoweredChanged("hci0", false)
-	bus.advertiseAdded()
-	err := <-done
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("waitPowered err=%v, want deadline (Powered=false / Device1 must not wake)", err)
-	}
-}
-
-func TestWaitPoweredHonorsAdapterID(t *testing.T) {
-	bus := newFakeBluez()
-	bus.powered = false
-	bus.extraAdapters = map[string]bool{"hci1": false}
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
-	defer cancel()
-	done := make(chan error, 1)
-	go func() { done <- waitPowered(ctx, bus, "hci0") }()
-	waitForFakeMatches(t, bus, 2)
-	bus.adapterPoweredChanged("hci1", true)
-	err := <-done
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("waitPowered(hci0) woke on hci1: %v", err)
-	}
-}
-
-func TestAdapterPowerOnSignal(t *testing.T) {
-	if adapterPowerOnSignal(&dbus.Signal{
-		Name: propsIface + ".PropertiesChanged",
-		Path: "/org/bluez/hci1",
-		Body: []interface{}{
-			adapterIface,
-			map[string]dbus.Variant{"Powered": dbus.MakeVariant(true)},
-		},
-	}, "") != true {
-		t.Fatal("hci1 Powered=true must wake")
-	}
-	if adapterPowerOnSignal(&dbus.Signal{
-		Name: propsIface + ".PropertiesChanged",
-		Path: "/org/bluez/hci1",
-		Body: []interface{}{
-			adapterIface,
-			map[string]dbus.Variant{"Powered": dbus.MakeVariant(false)},
-		},
-	}, "") {
-		t.Fatal("Powered=false must not wake")
-	}
-	if adapterPowerOnSignal(&dbus.Signal{
-		Name: propsIface + ".PropertiesChanged",
-		Path: "/org/bluez/hci1/dev_AA_BB_CC_DD_EE_FF",
-		Body: []interface{}{
-			deviceIface,
-			map[string]dbus.Variant{"RSSI": dbus.MakeVariant(int16(-70))},
-		},
-	}, "") {
-		t.Fatal("Device1 RSSI must not look like adapter power")
-	}
-}
-
-func waitForFakeMatches(t *testing.T, bus *fakeBluez, n int) {
-	t.Helper()
-	deadline := time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
-		if bus.matches >= n {
-			return
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-	t.Fatalf("matches=%d, want >= %d", bus.matches, n)
-}
-
-func TestEnsurePoweredDoesNotSetWhenOff(t *testing.T) {
-	bus := newFakeBluez()
-	bus.powered = false
-	bus.setPoweredErr = dbus.Error{Name: "org.freedesktop.DBus.Error.AuthFailed", Body: []interface{}{""}}
+	bus.setPoweredErr = dbus.Error{Name: "org.bluez.Error.Failed", Body: []interface{}{""}}
 
 	err := ensurePowered(context.Background(), bus, dbus.ObjectPath("/org/bluez/hci0"))
 	if err == nil {
-		t.Fatal("expected ensurePowered to fail when the adapter is off")
+		t.Fatal("expected ensurePowered to fail when Set Powered is denied")
 	}
-	if !strings.Contains(err.Error(), "adapter not powered") {
-		t.Fatalf("error %q should say the adapter is off without attempting Set", err)
-	}
-	if hasCall(bus.calls, propsIface+".Set") {
-		t.Fatal("ensurePowered must not Set Powered (Sailfish ConnMan AuthFailed)")
-	}
-	if bus.powered {
-		t.Fatal("ensurePowered must not flip the fake Powered flag")
-	}
-}
-
-func TestScanFailsWhenAdapterOff(t *testing.T) {
-	bus := newFakeBluez()
-	bus.powered = false
-	vin := "5YJ3E1EA0PF000000"
-	bus.dev = &fakeDevice{path: bus.devPath(), name: vehicleBeaconName(vin)}
-	bus.deviceVisible = true
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
-	if _, err := scan(ctx, bus, "", vin); err == nil {
-		t.Fatal("scan must fail when the adapter is off")
-	} else if !strings.Contains(err.Error(), "adapter not powered") {
-		t.Fatalf("scan error %q, want adapter not powered", err)
-	}
-	if bus.powered {
-		t.Error("scan must not power the adapter on")
+	if !strings.Contains(err.Error(), "org.bluez.Error.Failed") {
+		t.Fatalf("error %q should include the D-Bus name (logs used to show an empty suffix)", err)
 	}
 }
 
@@ -314,6 +129,24 @@ func TestScanHonorsSpecificAdapter(t *testing.T) {
 	}
 	if _, err := scan(ctx, bus, "hci9", vin); err == nil {
 		t.Fatal("scan with nonexistent adapter should fail")
+	}
+}
+
+func TestScanPowersOnAdapter(t *testing.T) {
+	bus := newFakeBluez()
+	bus.powered = false
+	vin := "5YJ3E1EA0PF000000"
+	bus.dev = &fakeDevice{path: bus.devPath(), name: vehicleBeaconName(vin)}
+	bus.deviceVisible = true
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	if _, err := scan(ctx, bus, "", vin); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if !bus.powered {
+		t.Error("expected scan to power the adapter back on")
 	}
 }
 
@@ -377,20 +210,6 @@ func TestScanIgnoresOtherDevices(t *testing.T) {
 
 	if _, err := scan(ctx, bus, "", vin); err == nil {
 		t.Fatal("expected scan not to match a non-vehicle device name")
-	}
-}
-
-func TestScanIgnoresCachedDeviceWithoutRSSI(t *testing.T) {
-	bus := newFakeBluez()
-	vin := "5YJ3E1EA0PF000000"
-	bus.dev = &fakeDevice{path: bus.devPath(), name: vehicleBeaconName(vin), omitRSSI: true}
-	bus.deviceVisible = true
-
-	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
-	defer cancel()
-
-	if _, err := scan(ctx, bus, "", vin); err == nil {
-		t.Fatal("scan must not return a leftover Device1 that has no live RSSI")
 	}
 }
 

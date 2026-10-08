@@ -60,3 +60,24 @@ func TestDispatchNavigateReportsConnectFailure(t *testing.T) {
 		}
 	}
 }
+
+func TestDispatchNavigateRejectsOutOfRangeCoords(t *testing.T) {
+	// The Rust core rejects out-of-range coordinates before sending, but this
+	// Go defense-in-depth layer only checks ParseFloat and forwards 999/999
+	// to the vehicle. Out-of-range must fail fast with usage (exit 2) without
+	// touching the radio.
+	s := &session{}
+	for _, args := range [][]string{
+		{"gps", "999", "999"},
+		{"gps", "48.8584", "200"},
+		{"gps", "-91", "0"},
+	} {
+		resp := s.dispatchNavigate(request{ID: "n", Cmd: "navigate", Args: args})
+		if resp.OK {
+			t.Fatalf("expected failure for out-of-range args %q", args)
+		}
+		if resp.ExitCode != 2 {
+			t.Fatalf("expected exit 2 (usage) for out-of-range args %q, got %d (%q)", args, resp.ExitCode, resp.Stderr)
+		}
+	}
+}

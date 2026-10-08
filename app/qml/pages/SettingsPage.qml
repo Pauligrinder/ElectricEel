@@ -154,7 +154,7 @@ Page {
                 wrapMode: Text.Wrap
                 color: Theme.secondaryColor
                 font.pixelSize: Theme.fontSizeExtraSmall
-                text: qsTr("ElectricEel does not turn the hotspot on or launch apps itself. The button below adds harbour-automagic triggers for the session D-Bus signals and two flows: hotspot on when you are in the car, hotspot off 3 minutes after you walk away (the Far signal is held in the app and skipped if you get back in the car). Extra triggers (Near, AuthOk, HandlePull, Presence) are added so you can attach your own flows, such as launching an app.")
+                text: qsTr("ElectricEel does not turn the hotspot on or launch apps itself. The button below adds harbour-automagic triggers for PhoneKeyEvent and two flows: hotspot on for presence_inside, hotspot off for presence_far. Extra triggers (presence_near, presence_auth_ok, and every event) are added so you can attach your own flows, such as launching an app. presence_far is immediate.")
             }
 
             Button {
@@ -170,7 +170,7 @@ Page {
                 wrapMode: Text.Wrap
                 color: Theme.secondaryColor
                 font.pixelSize: Theme.fontSizeExtraSmall
-                text: qsTr("Manual trigger: protocol DBUS, Act as Trigger, Address session, Path /org/electriceel/PhoneKey, Interface org.electriceel.PhoneKey. Signals: Inside, Far, Near, AuthOk, HandlePull, Presence (arg0 is the kind). ElectricEel must stay running.")
+                text: qsTr("Manual trigger: protocol DBUS, Act as Trigger, Address session, Destination org.electriceel.harbour-electric-eel, Path /org/electriceel/PhoneKey, Interface org.electriceel.PhoneKey1, Signal PhoneKeyEvent. Filter arg0 to presence_inside, presence_far, presence_near, or presence_auth_ok. ElectricEel must stay running.")
             }
 
             Button {

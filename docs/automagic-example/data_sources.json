@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "data": [
+    {
+      "id": "electric_eel_phonekey1_inside",
+      "name": "ElectricEel inside car",
+      "type": "dbus",
+      "enabled": true,
+      "trigger": true,
+      "address": "session",
+      "destination": "org.electriceel.harbour-electric-eel",
+      "path": "/org/electriceel/PhoneKey",
+      "interface": "org.electriceel.PhoneKey1",
+      "signal": "PhoneKeyEvent",
+      "filters": { "arg0": "presence_inside" },
+      "transformations": [
+        { "type": "copy", "in": "arg0", "out": "kind" },
+        { "type": "copy", "in": "arg1", "out": "vin" },
+        { "type": "copy", "in": "arg2", "out": "event_time" },
+        { "type": "copy", "in": "arg3", "out": "error" }
+      ]
+    },
+    {
+      "id": "electric_eel_phonekey1_far",
+      "name": "ElectricEel away",
+      "type": "dbus",
+      "enabled": true,
+      "trigger": true,
+      "address": "session",
+      "destination": "org.electriceel.harbour-electric-eel",
+      "path": "/org/electriceel/PhoneKey",
+      "interface": "org.electriceel.PhoneKey1",
+      "signal": "PhoneKeyEvent",
+      "filters": { "arg0": "presence_far" },
+      "transformations": [
+        { "type": "copy", "in": "arg0", "out": "kind" },
+        { "type": "copy", "in": "arg1", "out": "vin" },
+        { "type": "copy", "in": "arg2", "out": "event_time" },
+        { "type": "copy", "in": "arg3", "out": "error" }
+      ]
+    }
+  ]
+}

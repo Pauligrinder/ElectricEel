@@ -16,8 +16,13 @@ Page {
 
     property var category: Catalog.findCategory(categoryId)
     property string pendingCmd: ""
+    property string pendingLabel: ""
     property string lastResult: ""
     property bool lastOk: true
+    // Monotonic per-page sequence so concurrent pages never share a requestId:
+    // using the bare command id collided when two CategoryPages ran the same
+    // command and both consumed one reply.
+    property int requestSeq: 0
 
     // Commands gated by status (see CommandCatalog's visibleWhen): only the
     // toggle action matching the current vehicle state is listed, so the page
@@ -78,9 +83,11 @@ Page {
     }
 
     function execute(commandDef, argValues) {
-        page.pendingCmd = commandDef.id
+        page.requestSeq++
+        page.pendingCmd = commandDef.id + "#" + page.requestSeq + "@" + Date.now()
+        page.pendingLabel = commandDef.id
         page.lastResult = ""
-        teslaClient.runCommand(commandDef.id, commandDef.id, argValues || [])
+        teslaClient.runCommand(page.pendingCmd, commandDef.id, argValues || [])
     }
 
     function openArgs(commandDef) {
@@ -164,7 +171,7 @@ Page {
                         wrapMode: Text.Wrap
                         font.pixelSize: Theme.fontSizeExtraSmall
                         color: page.lastOk ? Theme.primaryColor : Theme.highlightColor
-                        text: page.pendingCmd.length > 0 ? qsTr("Running %1...").arg(page.pendingCmd) : page.lastResult
+                        text: page.pendingCmd.length > 0 ? qsTr("Running %1...").arg(page.pendingLabel) : page.lastResult
                     }
                 }
             }

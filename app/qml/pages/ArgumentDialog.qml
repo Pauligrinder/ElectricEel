@@ -57,6 +57,7 @@ Dialog {
 
                 delegate: Loader {
                     width: column.width
+                    active: !modelData.hidden
                     property var argSpec: modelData
                     sourceComponent: {
                         if (modelData.type === "enum") return enumField
@@ -73,7 +74,23 @@ Dialog {
                             return sliderField
                         return textField
                     }
-                    onLoaded: item.argSpec = argSpec
+                    onLoaded: {
+                        // Loader completes the item before assigning argSpec.
+                        // Initialize the payload here too: an unchanged enum
+                        // index or zero-valued slider emits no value change.
+                        var value = ""
+                        if (argSpec.type === "enum" && !argSpec.optional && argSpec.values.length)
+                            value = argSpec.values[0]
+                        else if (argSpec.def !== undefined)
+                            value = String(argSpec.def)
+                        else if (!argSpec.optional && argSpec.min !== undefined)
+                            value = String(argSpec.min)
+                        if (!argSpec.optional && (argSpec.type === "int" || argSpec.type === "float"))
+                            value += argSpec.sendSuffix || ""
+                        argSpec.__value = value
+                        item.argSpec = argSpec
+                        dialog.revalidate()
+                    }
                 }
             }
         }
@@ -84,8 +101,8 @@ Dialog {
         ComboBox {
             property var argSpec
             // Optional enums get a real "not set" choice at index 0, whose
-            // __value is "" so onAccepted's skip-when-empty-and-optional
-            // logic actually fires - without this, an optional enum always
+            // __value is "" so the backend retains its default while later
+            // arguments keep their positions. Without this, an optional enum always
             // has *some* selected value (menus have no "nothing selected"
             // state) and so was never actually skippable.
             property var choices: argSpec ? (argSpec.optional ? [""].concat(argSpec.values) : argSpec.values) : []
@@ -187,10 +204,11 @@ Dialog {
         for (var i = 0; i < commandDef.args.length; i++) {
             var a = commandDef.args[i]
             var v = a.__value !== undefined ? a.__value : ""
-            if (v === "" && a.optional)
-                continue
             out.push(v)
         }
+        while (out.length > 0 && commandDef.args[out.length - 1].optional
+               && out[out.length - 1] === "")
+            out.pop()
         values = out
     }
 }
