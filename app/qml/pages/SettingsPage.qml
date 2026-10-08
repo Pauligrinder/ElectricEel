@@ -154,7 +154,7 @@ Page {
                 wrapMode: Text.Wrap
                 color: Theme.secondaryColor
                 font.pixelSize: Theme.fontSizeExtraSmall
-                text: qsTr("ElectricEel does not turn the hotspot on or launch apps itself. The button below adds harbour-automagic triggers for PhoneKeyEvent and two flows: hotspot on for presence_inside, hotspot off for presence_far. Extra triggers (presence_near, presence_auth_ok, and every event) are added so you can attach your own flows, such as launching an app. presence_far is immediate.")
+                text: qsTr("ElectricEel does not turn the hotspot on or launch apps itself. The button below adds harbour-automagic triggers for PhoneKeyEvent and two flows: hotspot on for presence_inside, and hotspot off 3 minutes after presence_far unless presence_inside arrives first. A second presence_far during that wait does not restart the timer. Extra triggers (presence_near, presence_auth_ok, and every event) are added so you can attach your own flows, such as launching an app.")
             }
 
             Button {
