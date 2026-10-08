@@ -128,9 +128,11 @@ can also suppress rapid repeats.
 - **Missed events:** this is a live feed with no replay. Automagic's daemon
   must be listening before the event occurs.
 
-This version's `presence_far` feed has **no additional three-minute delay**.
-If your automation needs delayed cleanup after leaving, implement that timing
-and cancellation in Automagic.
+The `presence_far` event itself is immediate. The hotspot flow installed
+from Settings waits 3 minutes and turns the hotspot off only if
+`presence_inside` has not arrived. Another `presence_far` during that wait
+does not restart it. Other automations that need their own delay should
+implement that timing in Automagic.
 
 ## Reference versions
 
@@ -142,6 +144,6 @@ and automagic-daemon
 Settings → **Add Automagic flows** writes triggers for this build's
 `org.electriceel.PhoneKey1.PhoneKeyEvent` signal (`presence_inside`,
 `presence_far`, `presence_near`, `presence_auth_ok`, and an unfiltered
-presence source) plus ConnMan hotspot flows: on for `presence_inside`, off
-for `presence_far`. That `presence_far` flow runs immediately. The importable
-example above is a separate logging flow and is left in place.
+presence source) plus ConnMan hotspot flows: on for `presence_inside`, and
+off 3 minutes after `presence_far` unless `presence_inside` arrives first.
+The importable example above is a separate logging flow and is left in place.

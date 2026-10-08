@@ -86,14 +86,99 @@ QVariantMap dbusTetherAction(const QString &id, const QString &name, bool on)
     return a;
 }
 
-QVariantMap actionStep(const QString &id, const QString &actionId)
+// Shared Automagic state. A pending away run stores its _run_id here.
+// presence_inside clears it, so the wait that is already asleep does not
+// turn the hotspot off. A second presence_far leaves the token alone, so
+// the first 3m timer is not restarted.
+const char *kAwayState = "eel_hotspot_away";
+
+QVariantMap actionStep(const QString &id, const QString &actionId,
+                       const QVariantList &conditions = QVariantList())
 {
     QVariantMap step;
     step.insert(QStringLiteral("id"), id);
     step.insert(QStringLiteral("type"), QStringLiteral("action"));
     step.insert(QStringLiteral("action"), actionId);
     step.insert(QStringLiteral("goto_alt"), QStringLiteral("end"));
+    if (!conditions.isEmpty())
+        step.insert(QStringLiteral("if"), conditions);
     return step;
+}
+
+QVariantMap stateStep(const QString &id, const QVariant &value, bool fromTemplate)
+{
+    QVariantMap params;
+    params.insert(QStringLiteral("name"), QLatin1String(kAwayState));
+    params.insert(fromTemplate ? QStringLiteral("template") : QStringLiteral("static"), value);
+
+    QVariantMap step;
+    step.insert(QStringLiteral("id"), id);
+    step.insert(QStringLiteral("type"), QStringLiteral("action"));
+    step.insert(QStringLiteral("function"), QStringLiteral("set_state"));
+    step.insert(QStringLiteral("params"), params);
+    step.insert(QStringLiteral("goto_alt"), QStringLiteral("end"));
+    return step;
+}
+
+QVariantMap readAwayState(const QString &id, const QString &variable)
+{
+    QVariantMap params;
+    params.insert(QStringLiteral("name"), QLatin1String(kAwayState));
+    QVariantMap mapping;
+    mapping.insert(QStringLiteral("state"), variable);
+
+    QVariantMap step;
+    step.insert(QStringLiteral("id"), id);
+    step.insert(QStringLiteral("type"), QStringLiteral("get"));
+    step.insert(QStringLiteral("function"), QStringLiteral("state"));
+    step.insert(QStringLiteral("params"), params);
+    step.insert(QStringLiteral("mapping"), mapping);
+    step.insert(QStringLiteral("goto_alt"), QStringLiteral("end"));
+    return step;
+}
+
+// End the flow when a 3m wait is already armed. A missing or empty state
+// falls through (goto_alt is omitted).
+QVariantMap skipIfAwayPending(const QString &id)
+{
+    QVariantMap exists;
+    exists.insert(QStringLiteral("op"), QStringLiteral("exists"));
+    exists.insert(QStringLiteral("left_var"), QStringLiteral("pending"));
+
+    QVariantMap nonempty;
+    nonempty.insert(QStringLiteral("logic"), QStringLiteral("and"));
+    nonempty.insert(QStringLiteral("op"), QStringLiteral("!="));
+    nonempty.insert(QStringLiteral("left_var"), QStringLiteral("pending"));
+    nonempty.insert(QStringLiteral("right_const"), QStringLiteral(""));
+
+    QVariantMap step;
+    step.insert(QStringLiteral("id"), id);
+    step.insert(QStringLiteral("type"), QStringLiteral("branch"));
+    step.insert(QStringLiteral("goto"), QStringLiteral("end"));
+    step.insert(QStringLiteral("if"), QVariantList{ exists, nonempty });
+    return step;
+}
+
+QVariantMap waitStep(const QString &id, const QString &duration)
+{
+    QVariantMap params;
+    params.insert(QStringLiteral("duration"), duration);
+
+    QVariantMap step;
+    step.insert(QStringLiteral("id"), id);
+    step.insert(QStringLiteral("type"), QStringLiteral("wait"));
+    step.insert(QStringLiteral("params"), params);
+    step.insert(QStringLiteral("goto_alt"), QStringLiteral("end"));
+    return step;
+}
+
+QVariantList stillThisAwayRun()
+{
+    QVariantMap same;
+    same.insert(QStringLiteral("op"), QStringLiteral("=="));
+    same.insert(QStringLiteral("left_var"), QStringLiteral("away_now"));
+    same.insert(QStringLiteral("right_var"), QStringLiteral("_run_id"));
+    return QVariantList{ same };
 }
 
 QVariantMap flow(const QString &id, const QString &name,
@@ -294,13 +379,59 @@ bool AutomagicSetup::install(QString *message)
         flow(QStringLiteral("eel_flow_hotspot_on"),
              QStringLiteral("ElectricEel hotspot on"),
              QStringLiteral("eel_inside"),
-             QVariantList{ actionStep(QStringLiteral("eel_step_hotspot_on"),
-                                      QStringLiteral("eel_hotspot_on")) }),
+             QVariantList{
+                 // Clear first so a wait already in progress loses its token
+                 // even if the hotspot-on call fails.
+                 [&]() {
+                     QVariantMap cancel = stateStep(QStringLiteral("eel_step_cancel_away"),
+                                                    QStringLiteral(""), false);
+                     cancel.insert(QStringLiteral("goto_alt"),
+                                   QStringLiteral("eel_step_hotspot_on"));
+                     return cancel;
+                 }(),
+                 actionStep(QStringLiteral("eel_step_hotspot_on"),
+                            QStringLiteral("eel_hotspot_on"))
+             }),
         flow(QStringLiteral("eel_flow_hotspot_off"),
              QStringLiteral("ElectricEel hotspot off"),
              QStringLiteral("eel_far"),
-             QVariantList{ actionStep(QStringLiteral("eel_step_hotspot_off"),
-                                      QStringLiteral("eel_hotspot_off")) })
+             QVariantList{
+                 readAwayState(QStringLiteral("eel_step_read_pending"),
+                               QStringLiteral("pending")),
+                 skipIfAwayPending(QStringLiteral("eel_step_away_already")),
+                 stateStep(QStringLiteral("eel_step_arm_away"),
+                           QStringLiteral("{{_run_id}}"), true),
+                 [&]() {
+                     QVariantMap wait = waitStep(QStringLiteral("eel_step_wait_away"),
+                                                 QStringLiteral("3m"));
+                     wait.insert(QStringLiteral("goto_alt"),
+                                 QStringLiteral("eel_step_clear_away"));
+                     return wait;
+                 }(),
+                 [&]() {
+                     QVariantMap read = readAwayState(QStringLiteral("eel_step_read_away"),
+                                                      QStringLiteral("away_now"));
+                     read.insert(QStringLiteral("goto_alt"),
+                                 QStringLiteral("eel_step_clear_away"));
+                     return read;
+                 }(),
+                 [&]() {
+                     QVariantMap off = actionStep(QStringLiteral("eel_step_hotspot_off"),
+                                                  QStringLiteral("eel_hotspot_off"),
+                                                  stillThisAwayRun());
+                     off.insert(QStringLiteral("goto_alt"),
+                                QStringLiteral("eel_step_clear_away"));
+                     return off;
+                 }(),
+                 [&]() {
+                     // Only the run that armed this wait may clear it. An
+                     // older wait must not wipe a token a later away stored.
+                     QVariantMap clear = stateStep(QStringLiteral("eel_step_clear_away"),
+                                                   QStringLiteral(""), false);
+                     clear.insert(QStringLiteral("if"), stillThisAwayRun());
+                     return clear;
+                 }()
+             })
     };
 
     QString error;
