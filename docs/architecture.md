@@ -37,8 +37,9 @@ mismatch kills the child instead of parsing unknown frames):
   `event` (unsolicited presence updates), `heartbeat` (every 10 s,
   including mid-command)
 
-stdin/stdout are not the protocol: stdout is plain logs (vendored
-command output is still captured per command for replies). On any
+stdin/stdout are not the protocol: stdout is plain logs. Command handlers
+receive explicit per-command writers, so replies contain only their output
+and background diagnostics cannot race process-wide stdout/stderr swaps. On any
 transport failure the child is dropped and the error surfaces — never
 a silent fallback, never an unbounded buffer. A failed heartbeat
 (dead parent) or closed connection makes the child tear down BLE state
@@ -46,10 +47,31 @@ and exit rather than linger. Any frame gap over 30 s (no response,
 event, or heartbeat) kills the child as wedged instead of hanging the
 caller until the command deadline.
 
+Reader failures also publish `presence_stopped` while idle. The core reaps
+the old reader/process before restarting presence; failed restarts are retried
+at five-second intervals. Intentional stops cancel retries. Optional command
+arguments retain their positional slots: an empty optional value means omitted,
+and only trailing empty slots can be removed from the request.
+
 Child processes are never leaked: explicit kill-and-wait on every error
 path, plus drop-based reaping (`KillOnDrop` for the process,
 `ChildHandle::drop` for the socket path) covering early-returns and
 panics — no async runtime involved, plain threads with blocking waits.
+
+Configuration changes are persisted before runtime settings/session changes.
+Unknown newer schemas are read-only (or rejected if their shape is unsupported).
+Explicit unpaired state survives restarts; only pre-phone-key V0 configurations
+use the legacy key-file migration. Key generation validates reuse and requires
+force to replace an unreadable key. Private/public key replacements are atomic
+and synced, with enrollment reset persisted before key rotation.
+
+Pairing requires the persistent session. After transmitting the NFC request,
+the child checks enrollment of the requested key for up to 90 seconds; pairing
+this phone's key also requires a successful authenticated VCSEC handshake.
+Transmission alone is never persisted as successful pairing.
+The internal `pair` request also checks that the public key belongs to this
+phone's private key before touching BLE, so an interrupted key-file update
+cannot pair a stale public half and mark a different private key enrolled.
 
 ## Bluetooth transport
 
@@ -68,6 +90,24 @@ vehicle beacon is near (RSSI hysteresis) and answers VCSEC
 `AuthenticationRequest` messages, so handle-pull unlock and drive work
 without tapping. It never locks/unlocks proactively; walk-away locking
 stays the vehicle's own setting.
+
+Disconnected discovery is continuous and event-driven: an independent BlueZ
+signal subscription receives new devices and advertisement property updates.
+Cached RSSI snapshots seed device identity only; they cannot trigger presence
+connections. GATT links each own a fresh signal queue to avoid replaying an
+old disconnect on a replacement connection.
+
+While phone-key mode runs, QML's `Nemo.KeepAlive` requests CPU suspend
+prevention so scanning/authentication can progress with the display off.
+Display blanking remains enabled. This trades increased screen-off power use
+for prompt passive entry; it is released when phone-key mode stops or the app
+closes. Daily logs include the requested keepalive state and display status
+(`0` unknown, `1` off, `2` dimmed, `3` on), separately from Qt app lifecycle.
+
+Phone-key events are also published on the session bus through
+`org.electriceel.PhoneKey1`, including the fork's settled `presence_inside`
+notification. See [phone-key-events.md](phone-key-events.md) for the signal
+contract and integration examples.
 
 ## Source layout
 

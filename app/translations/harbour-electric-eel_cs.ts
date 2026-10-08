@@ -8,13 +8,13 @@
       <translation>Spustit</translation>
     </message>
     <message>
-      <location filename="../qml/pages/ArgumentDialog.qml" line="92" />
-      <location filename="../qml/pages/ArgumentDialog.qml" line="171" />
+      <location filename="../qml/pages/ArgumentDialog.qml" line="109" />
+      <location filename="../qml/pages/ArgumentDialog.qml" line="188" />
       <source> (optional)</source>
       <translation> (volitelné)</translation>
     </message>
     <message>
-      <location filename="../qml/pages/ArgumentDialog.qml" line="96" />
+      <location filename="../qml/pages/ArgumentDialog.qml" line="113" />
       <source>(not set)</source>
       <translation>(nenastaveno)</translation>
     </message>
@@ -22,52 +22,52 @@
   <context>
     <name>CategoryPage</name>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="43" />
+      <location filename="../qml/pages/CategoryPage.qml" line="48" />
       <source>%1 • %2°C inside</source>
       <translation>%1 • %2 °C uvnitř</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="44" />
+      <location filename="../qml/pages/CategoryPage.qml" line="49" />
       <source>Climate on</source>
       <translation>Klimatizace zapnuta</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="44" />
+      <location filename="../qml/pages/CategoryPage.qml" line="49" />
       <source>Climate off</source>
       <translation>Klimatizace vypnuta</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="50" />
+      <location filename="../qml/pages/CategoryPage.qml" line="55" />
       <source>%1% battery%2</source>
       <translation>%1 % baterie%2</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="52" />
+      <location filename="../qml/pages/CategoryPage.qml" line="57" />
       <source> • Charging</source>
       <translation> • Nabíjí se</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="57" />
+      <location filename="../qml/pages/CategoryPage.qml" line="62" />
       <source>Doors locked</source>
       <translation>Dveře zamčeny</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="57" />
+      <location filename="../qml/pages/CategoryPage.qml" line="62" />
       <source>Doors unlocked</source>
       <translation>Dveře odemčeny</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="69" />
+      <location filename="../qml/pages/CategoryPage.qml" line="74" />
       <source>OK</source>
       <translation>OK</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="69" />
+      <location filename="../qml/pages/CategoryPage.qml" line="74" />
       <source>exit code %1</source>
       <translation>návratový kód %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="167" />
+      <location filename="../qml/pages/CategoryPage.qml" line="174" />
       <source>Running %1...</source>
       <translation>Spouštím %1...</translation>
     </message>
@@ -516,72 +516,72 @@
   <context>
     <name>NavigationPage</name>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="30" />
+      <location filename="../qml/pages/NavigationPage.qml" line="35" />
       <source>Paste or type a destination first.</source>
       <translation>Nejprve vlož nebo napiš cíl.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="33" />
+      <location filename="../qml/pages/NavigationPage.qml" line="38" />
       <source>Checking...</source>
       <translation>Kontroluje se...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="40" />
+      <location filename="../qml/pages/NavigationPage.qml" line="47" />
       <source>Nothing to send.</source>
       <translation>Nic k odeslání.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="54" />
+      <location filename="../qml/pages/NavigationPage.qml" line="63" />
       <source>Cannot use this: %1</source>
       <translation>Nelze použít: %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="58" />
+      <location filename="../qml/pages/NavigationPage.qml" line="67" />
       <source>Coordinates %1, %2 — navigation will start there.</source>
       <translation>Souřadnice %1, %2 — navigace tam začne.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="61" />
+      <location filename="../qml/pages/NavigationPage.qml" line="70" />
       <source>Address "%1" — the car will look it up.</source>
       <translation>Adresa „%1“ — vůz ji vyhledá.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="67" />
+      <location filename="../qml/pages/NavigationPage.qml" line="76" />
       <source>Send failed: %1</source>
       <translation>Odeslání selhalo: %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="87" />
+      <location filename="../qml/pages/NavigationPage.qml" line="96" />
       <source>Car Navigation</source>
       <translation>Navigace vozu</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="92" />
+      <location filename="../qml/pages/NavigationPage.qml" line="101" />
       <source>Destination</source>
       <translation>Cíl</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="93" />
+      <location filename="../qml/pages/NavigationPage.qml" line="102" />
       <source>Paste address, coordinates, or map link</source>
       <translation>Vlož adresu, souřadnice nebo odkaz na mapu</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="101" />
+      <location filename="../qml/pages/NavigationPage.qml" line="110" />
       <source>Preview</source>
       <translation>Náhled</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="119" />
+      <location filename="../qml/pages/NavigationPage.qml" line="128" />
       <source>Send to Car</source>
       <translation>Odeslat do vozu</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="141" />
+      <location filename="../qml/pages/NavigationPage.qml" line="150" />
       <source>Notes</source>
       <translation>Poznámky</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="150" />
+      <location filename="../qml/pages/NavigationPage.qml" line="159" />
       <source>This uses Bluetooth, like lock/unlock — the car must be in range, no internet needed on either side. Coordinates are sent exactly; addresses and links are looked up by the car itself, so unusual spellings may resolve differently than on your phone. From Android apps: copy the address or link, then paste it above.</source>
       <translation>Používá Bluetooth jako zamykání/odemykání — vůz musí být v dosahu, internet není potřeba. Souřadnice se posílají přesně; adresy a odkazy si vůz vyhledá sám, takže neobvyklý pravopis se může vyhodnotit jinak než v telefonu. Z aplikací pro Android: zkopíruj adresu nebo odkaz a vlož výše.</translation>
     </message>
@@ -589,72 +589,72 @@
   <context>
     <name>PairingPage</name>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="24" />
+      <location filename="../qml/pages/PairingPage.qml" line="27" />
       <source>Key generated. Tap "Pair with Vehicle", then tap your NFC card on the center console when prompted on the car's screen.</source>
       <translation>Klíč vygenerován. Klepni na „Spárovat vozidlo“ a přilož NFC kartu na středovou konzoli, až si to vyžádá displej vozu.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="26" />
+      <location filename="../qml/pages/PairingPage.qml" line="29" />
       <source>Key generation failed: %1</source>
       <translation>Generování klíče selhalo: %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="31" />
+      <location filename="../qml/pages/PairingPage.qml" line="34" />
       <source>Paired.</source>
       <translation>Spárováno.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="31" />
+      <location filename="../qml/pages/PairingPage.qml" line="34" />
       <source>Pairing failed: %1</source>
       <translation>Párování selhalo: %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="61" />
+      <location filename="../qml/pages/PairingPage.qml" line="64" />
       <source>Pairing &amp; Keys</source>
       <translation>Párování a klíče</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="68" />
+      <location filename="../qml/pages/PairingPage.qml" line="71" />
       <source>Set the VIN in Settings first. Then generate a key, then pair it with the car over BLE - you'll need to be next to the vehicle and tap the NFC card on the center console to approve.</source>
       <translation>Nejprve nastav VIN v Nastavení. Pak vygeneruj klíč a spáruj ho s vozem přes BLE – stůj vedle vozidla a pro schválení přilož NFC kartu na středovou konzoli.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="80" />
+      <location filename="../qml/pages/PairingPage.qml" line="83" />
       <source>Phone key starting...</source>
       <translation>Telefonní klíč se spouští...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="108" />
+      <location filename="../qml/pages/PairingPage.qml" line="111" />
       <source>Generating...</source>
       <translation>Generuje se...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="108" />
+      <location filename="../qml/pages/PairingPage.qml" line="111" />
       <source>Generate Key</source>
       <translation>Vygenerovat klíč</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="134" />
+      <location filename="../qml/pages/PairingPage.qml" line="137" />
       <source>Waiting for NFC tap...</source>
       <translation>Čeká se na přiložení NFC...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="134" />
+      <location filename="../qml/pages/PairingPage.qml" line="137" />
       <source>Pair with Vehicle</source>
       <translation>Spárovat vozidlo</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="138" />
+      <location filename="../qml/pages/PairingPage.qml" line="141" />
       <source>Requesting pairing over BLE - approve on the car's touchscreen / NFC card now.</source>
       <translation>Párování přes BLE vyžádáno – schval na dotykové obrazovce / NFC kartě.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="158" />
+      <location filename="../qml/pages/PairingPage.qml" line="161" />
       <source>Enrolled Keys</source>
       <translation>Registrované klíče</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="162" />
+      <location filename="../qml/pages/PairingPage.qml" line="165" />
       <source>List Enrolled Keys</source>
       <translation>Vypsat registrované klíče</translation>
     </message>

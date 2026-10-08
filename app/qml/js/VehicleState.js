@@ -177,11 +177,16 @@ function mergeBodyControllerState(status, jsonText) {
             s.locked = true
         else if (lock === "VEHICLELOCKSTATE_UNLOCKED" || lock === "VEHICLELOCKSTATE_SELECTIVE_UNLOCKED")
             s.locked = false
-        var c = obj.closureStatuses || {}
-        s.doorsOpen = closureIsOpen(c.frontDriverDoor) || closureIsOpen(c.frontPassengerDoor)
-            || closureIsOpen(c.rearDriverDoor) || closureIsOpen(c.rearPassengerDoor)
-        s.trunkFrontOpen = closureIsOpen(c.frontTrunk)
-        s.trunkRearOpen = closureIsOpen(c.rearTrunk)
+        // Only touch closure fields when the payload actually carries them:
+        // a lock-only reply must preserve the previous door/trunk reading
+        // instead of clearing it to closed.
+        if (obj.closureStatuses !== undefined && obj.closureStatuses !== null) {
+            var c = obj.closureStatuses
+            s.doorsOpen = closureIsOpen(c.frontDriverDoor) || closureIsOpen(c.frontPassengerDoor)
+                || closureIsOpen(c.rearDriverDoor) || closureIsOpen(c.rearPassengerDoor)
+            s.trunkFrontOpen = closureIsOpen(c.frontTrunk)
+            s.trunkRearOpen = closureIsOpen(c.rearTrunk)
+        }
         s.updatedAt = Date.now()
     } catch (e) {
         console.log("VehicleState: body-controller-state parse failed:", e, jsonText)
@@ -265,8 +270,11 @@ function mergeChargeState(status, jsonText) {
 
 // Returns -1 if there's no reading yet, so callers can hide the "updated
 // ago" label entirely rather than showing a bogus "NaN minutes ago".
+// Future timestamps (clock skew) clamp to 0 ("just now") instead of a
+// negative age.
 function minutesAgo(timestampMs) {
     if (!timestampMs)
         return -1
-    return Math.floor((Date.now() - timestampMs) / 60000)
+    var age = Math.floor((Date.now() - timestampMs) / 60000)
+    return age < 0 ? 0 : age
 }

@@ -8,13 +8,12 @@ Source0:    %{name}-%{version}.tar.bz2
 Requires:   sailfishsilica-qt5 >= 0.10.9
 Requires:   qt5-qtcore
 Requires:   qt5-qtdeclarative
-Requires:   qt5-qtdbus
 Requires:   qt5-qtnetwork
+Requires:   libkeepalive >= 1.8.0
 BuildRequires:  pkgconfig(sailfishapp) >= 1.0.2
 BuildRequires:  pkgconfig(Qt5Core)
 BuildRequires:  pkgconfig(Qt5Qml)
 BuildRequires:  pkgconfig(Qt5Quick)
-BuildRequires:  pkgconfig(Qt5DBus)
 BuildRequires:  pkgconfig(Qt5Network)
 BuildRequires:  desktop-file-utils
 
@@ -51,89 +50,21 @@ desktop-file-install --delete-original \
 %{_sysconfdir}/sailjail/permissions/ElectricEelAutomagic.permission
 
 %changelog
-* Sun Oct 04 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.36-1
-- Show the Bluetooth-off cover icon when the adapter is not powered
-* Sun Oct 04 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.35-1
-- Hold Far for 3 minutes and skip it if Inside arrives first
-* Sun Oct 04 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.34-1
-- Drop the uncancellable 3m wait from the Automagic hotspot-off flow
-* Sun Oct 04 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.33-1
-- Toggle hotspot via ConnMan D-Bus as automagicd (shell connmanctl is denied for the user)
-* Sun Oct 04 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.32-1
-- Do not whitelist /run in the Automagic sailjail profile (that hides the compositor)
-* Sun Oct 04 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.31-1
-- Install Automagic sailjail permission under /etc so the config dir is visible
-* Sun Oct 04 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.30-1
-- Settings button to install Automagic sources, hotspot actions, and flows
-* Sun Oct 04 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.29-1
-- Treat cabin-strength Peek RSSI as live so idle-poll does not refuse Connect
-- Drop built-in hotspot and drive-app launch; emit session D-Bus signals for Automagic
-* Sun Oct 04 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.28-1
-- Treat cabin-strength Peek RSSI as live so idle-poll does not refuse Connect
-- Drop built-in hotspot and drive-app launch; emit session D-Bus signals for Automagic
-* Thu Oct 01 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.27-1
-- Gate presence_inside on 45s GATT settle + VCSEC userPresence (not cabin RSSI)
-- Idle-poll when only weak RSSI (≤ -95) remains, so discovery does not run for hours
-- Age stale Device1 recycle/forget on live RSSI signals; fix watcher leak and missed link-loss
-
-* Tue Sep 29 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.26-1
-- Drop drive-app background toggle and test-launch button
-
-* Tue Sep 29 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.25-1
-- Background drive-app launch: reclaim ElectricEel focus after start (Lipstick always raises)
-
-* Tue Sep 29 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.24-1
-- Launch drive apps via systemd D-Bus StartTransientUnit (Sailjail blocks systemd-run exec)
-
-* Tue Sep 29 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.23-1
-- Persist hotspot/drive-app UI settings under Sailjail AppData (not blocked .conf path)
-- Launch drive app via systemd --user scope (AppLaunch); test launch always foreground
-
-* Tue Sep 29 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.22-1
-- Launch chosen app when driving; test launch button in Settings
-
-* Sat Sep 26 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.21-1
-- Wi-Fi hotspot when the phone is inside the car (very strong RSSI); off after walk-away if we turned it on
-- Wake the Bluetooth-off watcher as soon as BlueZ reports the adapter powered
-* Fri Sep 25 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.20-1
-- Do not recycle discovery when the car is away; forget a frozen leftover Device1 only once
-- After a short GATT bounce, drop the -93 reconnect slack so a last-gasp Connect cannot hang
-* Fri Sep 25 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.19-1
-- Recycle dead LE discovery and drop a frozen leftover Device1 so attach does not need a Bluetooth restart
-* Sun Sep 20 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.18-1
-- Merge nappa i18n, share destination, and Unix-socket tesla-session IPC
-- Own process group so covering the phone does not SIGTERM a live GATT link
-- Wait 2s after GATT teardown before restarting LE discovery
+* Thu Oct 08 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.36-1
+- Phone-key follows upstream
+- Settings button writes Automagic triggers and hotspot flows for PhoneKeyEvent
+* Sun Sep 27 2026 Marco Napetti <marco.napetti@proton.me> - 0.2.12-1
+- Backgroud process and logging improvements
 * Sun Sep 20 2026 Marco Napetti <marco.napetti@proton.me> - 0.2.11-1
 - Share target registration: X-Share-Methods belongs in [Desktop Entry]
 - Generic map-URL parsing (no per-service list)
 - Parent/child transport over Unix socket with versioned handshake
 * Sun Sep 20 2026 Marco Napetti <marco.napetti@proton.me> - 0.2.10-1
 - Share destination to car navigation over BLE (field-53 coordinates, field-21 address)
-
-* Sun Sep 13 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.17-1
-- Connect phone-key to a live BlueZ advertisement instead of RemoveDevice
-- Quiet period, -95 RSSI floor, and negotiated MTU after GATT drop (Tesla Android)
-- Stop dashboard refresh from racing phone-key connect and wedging bluetoothd
-* Sat Aug 29 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.16-1
-- Ignore stale BlueZ disconnects so phone-key does not flap after auth
-* Sat Aug 29 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.15-1
-- Keep phone-key GATT up: do not handshake infotainment while presence is active
-* Sat Aug 29 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.14-1
-- Keep phone-key VCSEC session when dashboard state times out on a sleeping car
-- Cover actions: cycle lock/trunk/frunk/climate/charge port, then run
-* Sat Aug 29 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.13-1
-- Stop GATT connect timeouts on stale BlueZ RSSI and live discovery
-* Sat Aug 29 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.12-1
-- Fix signal-driven phone-key scanning (shared D-Bus channel and advertisement parsing)
-- Fix the Rust CI gate (formatting and pedantic clippy lints)
-* Sat Aug 29 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.11-1
-- Drive phone-key scanning from BlueZ signals to save battery
-* Wed Aug 26 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.10-1
-- Stop presence-loop D-Bus spin on cached BlueZ devices
 * Wed Aug 26 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.2.9-1
 - Stabilize phone-key GATT reconnect and VCSEC presence
-
+- Daily phone-key logs under Documents/ElectricEel
+- Cover connection status and lock/trunk/frunk actions
 * Thu Aug 22 2026 Marco Napetti <marco.napetti@proton.me> - 0.2.8-1
 - Restart session on wakeup
 * Thu Aug 22 2026 Marco Napetti <marco.napetti@proton.me> - 0.2.7-1
@@ -141,7 +72,6 @@ desktop-file-install --delete-original \
 * Thu Aug 22 2026 Marco Napetti <marco.napetti@proton.me> - 0.2.6-1
 - Ensure child process is killed with parent
 * Thu Aug 18 2026 Marco Napetti <marco.napetti@proton.me> - 0.2.5-1
-- App cover shows connection status
 - Phone as key
 * Thu Aug 18 2026 Marco Napetti <marco.napetti@proton.me> - 0.2.4-1
 - Fix sliders

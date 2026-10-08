@@ -117,7 +117,18 @@ fn civil_ord(day: &str) -> Result<i64, ()> {
     let y: i64 = parts[0].parse().map_err(|_| ())?;
     let m: i64 = parts[1].parse().map_err(|_| ())?;
     let d: i64 = parts[2].parse().map_err(|_| ())?;
-    Ok(y * 372 + m * 31 + d)
+    if !(1..=12).contains(&m) || !(1..=31).contains(&d) {
+        return Err(());
+    }
+    // Days since civil 1970-01-01 (Howard Hinnant's days_from_civil):
+    // correct across month lengths and leap years, unlike y*372+m*31+d.
+    let y_adj = if m <= 2 { y - 1 } else { y };
+    let era = y_adj.div_euclid(400);
+    let yoe = y_adj.rem_euclid(400);
+    let mp = (m + 9).rem_euclid(12);
+    let doy = (153 * mp + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    Ok(era * 146_097 + doe - 719_468)
 }
 
 #[cfg(test)]
@@ -138,5 +149,20 @@ mod tests {
         assert_eq!(day.len(), 10);
         assert_eq!(&day[4..5], "-");
         assert_eq!(&day[7..8], "-");
+    }
+
+    #[test]
+    fn test_civil_ord_counts_calendar_days() {
+        // y*372+m*31+d assumes every month has 31 days, so Feb 22 -> Mar 1
+        // 2026 (7 real calendar days) computes as 10. prune_old_logs deletes
+        // >KEEP_DAYS, so a 7-day-old log is dropped early. Use real calendar
+        // distance instead of a month*31 approximation.
+        let feb22 = civil_ord("2026-02-22").unwrap();
+        let mar01 = civil_ord("2026-03-01").unwrap();
+        assert_eq!(
+            mar01 - feb22,
+            7,
+            "Feb 22 -> Mar 1 2026 is 7 calendar days, not 10"
+        );
     }
 }

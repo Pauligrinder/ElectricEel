@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "data": [
+    {
+      "id": "electric_eel_phonekey1_log_flow",
+      "name": "ElectricEel event log",
+      "enabled": true,
+      "triggers": ["electric_eel_phonekey1_inside", "electric_eel_phonekey1_far"],
+      "steps": [
+        {
+          "id": "electric_eel_phonekey1_log_step",
+          "type": "action",
+          "action": "electric_eel_phonekey1_log",
+          "goto_alt": "end"
+        }
+      ]
+    }
+  ]
+}

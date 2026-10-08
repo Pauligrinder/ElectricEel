@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/godbus/dbus"
 )
@@ -13,59 +12,45 @@ import (
 // implements enough of the D-Bus surface (via dbusBus/dbusCaller) for the
 // transport logic to be unit-tested without a system bus: method calls are
 // dispatched by name against a small device/state model, and tests can pump
-// PropertiesChanged signals (e.g. GATT notification Values) into signals().
+// PropertiesChanged signals (e.g. GATT notification Values) to subscribers.
 type fakeBluez struct {
-	adapterID   string
-	powered     bool
-	discovering bool
+	adapterID              string
+	powered                bool
+	discovering            bool
+	stopDiscoveryPolls     int
+	rejectDiscoveryConnect bool
+	mtu                    uint16
 
-	dev               *fakeDevice
-	deviceVisible     bool // device present in GetManagedObjects (turn on after discovery)
-	deviceAppearCall  int  // 0 = ignore; when >0, include dev after this many GetManagedObjects calls
-	managedCalls      int
-	servicesResolved  bool
-	connected         bool
-	gattReady         bool
-	startedNotify     bool
-	stoppedNotify     bool
-	failLargeWrites   bool  // fail WriteValue when the chunk exceeds 20 bytes (ATT MTU 23)
+	dev                 *fakeDevice
+	deviceVisible       bool // device present in GetManagedObjects (turn on after discovery)
+	deviceAppearCall    int  // 0 = ignore; when >0, include dev after this many GetManagedObjects calls
+	managedCalls        int
+	servicesResolved    bool
+	connected           bool
+	gattReady           bool
+	startedNotify       bool
+	stoppedNotify       bool
+	failLargeWrites     bool  // fail WriteValue when the chunk exceeds 20 bytes (ATT MTU 23)
 	startDiscoveryErr   error // when set, StartDiscovery returns this error
 	rejectCancelledStop bool  // model D-Bus rejecting a StopDiscovery with an expired context
 	connectErr          error // when set, Device1.Connect returns this error
-	connectHang         time.Duration // when >0, Device1.Connect blocks this long (or until ctx ends)
 	setPoweredErr       error // when set, Properties.Set(Powered) returns this error
 	// extraAdapters are additional Adapter1 objects keyed by id ("hci1").
 	// The value is the Powered flag. Used to test powered-adapter preference.
 	extraAdapters map[string]bool
 	autoConnect   bool
 	trusted       bool
-	// removedUntilDiscovery is set by Adapter1.RemoveDevice. The next
-	// StartDiscovery makes the vehicle Device1 visible again, matching
-	// BlueZ re-creating the object from a fresh advertisement.
-	removedUntilDiscovery bool
-	// reappearAfterManaged delays that reappearance by N GetManagedObjects
-	// calls when discovery was already running, so a leftover-device check
-	// right after RemoveDevice still sees the object gone.
-	reappearAfterManaged int
-	removeDeviceErr      error // when set, Adapter1.RemoveDevice fails and keeps the Device1
-	mtu                  uint16 // GattCharacteristic1.MTU; 0 = property absent
-	holdServices         bool   // Connect leaves ServicesResolved false (timeout tests)
 
-	writes         [][]byte
-	calls          []string
-	sig            chan *dbus.Signal
-	listeners      []chan *dbus.Signal
-	matches        int
-	addMatchErrAt  int
-	removedMatches int
-	removedMatch   bool
-	removeDeviceN  int
+	writes       [][]byte
+	calls        []string
+	subscribers  []chan *dbus.Signal
+	matches      int
+	removedMatch bool
 }
 
 type fakeDevice struct {
 	path     dbus.ObjectPath
 	name     string
-	alias    string
 	rssi     int16
 	omitRSSI bool // when true, RSSI property is absent (BlueZ cache after ads stop)
 }
@@ -74,7 +59,6 @@ func newFakeBluez() *fakeBluez {
 	return &fakeBluez{
 		adapterID: "hci0",
 		powered:   true,
-		sig:       make(chan *dbus.Signal, 16),
 	}
 }
 
@@ -82,150 +66,35 @@ func (f *fakeBluez) object(dest string, path dbus.ObjectPath) dbusCaller {
 	return &fakeCaller{b: f, path: path}
 }
 
-func (f *fakeBluez) signals() <-chan *dbus.Signal { return f.sig }
+func (f *fakeBluez) subscribeSignals(ch chan *dbus.Signal) {
+	f.subscribers = append(f.subscribers, ch)
+}
 
-func (f *fakeBluez) attachSignals() (<-chan *dbus.Signal, func()) {
-	ch := make(chan *dbus.Signal, 16)
-	f.listeners = append(f.listeners, ch)
-	return ch, func() {
-		for i, existing := range f.listeners {
-			if existing == ch {
-				f.listeners = append(f.listeners[:i], f.listeners[i+1:]...)
-				return
-			}
+func (f *fakeBluez) unsubscribeSignals(ch chan *dbus.Signal) {
+	for i, subscribed := range f.subscribers {
+		if subscribed == ch {
+			f.subscribers = append(f.subscribers[:i], f.subscribers[i+1:]...)
+			return
 		}
 	}
 }
 
-func (f *fakeBluez) emit(sig *dbus.Signal) {
-	select {
-	case f.sig <- sig:
-	default:
-	}
-	for _, ch := range f.listeners {
+func (f *fakeBluez) emitSignal(sig *dbus.Signal) {
+	for _, ch := range f.subscribers {
 		ch <- sig
 	}
 }
 
-func (f *fakeBluez) addMatch(_ ...dbus.MatchOption) error {
-	f.matches++
-	if f.addMatchErrAt == f.matches {
-		return errors.New("org.freedesktop.DBus.Error.MatchRuleInvalid")
-	}
-	return nil
-}
+func (f *fakeBluez) addMatch(_ ...dbus.MatchOption) error { f.matches++; return nil }
 func (f *fakeBluez) removeMatch(_ ...dbus.MatchOption) error {
 	f.removedMatch = true
-	f.removedMatches++
 	return nil
-}
-
-// advertiseAdded simulates BlueZ materializing a newly discovered Device1.
-func (f *fakeBluez) advertiseAdded() {
-	if f.dev == nil {
-		return
-	}
-	f.deviceVisible = true
-	props := map[string]dbus.Variant{"Name": dbus.MakeVariant(f.dev.name)}
-	if f.dev.alias != "" {
-		props["Alias"] = dbus.MakeVariant(f.dev.alias)
-	}
-	if !f.dev.omitRSSI {
-		props["RSSI"] = dbus.MakeVariant(f.dev.rssi)
-	}
-	f.emit(&dbus.Signal{
-		Name: objMgrIface + ".InterfacesAdded",
-		Path: "/",
-		Body: []interface{}{
-			f.dev.path,
-			map[string]map[string]dbus.Variant{deviceIface: props},
-		},
-	})
-}
-
-// advertiseRSSI simulates the fresh Device1 RSSI update emitted for each
-// advertisement when DuplicateData is enabled.
-func (f *fakeBluez) advertiseRSSI(rssi int16) {
-	if f.dev == nil {
-		return
-	}
-	f.dev.rssi = rssi
-	f.deviceVisible = true
-	f.advertiseProps(map[string]dbus.Variant{"RSSI": dbus.MakeVariant(rssi)})
-}
-
-func (f *fakeBluez) advertiseProps(changed map[string]dbus.Variant) {
-	if f.dev == nil {
-		return
-	}
-	f.deviceVisible = true
-	f.emit(&dbus.Signal{
-		Name: propsIface + ".PropertiesChanged",
-		Path: f.dev.path,
-		Body: []interface{}{
-			deviceIface,
-			changed,
-			[]string{},
-		},
-	})
-}
-
-func (f *fakeBluez) discoveryChanged(discovering bool) {
-	f.discovering = discovering
-	f.emit(&dbus.Signal{
-		Name: propsIface + ".PropertiesChanged",
-		Path: dbus.ObjectPath("/org/bluez/" + f.adapterID),
-		Body: []interface{}{
-			adapterIface,
-			map[string]dbus.Variant{"Discovering": dbus.MakeVariant(discovering)},
-			[]string{},
-		},
-	})
-}
-
-func (f *fakeBluez) adapterPoweredChanged(id string, powered bool) {
-	if id == "" || id == f.adapterID {
-		f.powered = powered
-		id = f.adapterID
-	} else if f.extraAdapters != nil {
-		if _, ok := f.extraAdapters[id]; ok {
-			f.extraAdapters[id] = powered
-		}
-	}
-	f.emit(&dbus.Signal{
-		Name: propsIface + ".PropertiesChanged",
-		Path: dbus.ObjectPath("/org/bluez/" + id),
-		Body: []interface{}{
-			adapterIface,
-			map[string]dbus.Variant{"Powered": dbus.MakeVariant(powered)},
-			[]string{},
-		},
-	})
-}
-
-func (f *fakeBluez) adapterAdded(id string, powered bool) {
-	if f.extraAdapters == nil {
-		f.extraAdapters = map[string]bool{}
-	}
-	f.extraAdapters[id] = powered
-	f.emit(&dbus.Signal{
-		Name: objMgrIface + ".InterfacesAdded",
-		Path: "/",
-		Body: []interface{}{
-			dbus.ObjectPath("/org/bluez/" + id),
-			map[string]map[string]dbus.Variant{
-				adapterIface: {
-					"Powered": dbus.MakeVariant(powered),
-				},
-			},
-		},
-	})
 }
 
 // notify simulates an org.bluez GattCharacteristic1 PropertiesChanged signal
 // carrying a notification Value.
 func (f *fakeBluez) notify(path dbus.ObjectPath, value []byte) {
-	f.emit(&dbus.Signal{
+	f.emitSignal(&dbus.Signal{
 		Name: propsIface + ".PropertiesChanged",
 		Path: path,
 		Body: []interface{}{
@@ -261,12 +130,6 @@ func (f *fakeBluez) rxPath() dbus.ObjectPath {
 // managedObjects builds an object tree reflecting the fake's current state.
 func (f *fakeBluez) managedObjects() map[dbus.ObjectPath]map[string]map[string]dbus.Variant {
 	f.managedCalls++
-	if f.reappearAfterManaged > 0 {
-		f.reappearAfterManaged--
-	} else if f.removedUntilDiscovery && f.discovering {
-		f.deviceVisible = true
-		f.removedUntilDiscovery = false
-	}
 	m := map[dbus.ObjectPath]map[string]map[string]dbus.Variant{
 		dbus.ObjectPath("/org/bluez/" + f.adapterID): {
 			adapterIface: {
@@ -294,9 +157,6 @@ func (f *fakeBluez) managedObjects() map[dbus.ObjectPath]map[string]map[string]d
 			"ServicesResolved": dbus.MakeVariant(f.servicesResolved),
 			"Trusted":          dbus.MakeVariant(f.trusted),
 			"AutoConnect":      dbus.MakeVariant(f.autoConnect),
-		}
-		if f.dev.alias != "" {
-			props["Alias"] = dbus.MakeVariant(f.dev.alias)
 		}
 		if !f.dev.omitRSSI {
 			props["RSSI"] = dbus.MakeVariant(f.dev.rssi)
@@ -333,38 +193,9 @@ func (fc *fakeCaller) call(ctx context.Context, method string, args ...interface
 		return []interface{}{fc.b.managedObjects()}, nil
 	case adapterIface + ".SetDiscoveryFilter":
 		return nil, nil
-	case adapterIface + ".RemoveDevice":
-		fc.b.removeDeviceN++
-		if fc.b.removeDeviceErr != nil {
-			return nil, fc.b.removeDeviceErr
-		}
-		wasVisible := fc.b.deviceVisible
-		fc.b.connected = false
-		fc.b.deviceVisible = false
-		fc.b.servicesResolved = false
-		fc.b.gattReady = false
-		// Only a previously-visible Device1 comes back from the next
-		// advertisement. RemoveDevice on a missing path must not invent one.
-		if wasVisible {
-			fc.b.removedUntilDiscovery = true
-			if fc.b.dev != nil {
-				// A Device1 recreated from a fresh advertisement has RSSI.
-				fc.b.dev.omitRSSI = false
-			}
-			if fc.b.discovering {
-				// Stay hidden for the next GetManagedObjects so
-				// tryConnect's leftover check sees a successful drop.
-				fc.b.reappearAfterManaged = 1
-			}
-		}
-		return nil, nil
 	case adapterIface + ".StartDiscovery":
 		if fc.b.startDiscoveryErr != nil {
 			return nil, fc.b.startDiscoveryErr
-		}
-		if fc.b.removedUntilDiscovery {
-			fc.b.removedUntilDiscovery = false
-			fc.b.deviceVisible = true
 		}
 		if fc.b.discovering {
 			return nil, errors.New("org.bluez.Error.InProgress")
@@ -375,17 +206,13 @@ func (fc *fakeCaller) call(ctx context.Context, method string, args ...interface
 		if fc.b.rejectCancelledStop && ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		fc.b.discovering = false
+		if fc.b.stopDiscoveryPolls == 0 {
+			fc.b.discovering = false
+		}
 		return nil, nil
 	case deviceIface + ".Connect":
-		if fc.b.connectHang > 0 {
-			timer := time.NewTimer(fc.b.connectHang)
-			defer timer.Stop()
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			case <-timer.C:
-			}
+		if fc.b.rejectDiscoveryConnect && fc.b.discovering {
+			return nil, errors.New("scanner has not stopped")
 		}
 		if fc.b.connectErr != nil {
 			return nil, fc.b.connectErr
@@ -394,13 +221,6 @@ func (fc *fakeCaller) call(ctx context.Context, method string, args ...interface
 			return nil, errors.New("org.bluez.Error.Failed: no such device")
 		}
 		fc.b.connected = true
-		// A fresh Device1 after RemoveDevice resolves GATT only once
-		// Connect succeeds - mirror that so tests that forget+rescan still
-		// find the Tesla service. holdServices models a hang before that.
-		if !fc.b.holdServices {
-			fc.b.servicesResolved = true
-			fc.b.gattReady = true
-		}
 		return nil, nil
 	case deviceIface + ".Disconnect":
 		fc.b.connected = false
@@ -438,27 +258,33 @@ func (fc *fakeCaller) getProp(ctx context.Context, iface, prop string) (dbus.Var
 	case "Powered":
 		return dbus.MakeVariant(fc.b.powered), nil
 	case "Discovering":
+		if fc.b.stopDiscoveryPolls > 0 {
+			fc.b.stopDiscoveryPolls--
+			if fc.b.stopDiscoveryPolls == 0 {
+				fc.b.discovering = false
+			}
+		}
 		return dbus.MakeVariant(fc.b.discovering), nil
+	case "MTU":
+		if fc.b.mtu > 0 {
+			return dbus.MakeVariant(fc.b.mtu), nil
+		}
+		return dbus.Variant{}, errors.New("MTU unavailable")
 	case "Power":
 		return dbus.Variant{}, fmt.Errorf("org.freedesktop.DBus.Error.InvalidArgs: No such property '%s'", prop)
 	case "ServicesResolved":
 		return dbus.MakeVariant(fc.b.servicesResolved), nil
 	case "Connected":
 		return dbus.MakeVariant(fc.b.connected), nil
+	case "RSSI":
+		if fc.b.dev != nil && !fc.b.dev.omitRSSI {
+			return dbus.MakeVariant(fc.b.dev.rssi), nil
+		}
+		return dbus.Variant{}, errors.New("RSSI unavailable")
 	case "Trusted":
 		return dbus.MakeVariant(fc.b.trusted), nil
 	case "AutoConnect":
 		return dbus.MakeVariant(fc.b.autoConnect), nil
-	case "RSSI":
-		if fc.b.dev == nil || fc.b.dev.omitRSSI {
-			return dbus.Variant{}, fmt.Errorf("org.freedesktop.DBus.Error.InvalidArgs: No such property 'RSSI'")
-		}
-		return dbus.MakeVariant(fc.b.dev.rssi), nil
-	case "MTU":
-		if fc.b.mtu == 0 {
-			return dbus.Variant{}, fmt.Errorf("org.freedesktop.DBus.Error.InvalidArgs: No such property 'MTU'")
-		}
-		return dbus.MakeVariant(fc.b.mtu), nil
 	}
 	return dbus.Variant{}, fmt.Errorf("unexpected property %q", prop)
 }

@@ -1,6 +1,5 @@
 #include "teslaclient.h"
 #include "automagicsetup.h"
-#include "phonekeybus.h"
 
 #include <QDebug>
 #include <QDateTime>
@@ -20,39 +19,6 @@ extern "C" {
 
 namespace {
 
-void keylog(const char *tag, const QString &message)
-{
-    const QByteArray utf8 = message.toUtf8();
-    core_keylog(tag, utf8.constData());
-}
-
-const char *appStateName(Qt::ApplicationState state)
-{
-    switch (state) {
-    case Qt::ApplicationSuspended:
-        return "Suspended";
-    case Qt::ApplicationHidden:
-        return "Hidden";
-    case Qt::ApplicationInactive:
-        return "Inactive";
-    case Qt::ApplicationActive:
-        return "Active";
-    default:
-        return "Unknown";
-    }
-}
-
-// Same phrases tesla-session's adapterPowerDenied uses. The cover badge
-// treats this as bluetooth-off, not a generic red "error" (which shares
-// the scanning wifi-off glyph and so looks unchanged).
-bool adapterOffStatus(const QString &errorMessage)
-{
-    return errorMessage.contains(QLatin1String("adapter not powered"))
-            || errorMessage.contains(QLatin1String("power on adapter"))
-            || errorMessage.contains(QLatin1String("NotPowered"))
-            || errorMessage.contains(QLatin1String("RFKILL"));
-}
-
 // Binaries the core spawns live under the app's data dir in the RPM. The Go
 // tesla-session is bundled there by the spec; tesla-control/tesla-keygen were
 // the pre-in-process one-shot fallbacks and no longer exist in this design.
@@ -65,7 +31,7 @@ const char *kBleBackend = "bluez";
 // Record Qt's app lifecycle in the same file as the Go phone-key diagnostics.
 // A display turning off need not emit ApplicationSuspended; the absence of a
 // transition is useful evidence too when compared with the presence loop.
-void logApplicationState(Qt::ApplicationState state)
+void logUIEvent(const QString &event)
 {
     const QString logDir = QString::fromUtf8(qgetenv("ELECTRIC_EEL_LOG_DIR"));
     if (logDir.isEmpty())
@@ -78,6 +44,12 @@ void logApplicationState(Qt::ApplicationState state)
         return;
     if (newFile)
         file.write("# ElectricEel phone-key log\n# tags: session presence connect auth link bluez core ui\n");
+    file.write(QDateTime::currentDateTime().toString(QStringLiteral("HH:mm:ss.zzz")).toUtf8()
+               + "  ui          " + event.toUtf8() + "\n");
+}
+
+void logApplicationState(Qt::ApplicationState state)
+{
     const char *name = "unknown";
     switch (state) {
     case Qt::ApplicationActive: name = "active"; break;
@@ -85,8 +57,7 @@ void logApplicationState(Qt::ApplicationState state)
     case Qt::ApplicationHidden: name = "hidden"; break;
     case Qt::ApplicationSuspended: name = "suspended"; break;
     }
-    file.write(QDateTime::currentDateTime().toString(QStringLiteral("HH:mm:ss.zzz")).toUtf8()
-               + "  ui          applicationState=" + name + "\n");
+    logUIEvent(QStringLiteral("applicationState=") + QString::fromLatin1(name));
 }
 
 // Converts a Rust-owned C string from an output slot into a QString and frees
@@ -136,10 +107,7 @@ void CoreWorker::initialize(const QString &binDir, const QString &stateDir, cons
                          : message);
         return;
     }
-    bool active = false;
-    char *phoneKeyError = nullptr;
-    core_start_phone_key(m_core, &active, &phoneKeyError);
-    emit phoneKeyStarted(active, takeCString(phoneKeyError));
+    refreshPhoneKeyState();
 
     m_phoneKeyTimer = new QTimer(this);
     m_phoneKeyTimer->setInterval(1000);
@@ -160,10 +128,19 @@ void CoreWorker::pollPhoneKeyEvents()
         char *error = nullptr;
         const CoreError rc = core_poll_phone_key_event(
             m_core, &hasEvent, &kind, &vin, &time, &error);
-        if (rc != CoreError::Ok || !hasEvent)
+        if (rc != CoreError::Ok) {
+            // BadArg here means a dead core handle; surfacing it keeps a wedged
+            // poll loop visible in the journal instead of silently idle.
+            qWarning() << "CoreWorker::pollPhoneKeyEvents: core_poll failed" << rc;
             return;
+        }
+        if (!hasEvent)
+            return;
+        const QString eventTime = takeCString(time);
         emit phoneKeyEvent(takeCString(kind), takeCString(vin),
-                           takeCString(time), takeCString(error));
+                           eventTime.isEmpty()
+                           ? QDateTime::currentDateTimeUtc().toString(QStringLiteral("yyyy-MM-dd'T'HH:mm:ss.zzz'Z'"))
+                           : eventTime, takeCString(error));
     }
 }
 
@@ -182,11 +159,18 @@ void CoreWorker::handleResume()
     // restarted presence, but we query the resulting state so the UI's
     // phoneKeyStatus property updates immediately instead of waiting for
     // the next 1s poll.
+    refreshPhoneKeyState();
+}
+
+void CoreWorker::refreshPhoneKeyState()
+{
     bool active = false;
-    char *err = nullptr;
-    const CoreError src = core_start_phone_key(m_core, &active, &err);
-    Q_UNUSED(src);
-    emit phoneKeyStarted(active, takeCString(err));
+    char *error = nullptr;
+    const CoreError rc = core_start_phone_key(m_core, &active, &error);
+    QString message = takeCString(error);
+    if (rc != CoreError::Ok && message.isEmpty())
+        message = QStringLiteral("core_start_phone_key failed (ABI error %1)").arg(rc);
+    emit phoneKeyStarted(active, message);
 }
 
 void CoreWorker::shutdown()
@@ -270,15 +254,9 @@ void CoreWorker::generateKey(bool force)
         return;
     }
     emit keyGenerated(ok, takeCString(pem), takeCString(errorMessage));
-    if (ok) {
-        // Reuse of an existing enrolled key leaves vin_state paired, so
-        // presence can keep running. A newly generated key is unpaired
-        // until NFC enrollment; start_phone_key then returns the reason.
-        bool active = false;
-        char *startError = nullptr;
-        core_start_phone_key(m_core, &active, &startError);
-        emit phoneKeyStarted(active, takeCString(startError));
-    }
+    // Reuse preserves enrollment; a new or failed rotated key may be
+    // unpaired. Refresh either outcome rather than retaining stale UI state.
+    refreshPhoneKeyState();
 }
 
 void CoreWorker::pair()
@@ -299,12 +277,9 @@ void CoreWorker::pair()
         return;
     }
     emit paired(ok, takeCString(out), takeCString(errorMessage));
-    if (ok) {
-        bool active = false;
-        char *startError = nullptr;
-        core_start_phone_key(m_core, &active, &startError);
-        emit phoneKeyStarted(active, takeCString(startError));
-    }
+    // Pairing stops presence first. Refresh even on failure, restarting an
+    // already enrolled key or reporting the unpaired/inactive state.
+    refreshPhoneKeyState();
 }
 
 void CoreWorker::setConfig(const QString &vin, const QString &model, const QString &keyName,
@@ -330,12 +305,8 @@ void CoreWorker::setConfig(const QString &vin, const QString &model, const QStri
         return;
     }
     emit configSaved(ok, takeCString(errorMessage));
-    if (ok) {
-        bool active = false;
-        char *startError = nullptr;
-        core_start_phone_key(m_core, &active, &startError);
-        emit phoneKeyStarted(active, takeCString(startError));
-    }
+    if (ok)
+        refreshPhoneKeyState();
 }
 
 void CoreWorker::refreshConfig()
@@ -420,7 +391,8 @@ TeslaClient::TeslaClient(QObject *parent)
     const QString logDir = documents.isEmpty()
             ? QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + QStringLiteral("/logs")
             : documents + QStringLiteral("/ElectricEel");
-    QDir().mkpath(logDir);
+    if (!QDir().mkpath(logDir))
+        qWarning() << "TeslaClient: could not create phone-key log dir" << logDir;
     qputenv("ELECTRIC_EEL_LOG_DIR", logDir.toUtf8());
     qDebug() << "TeslaClient: phone-key logs ->" << logDir;
     logApplicationState(QGuiApplication::applicationState());
@@ -462,7 +434,8 @@ TeslaClient::TeslaClient(QObject *parent)
     // writes config.json + the keypem there). Create it before core_new so
     // the first SetConfig has somewhere to write.
     const QString stateDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
-    QDir().mkpath(stateDir);
+    if (!QDir().mkpath(stateDir))
+        qWarning() << "TeslaClient: could not create state dir" << stateDir;
 
     QMetaObject::invokeMethod(m_worker, "initialize", Qt::QueuedConnection,
                               Q_ARG(QString, QString::fromLatin1(kBinDir)),
@@ -470,13 +443,10 @@ TeslaClient::TeslaClient(QObject *parent)
                               Q_ARG(QString, QString::fromLatin1(kSessionBin)));
 
     m_helperVersion = QString::fromUtf8(core_version());
-
-    m_phoneKeyBus = new PhoneKeyBus(this);
 }
 
 TeslaClient::~TeslaClient()
 {
-    keylog("core", QStringLiteral("ui shutting down worker"));
     // Stop the worker thread before the core handle goes away. wait() returns
     // once no queued slot is running; the worker is then idle and safe to
     // delete from this thread (no deleteLater, which would need its own loop).
@@ -527,6 +497,7 @@ void TeslaClient::onInitialized(bool ok, const QString &errorMessage)
 
 void TeslaClient::onPhoneKeyStarted(bool active, const QString &errorMessage)
 {
+    setPhoneKeyActive(active);
     const QString status = active
             ? QStringLiteral("Phone key scanning")
             : (errorMessage.isEmpty()
@@ -541,8 +512,14 @@ void TeslaClient::onPhoneKeyStarted(bool active, const QString &errorMessage)
 void TeslaClient::onPhoneKeyEvent(const QString &kind, const QString &vin,
                                   const QString &time, const QString &errorMessage)
 {
-    Q_UNUSED(vin)
-    Q_UNUSED(time)
+    // Integrations need every event, including repeated authorization and
+    // events that do not change the dashboard's status text.
+    emit phoneKeyEvent(kind, vin, time, errorMessage);
+    if (kind == QStringLiteral("presence_stopped"))
+        setPhoneKeyActive(false);
+    else if (kind == QStringLiteral("presence_restarted")
+             || kind == QStringLiteral("presence_near"))
+        setPhoneKeyActive(true);
     QString status;
     if (kind == QStringLiteral("presence_near"))
         status = QStringLiteral("Phone key connected");
@@ -550,26 +527,36 @@ void TeslaClient::onPhoneKeyEvent(const QString &kind, const QString &vin,
              || kind == QStringLiteral("presence_restarted")
              || kind == QStringLiteral("presence_disconnected"))
         status = QStringLiteral("Phone key scanning");
-    else if (kind == QStringLiteral("presence_auth_ok")
-             || kind == QStringLiteral("presence_handle_pull"))
+    else if (kind == QStringLiteral("presence_auth_ok"))
         status = QStringLiteral("Phone key authorized");
     else if (kind == QStringLiteral("presence_stopped"))
-        status = QStringLiteral("Phone key stopped");
+        status = errorMessage.isEmpty()
+                 ? QStringLiteral("Phone key stopped")
+                 : QStringLiteral("Phone key stopped: %1").arg(errorMessage);
     else if (kind == QStringLiteral("presence_error")
-             || kind == QStringLiteral("presence_auth_failed")) {
-        if (adapterOffStatus(errorMessage))
-            status = QStringLiteral("Phone key Bluetooth off");
-        else
-            status = errorMessage.isEmpty()
-                     ? QStringLiteral("Phone key error")
-                     : QStringLiteral("Phone key error: %1").arg(errorMessage);
-    }
-    if (m_phoneKeyBus)
-        m_phoneKeyBus->publish(kind);
-    if (status.isEmpty() || m_phoneKeyStatus == status)
+             || kind == QStringLiteral("presence_auth_failed"))
+        status = errorMessage.isEmpty()
+                 ? QStringLiteral("Phone key error")
+                 : QStringLiteral("Phone key error: %1").arg(errorMessage);
+    else
+        return;
+    if (m_phoneKeyStatus == status)
         return;
     m_phoneKeyStatus = status;
     emit phoneKeyStatusChanged();
+}
+
+void TeslaClient::setPhoneKeyActive(bool active)
+{
+    if (m_phoneKeyActive == active)
+        return;
+    m_phoneKeyActive = active;
+    emit phoneKeyActiveChanged();
+}
+
+void TeslaClient::logPowerState(const QString &state)
+{
+    logUIEvent(state);
 }
 
 void TeslaClient::onApplicationStateChanged(Qt::ApplicationState state)
@@ -580,7 +567,6 @@ void TeslaClient::onApplicationStateChanged(Qt::ApplicationState state)
     // background where phone-key must stay alive - those must NOT recycle
     // the session. Use a latched flag so Suspended->Hidden->Active still
     // triggers after a wake that passes through Hidden.
-    keylog("core", QStringLiteral("app state %1").arg(QLatin1String(appStateName(state))));
     if (state == Qt::ApplicationSuspended) {
         m_suspended = true;
         qDebug() << "TeslaClient: system suspended, will recycle BLE session on resume";
@@ -658,17 +644,17 @@ void TeslaClient::refreshHelperAvailable()
     emit helperAvailableChanged();
 }
 
+void TeslaClient::refreshHelperVersion()
+{
+    // core_version() is static, but re-emit so callers' refresh flow keeps
+    // working (the property may have changed after a re-init in theory).
+    emit helperVersionChanged();
+}
+
 void TeslaClient::installAutomagicFlows()
 {
     AutomagicSetup setup;
     QString message;
     const bool ok = setup.install(&message);
     emit automagicSetupFinished(ok, message);
-}
-
-void TeslaClient::refreshHelperVersion()
-{
-    // core_version() is static, but re-emit so callers' refresh flow keeps
-    // working (the property may have changed after a re-init in theory).
-    emit helperVersionChanged();
 }

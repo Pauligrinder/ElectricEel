@@ -14,8 +14,36 @@ import (
 
 	"electric-eel-session/bluez"
 	"github.com/teslamotors/vehicle-command/pkg/protocol"
-	"github.com/teslamotors/vehicle-command/pkg/protocol/protobuf/vcsec"
 )
+
+func TestCachedBeaconCannotSpinPresenceLoop(t *testing.T) {
+	// A cached weak RSSI makes Watcher.Wait return immediately; the outer
+	// loop must still yield between full BlueZ object-tree reads.
+	started := time.Now()
+	if !pauseAfterBeacon(context.Background(), 35*time.Millisecond, &bluez.ScanResult{RSSI: -98, HasRSSI: true}, nil) {
+		t.Fatal("unexpected cancellation")
+	}
+	if elapsed := time.Since(started); elapsed < 30*time.Millisecond {
+		t.Fatalf("cached beacon yielded after %s; expected polling interval", elapsed)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if pauseAfterBeacon(ctx, time.Hour, &bluez.ScanResult{}, nil) {
+		t.Fatal("cancelled presence loop must not wait for its next tick")
+	}
+}
+
+func TestNearRSSIUpdateInterruptsCachedBeaconDelayWithoutSpinning(t *testing.T) {
+	updates := make(chan struct{}, 1)
+	updates <- struct{}{}
+	started := time.Now()
+	if !pauseAfterBeacon(context.Background(), 2*time.Second, &bluez.ScanResult{RSSI: -98, HasRSSI: true}, updates) {
+		t.Fatal("near update should wake the loop")
+	}
+	if elapsed := time.Since(started); elapsed < 450*time.Millisecond || elapsed > time.Second {
+		t.Fatalf("near update wake after %s; want fast but bounded polling", elapsed)
+	}
+}
 
 func TestManualStatusCannotBlockPresenceOnCachedOrWeakBeacon(t *testing.T) {
 	s := &session{
@@ -24,31 +52,16 @@ func TestManualStatusCannotBlockPresenceOnCachedOrWeakBeacon(t *testing.T) {
 		presenceCfg:    defaultPresenceConfig(),
 		keyFile:        filepath.Join(t.TempDir(), "missing-key.pem"),
 	}
-	// Dashboard status commands defer to presence before any GATT connect.
 	for _, beacon := range []*bluez.ScanResult{nil, {RSSI: -98, HasRSSI: true}, {RSSI: -50}} {
 		s.lastBeacon = beacon
 		s.lastBeaconAt = time.Now()
 		started := time.Now()
 		response := s.dispatch(request{Cmd: "body-controller-state"})
-		if response.OK || !strings.Contains(response.Stderr, "phone key is still connecting") {
+		if response.OK || !strings.Contains(response.Stderr, "vehicle not nearby") {
 			t.Fatalf("cached beacon %+v: unexpected response %+v", beacon, response)
 		}
 		if time.Since(started) > time.Second {
 			t.Fatal("distant dashboard request blocked phone-key presence")
-		}
-	}
-	// Pairing bypasses the deferral and must still refuse a weak/stale beacon
-	// instead of burning the connect deadline on a leftover Device1.
-	for _, beacon := range []*bluez.ScanResult{nil, {RSSI: -98, HasRSSI: true}, {RSSI: -50}} {
-		s.lastBeacon = beacon
-		s.lastBeaconAt = time.Now()
-		started := time.Now()
-		response := s.dispatch(request{Cmd: "add-key-request"})
-		if response.OK || !strings.Contains(response.Stderr, "vehicle not nearby") {
-			t.Fatalf("pairing with cached beacon %+v: unexpected response %+v", beacon, response)
-		}
-		if time.Since(started) > time.Second {
-			t.Fatal("distant pairing request blocked phone-key presence")
 		}
 	}
 	strong := &bluez.ScanResult{RSSI: -50, HasRSSI: true}
@@ -94,9 +107,9 @@ func TestExecuteReadinessChecks(t *testing.T) {
 func TestCaptureOutputIsolatesAndRestores(t *testing.T) {
 	origOut, origErr := os.Stdout, os.Stderr
 
-	stdout, stderr := captureOutput(func() {
-		fmt.Println("hello stdout")
-		fmt.Fprintln(os.Stderr, "hello stderr")
+	stdout, stderr := captureOutput(context.Background(), func(ctx context.Context) {
+		fmt.Fprintln(commandOutput(ctx).stdout, "hello stdout")
+		writeErr(ctx, "hello stderr")
 	})
 
 	if !strings.Contains(stdout, "hello stdout") {
@@ -112,7 +125,9 @@ func TestCaptureOutputIsolatesAndRestores(t *testing.T) {
 	// A second call must not see leftover state from the first (guards
 	// against the pipe-closing/goroutine-draining logic leaking a stale
 	// reader across calls).
-	stdout2, _ := captureOutput(func() { fmt.Println("second call") })
+	stdout2, _ := captureOutput(context.Background(), func(ctx context.Context) {
+		fmt.Fprintln(commandOutput(ctx).stdout, "second call")
+	})
 	if strings.Contains(stdout2, "hello stdout") {
 		t.Errorf("second capture leaked first call's output: %q", stdout2)
 	}
@@ -156,45 +171,6 @@ func TestSessionDomainsScopesBodyControllerState(t *testing.T) {
 // StartSession succeeding (it sends an unauthenticated, self-identifying
 // message directly), so it must skip StartSession rather than request a
 // narrower one.
-func TestOnlyVCSEC(t *testing.T) {
-	if !onlyVCSEC([]protocol.Domain{protocol.DomainVCSEC}) {
-		t.Fatal("VCSEC-only slice must be onlyVCSEC")
-	}
-	if onlyVCSEC([]protocol.Domain{protocol.DomainInfotainment}) {
-		t.Fatal("infotainment must not be onlyVCSEC")
-	}
-	if onlyVCSEC(nil) {
-		t.Fatal("nil (all domains) must not be onlyVCSEC")
-	}
-}
-
-func TestPresenceKeepsSessionWhenCommandNeedsInfotainment(t *testing.T) {
-	// A live presence session must survive a failed infotainment handshake
-	// (sleeping car). Tearing down is what dropped the DRIVE auth request.
-	if !keepPresenceSessionOnHandshakeError(true, "state") {
-		t.Fatal("presence + state must keep the VCSEC session")
-	}
-	if keepPresenceSessionOnHandshakeError(true, "") {
-		t.Fatal("presence's own VCSEC handshake failure must still teardown")
-	}
-	if keepPresenceSessionOnHandshakeError(false, "state") {
-		t.Fatal("without presence, a failed state handshake still tears down")
-	}
-}
-
-func TestPresenceOmitsAdditionalHandshake(t *testing.T) {
-	if got := additionalHandshakeDomains(true, "state"); got != nil {
-		t.Fatalf("presence must not handshake extra domains for state, got %v", got)
-	}
-	if got := additionalHandshakeDomains(true, "body-controller-state"); got != nil {
-		t.Fatalf("presence must not re-handshake VCSEC for body-controller-state, got %v", got)
-	}
-	want := []protocol.Domain{protocol.DomainInfotainment}
-	if got := additionalHandshakeDomains(false, "state"); !reflect.DeepEqual(got, want) {
-		t.Fatalf("without presence, state still handshakes infotainment, got %v", got)
-	}
-}
-
 func TestCommandsWithoutSessionSkipsStartSession(t *testing.T) {
 	if !commandsWithoutSession["add-key-request"] {
 		t.Error(`commandsWithoutSession["add-key-request"] = false, want true`)
@@ -221,51 +197,6 @@ func TestEnsureConnectedMissingKeyFile(t *testing.T) {
 	}
 	if s.car != nil {
 		t.Error("session.car should remain nil after a failed connect")
-	}
-}
-
-func TestDispatchDefersToPresenceWhenDisconnected(t *testing.T) {
-	s := &session{
-		vin:            "5YJ3E1EA0PF000000",
-		keyFile:        "/nonexistent/path/private_key.pem",
-		bleBackend:     "bluez",
-		connectTimeout: 20 * time.Second,
-	}
-	_, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	s.presenceCancel = cancel
-
-	start := time.Now()
-	resp := s.dispatch(request{ID: "t1", Cmd: "body-controller-state"})
-	if elapsed := time.Since(start); elapsed > 200*time.Millisecond {
-		t.Fatalf("deferred connect took %v, want fail-fast (must not start a 20s GATT connect)", elapsed)
-	}
-	if resp.OK {
-		t.Fatal("expected dashboard command to defer while presence has no session")
-	}
-	if !strings.Contains(resp.Stderr, "phone key is still connecting") {
-		t.Fatalf("stderr = %q, want phone-key deferral", resp.Stderr)
-	}
-}
-
-func TestDispatchPresenceAllowsAddKeyWithoutSession(t *testing.T) {
-	s := &session{
-		vin:            "5YJ3E1EA0PF000000",
-		keyFile:        "/nonexistent/path/private_key.pem",
-		bleBackend:     "bluez",
-		connectTimeout: 500 * time.Millisecond,
-		commandTimeout: 500 * time.Millisecond,
-	}
-	_, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	s.presenceCancel = cancel
-
-	resp := s.dispatch(request{ID: "t1", Cmd: "add-key-request"})
-	if resp.OK {
-		t.Fatal("expected add-key-request to attempt its own connect")
-	}
-	if strings.Contains(resp.Stderr, "phone key is still connecting") {
-		t.Fatal("pairing must not be deferred to presence")
 	}
 }
 
@@ -507,32 +438,6 @@ func TestPresenceStepLiveGATTHoldsNearWithoutAdvertisement(t *testing.T) {
 // TestPresenceLiveNearRejectsWeakAndCachedBeacons is the regression for
 // connecting at RSSI -97..-100 (and to leftover Device1 cache) after a GATT
 // drop: those attempts hang bluetoothd with deadline exceeded / abort-by-local.
-func TestReadyForInside(t *testing.T) {
-	now := time.Now()
-	started := now.Add(-insideSettleDuration)
-	if !readyForInside(started, now, true) {
-		t.Fatal("settled session with user present must count as inside")
-	}
-	if readyForInside(started, now, false) {
-		t.Fatal("settled session without user present must not count as inside")
-	}
-	if readyForInside(now.Add(-insideSettleDuration+time.Second), now, true) {
-		t.Fatal("must wait the full settle duration even when user is present")
-	}
-	if readyForInside(time.Time{}, now, true) {
-		t.Fatal("no GATT session must not count as inside")
-	}
-	if !userPresent(vcsec.UserPresence_E_VEHICLE_USER_PRESENCE_PRESENT) {
-		t.Fatal("PRESENT must count as userPresent")
-	}
-	if userPresent(vcsec.UserPresence_E_VEHICLE_USER_PRESENCE_NOT_PRESENT) {
-		t.Fatal("NOT_PRESENT must not count as userPresent")
-	}
-	if userPresent(vcsec.UserPresence_E_VEHICLE_USER_PRESENCE_UNKNOWN) {
-		t.Fatal("UNKNOWN must not count as userPresent")
-	}
-}
-
 func TestPresenceLiveNearRejectsWeakAndCachedBeacons(t *testing.T) {
 	if !presenceLiveNear(true, -90, -90) {
 		t.Fatal("RSSI at the near threshold must be a connect signal")
@@ -543,282 +448,8 @@ func TestPresenceLiveNearRejectsWeakAndCachedBeacons(t *testing.T) {
 	if presenceLiveNear(true, -97, -90) {
 		t.Fatal("weak live RSSI must not start GATT")
 	}
-
-	if presenceLiveNear(true, teslaMinConnectRSSI, -100) {
-		t.Fatal("Tesla Android skips RSSI <= -95 even if nearRSSI is weaker")
-	}
-
 	if presenceLiveNear(false, 0, -90) {
 		t.Fatal("cached Device1 without RSSI must not start GATT")
-	}
-	if presenceLiveNear(true, -89, -85) {
-		t.Fatal("RSSI below the presence floor must not start GATT")
-	}
-}
-
-func TestPresenceConnectOKDropHold(t *testing.T) {
-	const near int16 = -90
-	if !presenceConnectOK(true, -89, near, false, false) {
-		t.Fatal("first attach at -89 must connect when dropHold is off")
-	}
-	if presenceConnectOK(true, -89, near, true, true) {
-		t.Fatal("post-drop -89 must not connect (grocery-trip hang)")
-	}
-	if !presenceConnectOK(true, -80, near, true, true) {
-		t.Fatal("post-drop -80 (at the car) must reconnect")
-	}
-	if !presenceConnectOK(true, -74, near, true, true) {
-		t.Fatal("post-drop -74 must reconnect")
-	}
-	if presenceConnectOK(false, -74, near, true, true) {
-		t.Fatal("cached Device1 must not connect during drop hold")
-	}
-	if dropHoldFloor(near) != -80 {
-		t.Fatalf("dropHoldFloor(%d) = %d, want -80", near, dropHoldFloor(near))
-	}
-	if afterSessionFloor(near) != -93 {
-		t.Fatalf("afterSessionFloor(%d) = %d, want -93", near, afterSessionFloor(near))
-	}
-	if !presenceConnectOK(true, -91, near, false, true) {
-		t.Fatal("after a session, -91 at a stop must reconnect")
-	}
-	if presenceConnectOK(true, -91, near, false, false) {
-		t.Fatal("first attach must still require nearRSSI")
-	}
-}
-
-func TestShouldRecycleDiscovery(t *testing.T) {
-	now := time.Now()
-	const leftover = int16(-94)
-	if shouldRecycleDiscovery(false, leftover, 2*time.Minute, time.Time{}, now, 0) {
-		t.Fatal("car away (no leftover) must not StopDiscovery")
-	}
-	if shouldRecycleDiscovery(true, leftover, 19*time.Second, time.Time{}, now, 0) {
-		t.Fatal("must not recycle before 20s without a live RSSI signal")
-	}
-	if !shouldRecycleDiscovery(true, leftover, 20*time.Second, time.Time{}, now, 0) {
-		t.Fatal("first recycle at 20s for a frozen leftover")
-	}
-	if shouldRecycleDiscovery(true, leftover, 40*time.Second, now.Add(-20*time.Second), now, 1) {
-		t.Fatal("second recycle must wait 40s, not 20s")
-	}
-	if !shouldRecycleDiscovery(true, leftover, 60*time.Second, now.Add(-40*time.Second), now, 1) {
-		t.Fatal("second recycle after 40s")
-	}
-	if shouldRecycleDiscovery(true, -43, 3*time.Minute, time.Time{}, now, 0) {
-		t.Fatal("cabin-strength Peek RSSI must not recycle (2026-10-04 -43)")
-	}
-	if discoveryRecycleWait(0) != 20*time.Second || discoveryRecycleWait(1) != 40*time.Second {
-		t.Fatalf("recycle wait 0=%s 1=%s", discoveryRecycleWait(0), discoveryRecycleWait(1))
-	}
-	if discoveryRecycleWait(8) != discoveryRecycleMax {
-		t.Fatalf("recycle wait cap %s, want %s", discoveryRecycleWait(8), discoveryRecycleMax)
-	}
-}
-
-func TestShouldForgetCached(t *testing.T) {
-	const leftover = int16(-94)
-	if shouldForgetCached(false, leftover, false, time.Minute) {
-		t.Fatal("no leftover Device1 must not be forgotten")
-	}
-	if shouldForgetCached(true, leftover, false, 20*time.Second) {
-		t.Fatal("must not RemoveDevice at the first recycle (sleeping-car RSSI gap)")
-	}
-	if !shouldForgetCached(true, leftover, false, 40*time.Second) {
-		t.Fatal("frozen leftover after 40s without live RSSI signal must be forgotten once")
-	}
-	if shouldForgetCached(true, leftover, true, time.Minute) {
-		t.Fatal("must not ForgetCached again in the same silent stretch")
-	}
-	if shouldForgetCached(true, -43, false, time.Minute) {
-		t.Fatal("cabin-strength Peek RSSI must not be forgotten (2026-10-04 -43)")
-	}
-}
-
-func TestRssiSignalAgeFallsBackToWaitSilence(t *testing.T) {
-	if got := rssiSignalAge(-1, 15*time.Second); got != 15*time.Second {
-		t.Fatalf("no signal yet: got %s, want wait silence", got)
-	}
-	if got := rssiSignalAge(25*time.Second, 5*time.Second); got != 25*time.Second {
-		t.Fatalf("live signal age wins: got %s", got)
-	}
-}
-
-func TestLeftoverFrozenNeedsStaleSignalNotJustCachedRSSI(t *testing.T) {
-	const leftover = int16(-94)
-	if leftoverFrozen(true, leftover, 5*time.Second, discoveryRecycleAfter) {
-		t.Fatal("fresh advert signal must not look frozen")
-	}
-	if !leftoverFrozen(true, leftover, discoveryRecycleAfter, discoveryRecycleAfter) {
-		t.Fatal("cached RSSI with no recent signal is frozen")
-	}
-	if leftoverFrozen(false, leftover, time.Minute, discoveryRecycleAfter) {
-		t.Fatal("empty adapter is not a frozen leftover")
-	}
-	if leftoverFrozen(true, -43, 3*time.Minute, discoveryRecycleAfter) {
-		t.Fatal("cabin-strength Peek RSSI is not a frozen leftover")
-	}
-}
-
-func TestPeekIsCabinLive(t *testing.T) {
-	if !peekIsCabinLive(true, -43) || !peekIsCabinLive(true, cabinLiveRSSI) {
-		t.Fatal("at-the-car Peek RSSI must count as live")
-	}
-	if peekIsCabinLive(true, -81) || peekIsCabinLive(false, -40) {
-		t.Fatal("walk-up leftover or missing RSSI is not cabin-live")
-	}
-}
-
-func TestShouldIdlePoll(t *testing.T) {
-	if shouldIdlePoll(false, 5*time.Minute) {
-		t.Fatal("approach-strength leftover must keep recycle/forget, not idle-poll")
-	}
-	if shouldIdlePoll(true, 59*time.Second) {
-		t.Fatal("first minute away keeps continuous discovery for a fast return")
-	}
-	if !shouldIdlePoll(true, 60*time.Second) {
-		t.Fatal("empty or only-weak adapter past idlePollAfter must pause continuous discovery")
-	}
-	if idlePollWait(0) != 30*time.Second || idlePollWait(1) != 60*time.Second {
-		t.Fatalf("idle poll wait 0=%s 1=%s", idlePollWait(0), idlePollWait(1))
-	}
-	if idlePollWait(8) != idlePollMax {
-		t.Fatalf("idle poll wait cap %s, want %s", idlePollWait(8), idlePollMax)
-	}
-	if idlePollSleep(true, 8) != idlePollWeak {
-		t.Fatalf("weak leftover must keep a short idle, got %s", idlePollSleep(true, 8))
-	}
-	if idlePollSleep(false, 0) != idlePollMin {
-		t.Fatalf("empty adapter still uses the long idle backoff")
-	}
-}
-
-func TestBeaconUsableIgnoresFloorRSSI(t *testing.T) {
-	if !beaconUsable(true, teslaMinConnectRSSI+1) {
-		t.Fatal("RSSI just above the Tesla floor is a live approach")
-	}
-	if beaconUsable(true, teslaMinConnectRSSI) {
-		t.Fatal("RSSI <= -95 must not keep discovery hot (2026-09-26 6.5h scan)")
-	}
-	if beaconUsable(true, -100) || beaconUsable(false, -40) {
-		t.Fatal("missing or floor RSSI is not usable")
-	}
-	if teslaMinConnectRSSI != bluez.MinFreshRSSI {
-		t.Fatal("connect floor and watcher stamp floor diverged")
-	}
-}
-
-func TestAfterShortSession(t *testing.T) {
-	if afterShortSession(0) {
-		t.Fatal("no prior session is not a bounce")
-	}
-	if !afterShortSession(16 * time.Second) {
-		t.Fatal("16s GATT bounce (21:17–21:18) must drop afterSession slack")
-	}
-	if afterShortSession(time.Minute) {
-		t.Fatal("a normal session must keep -93 reconnect slack")
-	}
-}
-
-func TestAdapterPowerDenied(t *testing.T) {
-	if !adapterPowerDenied(errors.New("bluez: adapter not powered")) {
-		t.Fatal("adapter not powered must wait for WaitPowered")
-	}
-	if !adapterPowerDenied(errors.New("bluez: power on adapter: org.freedesktop.DBus.Error.AuthFailed")) {
-		t.Fatal("Sailfish ConnMan AuthFailed must be treated as power-denied")
-	}
-	if !adapterPowerDenied(errors.New("org.bluez.Error.NotPowered: RFKILL")) {
-		t.Fatal("NotPowered/RFKILL must be treated as power-denied")
-	}
-	if adapterPowerDenied(errors.New("GATT failed: context deadline exceeded")) {
-		t.Fatal("a connect timeout is not a denied Powered write")
-	}
-	if adapterPowerDenied(nil) {
-		t.Fatal("nil error is not power-denied")
-	}
-}
-
-func TestNextWatchRetryDoublesOnPowerDenied(t *testing.T) {
-	minWait := 2 * time.Second
-	wait, next := nextWatchRetry(errors.New("bluez: power on adapter: AuthFailed"), minWait, minWait)
-	if wait != minWait || next != 4*time.Second {
-		t.Fatalf("first denied retry wait=%v next=%v, want 2s / 4s", wait, next)
-	}
-	wait, next = nextWatchRetry(errors.New("bluez: power on adapter: AuthFailed"), next, minWait)
-	if wait != 4*time.Second || next != 8*time.Second {
-		t.Fatalf("second denied retry wait=%v next=%v, want 4s / 8s", wait, next)
-	}
-	_, next = nextWatchRetry(errors.New("bluez: power on adapter: AuthFailed"), time.Minute, minWait)
-	if next != time.Minute {
-		t.Fatalf("backoff cap next=%v, want 1m", next)
-	}
-	wait, next = nextWatchRetry(errors.New("context deadline exceeded"), 8*time.Second, minWait)
-	if wait != minWait || next != minWait {
-		t.Fatalf("transient error wait=%v next=%v, want reset to 2s", wait, next)
-	}
-}
-
-func TestSessionIdentityHasParent(t *testing.T) {
-	pid, ppid, pgid, orphan := sessionIdentity()
-	if pid <= 0 {
-		t.Fatalf("pid=%d", pid)
-	}
-	if ppid <= 0 {
-		t.Fatalf("ppid=%d", ppid)
-	}
-	if pgid <= 0 {
-		t.Fatalf("pgid=%d", pgid)
-	}
-	if orphan {
-		t.Fatalf("test process should not be orphaned, ppid=%d", ppid)
-	}
-}
-
-func TestScanQuietRemaining(t *testing.T) {
-	now := time.Now()
-	if got := scanQuietRemaining(time.Time{}, now); got != 0 {
-		t.Fatalf("zero until: %v", got)
-	}
-	if got := scanQuietRemaining(now.Add(-time.Second), now); got != 0 {
-		t.Fatalf("already elapsed: %v", got)
-	}
-	until := now.Add(2 * time.Second)
-	got := scanQuietRemaining(until, now)
-	if got < time.Second || got > 2*time.Second {
-		t.Fatalf("remaining %v, want ~2s", got)
-	}
-}
-
-func TestPresencePaceIsNoopWhenIntervalElapsed(t *testing.T) {
-	ctx := context.Background()
-	started := time.Now().Add(-time.Second)
-	begin := time.Now()
-	presencePace(ctx, started, 50*time.Millisecond)
-	if time.Since(begin) > 30*time.Millisecond {
-		t.Fatal("pace after the interval has elapsed should return immediately")
-	}
-}
-
-func TestPresencePaceWaitsOutTheInterval(t *testing.T) {
-	ctx := context.Background()
-	started := time.Now()
-	presencePace(ctx, started, 80*time.Millisecond)
-	if elapsed := time.Since(started); elapsed < 80*time.Millisecond {
-		t.Fatalf("pace returned after %v, want >= 80ms", elapsed)
-	}
-}
-
-func TestPresencePaceStopsOnCancel(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go func() {
-		time.Sleep(20 * time.Millisecond)
-		cancel()
-	}()
-	started := time.Now()
-	presencePace(ctx, started, time.Second)
-	if elapsed := time.Since(started); elapsed > 200*time.Millisecond {
-		t.Fatalf("pace ignored cancel: waited %v", elapsed)
 	}
 }
 
@@ -880,10 +511,10 @@ func TestParsePresenceArgsDefaults(t *testing.T) {
 		t.Errorf("parsePresenceArgs(nil) = %+v, want defaults %+v", cfg, want)
 	}
 	if cfg.nearRSSI != -90 || cfg.nearConfirm != 1 {
-		t.Errorf("defaults nearRSSI=%d nearConfirm=%d, want -90 / 1 (0.2.16 floor, connect on first advert)", cfg.nearRSSI, cfg.nearConfirm)
+		t.Errorf("defaults nearRSSI=%d nearConfirm=%d, want -90 / 1 (connect on first live beacon)", cfg.nearRSSI, cfg.nearConfirm)
 	}
-	if cfg.farTimeout != 60*time.Second {
-		t.Errorf("default farTimeout = %v, want 60s", cfg.farTimeout)
+	if cfg.farTimeout != 15*time.Second {
+		t.Errorf("default farTimeout = %v, want 15s", cfg.farTimeout)
 	}
 	if cfg.scanInterval != 2*time.Second {
 		t.Errorf("default scanInterval = %v, want 2s", cfg.scanInterval)
@@ -937,29 +568,12 @@ func TestConnectBackoffDoubles(t *testing.T) {
 	}
 }
 
-func TestScheduleReconnectQuietExtendsGate(t *testing.T) {
-	s := &session{}
-	s.scheduleReconnectQuietLocked(reconnectQuietAfterDrop)
-	if !s.connectBackoffActive(time.Now()) {
-		t.Fatal("drop quiet must gate reconnect (Tesla 500ms after disconnect)")
-	}
-	if remaining := time.Until(s.connectBackoffUntil); remaining > reconnectQuietAfterDrop {
-		t.Fatalf("drop quiet remaining %v, want <= %v", remaining, reconnectQuietAfterDrop)
-	}
-	s.scheduleReconnectQuietLocked(reconnectQuietAfterError)
-	if remaining := time.Until(s.connectBackoffUntil); remaining < time.Second {
-		t.Fatalf("longer quiet must extend the gate, remaining %v", remaining)
-	}
-}
-
 func TestConnectBackoffDoublesAfterExpiry(t *testing.T) {
 	s := &session{}
 	s.scheduleConnectBackoffLocked()
 	first := s.connectBackoff
-
-	if first != reconnectQuietAfterError {
-		t.Fatalf("first backoff = %v, want %v (Tesla DELAY_AFTER_ERROR)", first, reconnectQuietAfterError)
-
+	if first != time.Second {
+		t.Fatalf("first backoff = %v, want 1s", first)
 	}
 	s.connectBackoffUntil = time.Now().Add(-time.Millisecond)
 	s.scheduleConnectBackoffLocked()
@@ -1026,10 +640,8 @@ func TestDispatchPresenceStopWithoutStartIsSafe(t *testing.T) {
 	}
 }
 
-// TestKeygenReportsMalformedKeyWithoutForce ensures a corrupt existing key
-// doesn't wedge keygen: without -f it regenerates rather than erroring (and
-// without panicking), mirroring upstream's create fall-through.
-func TestKeygenRecoversFromCorruptKey(t *testing.T) {
+// Replacing a corrupt key is supported only after an explicit force request.
+func TestKeygenRecoversFromCorruptKeyWithForce(t *testing.T) {
 	dir := t.TempDir()
 	keyFile := filepath.Join(dir, "private_key.pem")
 	if err := os.WriteFile(keyFile, []byte("garbage\n"), 0644); err != nil {
@@ -1037,7 +649,7 @@ func TestKeygenRecoversFromCorruptKey(t *testing.T) {
 	}
 	s := &session{keyFile: keyFile}
 
-	resp := s.dispatch(request{ID: "k1", Cmd: "keygen"})
+	resp := s.dispatch(request{ID: "k1", Cmd: "keygen", Args: []string{"-f"}})
 	if !resp.OK {
 		t.Fatalf("keygen with corrupt existing key failed: %s", resp.Stderr)
 	}

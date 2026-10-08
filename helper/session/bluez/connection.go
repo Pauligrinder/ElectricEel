@@ -2,6 +2,7 @@ package bluez
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -35,14 +36,11 @@ type Connection struct {
 	mu        sync.Mutex // serializes Send
 	closeOnce sync.Once
 	done      chan struct{}
-	// loopDone is closed by rxLoop when it returns. Close() waits on it
-	// before returning: rxLoop reads the dbusBus process-lifetime signal
-	// channel (shared by every Connection from the same bluez.Conn). The
-	// phone-key Watcher uses attachSignals() so it does not compete for
-	// this channel. Without this wait a caller that tears down and
-	// immediately reconnects could start a new rxLoop that races the
-	// outgoing one. nil when no rxLoop was ever started, e.g.
-	// connection_test.go's newTestConnection.
+	// Each link gets a fresh signal subscription. Reusing a process-lifetime
+	// queue would replay Connected=false from the previous link on reconnect.
+	// Close waits for rxLoop before releasing the subscription. loopDone is
+	// nil when no RX loop was started (e.g. framing-only tests).
+	signalCh    chan *dbus.Signal
 	loopDone    chan struct{}
 	match       []dbus.MatchOption
 	deviceMatch []dbus.MatchOption
@@ -57,12 +55,6 @@ type Connection struct {
 	// authenticated session instead of sitting on a zombie Connection.
 	dropped     chan struct{}
 	droppedOnce sync.Once
-	dropMu      sync.Mutex
-	// dropArmed is false until this Connection has a live Device.Connect.
-	// A leftover PropertiesChanged Connected=false from the previous
-	// Close/Disconnect sits on the shared bus.signals() buffer and would
-	// otherwise close Dropped on a session that just finished StartSession.
-	dropArmed bool
 
 	// RX reassembly state. Touched only by the rxLoop goroutine (the single
 	// writer), so it needs no lock of its own.
@@ -107,32 +99,17 @@ func (c *Connection) notifyDropped() {
 	c.droppedOnce.Do(func() { close(c.dropped) })
 }
 
-func (c *Connection) armDropped() {
-	c.dropMu.Lock()
-	c.dropArmed = true
-	c.dropMu.Unlock()
-}
-
-func (c *Connection) isDropArmed() bool {
-	c.dropMu.Lock()
-	defer c.dropMu.Unlock()
-	return c.dropArmed
-}
-
 // DeviceConnected reports whether BlueZ still considers the GATT link up.
 func (c *Connection) DeviceConnected(ctx context.Context) (bool, error) {
-	return deviceConnected(ctx, c.bus, c.devPath)
-}
-
-// DeviceRSSI reads Device1.RSSI without starting discovery. Used to notice
-// the phone is inside the cabin after GATT is up (Tesla stops advertising).
-func (c *Connection) DeviceRSSI(ctx context.Context) (int16, bool, error) {
-	v, err := c.bus.object(bluezService, c.devPath).getProp(ctx, deviceIface, "RSSI")
+	v, err := c.bus.object(bluezService, c.devPath).getProp(ctx, deviceIface, "Connected")
 	if err != nil {
-		return 0, false, err
+		return false, err
 	}
-	rssi, ok := variantInt16(v)
-	return rssi, ok, nil
+	connected, ok := variantBool(v)
+	if !ok {
+		return false, fmt.Errorf("bluez: decode device Connected: got %T", v.Value())
+	}
+	return connected, nil
 }
 
 // SetTrusted marks the vehicle as a trusted BlueZ device so reconnects do
@@ -165,7 +142,7 @@ func (c *Connection) AllowedLatency() time.Duration {
 // fails while blockLength is still at the assumed maximum MTU, blockLength is
 // shrunk to the guaranteed minimum (ATT MTU 23 - 3) and the chunk is retried
 // once. Thread-safe.
-func (c *Connection) Send(_ context.Context, buffer []byte) error {
+func (c *Connection) Send(ctx context.Context, buffer []byte) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -174,11 +151,17 @@ func (c *Connection) Send(_ context.Context, buffer []byte) error {
 	out = append(out, buffer...)
 
 	for len(out) > 0 {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		blk := len(out)
 		if c.blockLength < blk {
 			blk = c.blockLength
 		}
-		if err := c.writeChunk(out[:blk]); err != nil {
+		if err := c.writeChunk(ctx, out[:blk]); err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			if c.blockLength <= defaultMTU-3 {
 				return err
 			}
@@ -201,16 +184,15 @@ func (c *Connection) Send(_ context.Context, buffer []byte) error {
 // rejects, since the test fake never validated the argument's D-Bus type.
 // "type": "request" asks for a write-with-response, matching upstream
 // ble.go's use of WithResponse writes.
-func (c *Connection) writeChunk(b []byte) error {
+func (c *Connection) writeChunk(ctx context.Context, b []byte) error {
 	options := map[string]dbus.Variant{"type": dbus.MakeVariant("request")}
-	_, err := c.bus.object(bluezService, c.txPath).call(context.Background(), gattChrIface+".WriteValue", b, options)
+	_, err := c.bus.object(bluezService, c.txPath).call(ctx, gattChrIface+".WriteValue", b, options)
 	return err
 }
 
 // Close tears down the RX subscription and the device link. Idempotent.
 // Blocks until rxLoop has actually exited (see loopDone's doc comment) so a
-// caller that reconnects right after Close() returns can't race the old
-// rxLoop for the shared signal channel.
+// the old RX loop and its observer have stopped before reconnecting.
 func (c *Connection) Close() {
 	c.closeOnce.Do(func() {
 		c.notifyDropped()
@@ -218,11 +200,14 @@ func (c *Connection) Close() {
 		if c.loopDone != nil {
 			<-c.loopDone
 		}
+		if c.signalCh != nil {
+			c.bus.unsubscribeSignals(c.signalCh)
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
 		// Best-effort: the link is going away regardless.
 		_, _ = c.bus.object(bluezService, c.rxPath).call(ctx, gattChrIface+".StopNotify")
-		releaseDevice(c.bus, c.devPath)
+		_, _ = c.bus.object(bluezService, c.devPath).call(ctx, deviceIface+".Disconnect")
 		_ = c.bus.removeMatch(c.match...)
 		if len(c.deviceMatch) > 0 {
 			_ = c.bus.removeMatch(c.deviceMatch...)
@@ -237,9 +222,13 @@ func (c *Connection) rxLoop() {
 		select {
 		case <-c.done:
 			return
-		case sig, ok := <-c.bus.signals():
+		case sig, ok := <-c.signalCh:
 			if !ok {
+				c.notifyDropped()
 				return
+			}
+			if sig == nil {
+				continue
 			}
 			c.handleSignal(sig)
 		}
@@ -293,23 +282,9 @@ func (c *Connection) handleDeviceSignal(sig *dbus.Signal) {
 		return
 	}
 	connected, ok := variantBool(v)
-	if !ok {
-		return
+	if ok && !connected {
+		c.notifyDropped()
 	}
-	if connected {
-		c.armDropped()
-		return
-	}
-	if !c.isDropArmed() {
-		return
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
-	still, err := c.DeviceConnected(ctx)
-	cancel()
-	if err == nil && still {
-		return
-	}
-	c.notifyDropped()
 }
 
 // rx appends inbound bytes to the reassembly buffer and flushes any complete

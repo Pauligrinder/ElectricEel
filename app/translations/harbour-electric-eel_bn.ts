@@ -8,13 +8,13 @@
       <translation>চালান</translation>
     </message>
     <message>
-      <location filename="../qml/pages/ArgumentDialog.qml" line="92" />
-      <location filename="../qml/pages/ArgumentDialog.qml" line="171" />
+      <location filename="../qml/pages/ArgumentDialog.qml" line="109" />
+      <location filename="../qml/pages/ArgumentDialog.qml" line="188" />
       <source> (optional)</source>
       <translation> (ঐচ্ছিক)</translation>
     </message>
     <message>
-      <location filename="../qml/pages/ArgumentDialog.qml" line="96" />
+      <location filename="../qml/pages/ArgumentDialog.qml" line="113" />
       <source>(not set)</source>
       <translation>(সেট করা হয়নি)</translation>
     </message>
@@ -22,52 +22,52 @@
   <context>
     <name>CategoryPage</name>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="43" />
+      <location filename="../qml/pages/CategoryPage.qml" line="48" />
       <source>%1 • %2°C inside</source>
       <translation>%1 • ভেতরে %2 °C</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="44" />
+      <location filename="../qml/pages/CategoryPage.qml" line="49" />
       <source>Climate on</source>
       <translation>জলবায়ু চালু</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="44" />
+      <location filename="../qml/pages/CategoryPage.qml" line="49" />
       <source>Climate off</source>
       <translation>জলবায়ু বন্ধ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="50" />
+      <location filename="../qml/pages/CategoryPage.qml" line="55" />
       <source>%1% battery%2</source>
       <translation>%1% ব্যাটারি%2</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="52" />
+      <location filename="../qml/pages/CategoryPage.qml" line="57" />
       <source> • Charging</source>
       <translation> • চার্জ হচ্ছে</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="57" />
+      <location filename="../qml/pages/CategoryPage.qml" line="62" />
       <source>Doors locked</source>
       <translation>দরজা বন্ধ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="57" />
+      <location filename="../qml/pages/CategoryPage.qml" line="62" />
       <source>Doors unlocked</source>
       <translation>দরজা খোলা</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="69" />
+      <location filename="../qml/pages/CategoryPage.qml" line="74" />
       <source>OK</source>
       <translation>OK</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="69" />
+      <location filename="../qml/pages/CategoryPage.qml" line="74" />
       <source>exit code %1</source>
       <translation>এক্সিট কোড %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="167" />
+      <location filename="../qml/pages/CategoryPage.qml" line="174" />
       <source>Running %1...</source>
       <translation>%1 চলছে...</translation>
     </message>
@@ -516,72 +516,72 @@
   <context>
     <name>NavigationPage</name>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="30" />
+      <location filename="../qml/pages/NavigationPage.qml" line="35" />
       <source>Paste or type a destination first.</source>
       <translation>আগে গন্তব্য পেস্ট করুন বা লিখুন।</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="33" />
+      <location filename="../qml/pages/NavigationPage.qml" line="38" />
       <source>Checking...</source>
       <translation>পরীক্ষা চলছে...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="40" />
+      <location filename="../qml/pages/NavigationPage.qml" line="47" />
       <source>Nothing to send.</source>
       <translation>পাঠানোর কিছু নেই।</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="54" />
+      <location filename="../qml/pages/NavigationPage.qml" line="63" />
       <source>Cannot use this: %1</source>
       <translation>ব্যবহার করা যাবে না: %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="58" />
+      <location filename="../qml/pages/NavigationPage.qml" line="67" />
       <source>Coordinates %1, %2 — navigation will start there.</source>
       <translation>স্থানাঙ্ক %1, %2 — নেভিগেশন সেখানেই শুরু হবে।</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="61" />
+      <location filename="../qml/pages/NavigationPage.qml" line="70" />
       <source>Address "%1" — the car will look it up.</source>
       <translation>ঠিকানা “%1” — গাড়ি নিজেই খুঁজবে।</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="67" />
+      <location filename="../qml/pages/NavigationPage.qml" line="76" />
       <source>Send failed: %1</source>
       <translation>পাঠানো ব্যর্থ: %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="87" />
+      <location filename="../qml/pages/NavigationPage.qml" line="96" />
       <source>Car Navigation</source>
       <translation>গাড়ি নেভিগেশন</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="92" />
+      <location filename="../qml/pages/NavigationPage.qml" line="101" />
       <source>Destination</source>
       <translation>গন্তব্য</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="93" />
+      <location filename="../qml/pages/NavigationPage.qml" line="102" />
       <source>Paste address, coordinates, or map link</source>
       <translation>ঠিকানা, স্থানাঙ্ক বা ম্যাপ লিঙ্ক পেস্ট করুন</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="101" />
+      <location filename="../qml/pages/NavigationPage.qml" line="110" />
       <source>Preview</source>
       <translation>প্রাকদর্শন</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="119" />
+      <location filename="../qml/pages/NavigationPage.qml" line="128" />
       <source>Send to Car</source>
       <translation>গাড়িতে পাঠান</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="141" />
+      <location filename="../qml/pages/NavigationPage.qml" line="150" />
       <source>Notes</source>
       <translation>নোট</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="150" />
+      <location filename="../qml/pages/NavigationPage.qml" line="159" />
       <source>This uses Bluetooth, like lock/unlock — the car must be in range, no internet needed on either side. Coordinates are sent exactly; addresses and links are looked up by the car itself, so unusual spellings may resolve differently than on your phone. From Android apps: copy the address or link, then paste it above.</source>
       <translation>লক/আনলকের মতো Bluetooth ব্যবহার হয় — গাড়ি রেঞ্জে থাকতে হবে, ইন্টারনেট দরকার নেই। স্থানাঙ্ক নির্ভুল পাঠানো হয়; ঠিকানা ও লিঙ্ক গাড়ি নিজেই খোঁজে, তাই অস্বাভাবিক বানান ফোনের চেয়ে আলাদা বোঝা যেতে পারে। Android অ্যাপ থেকে: ঠিকানা বা লিঙ্ক কপি করে উপরে পেস্ট করুন।</translation>
     </message>
@@ -589,72 +589,72 @@
   <context>
     <name>PairingPage</name>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="24" />
+      <location filename="../qml/pages/PairingPage.qml" line="27" />
       <source>Key generated. Tap "Pair with Vehicle", then tap your NFC card on the center console when prompted on the car's screen.</source>
       <translation>চাবি তৈরি। “গাড়ি পেয়ার করুন” ট্যাপ করুন, তারপর গাড়ির স্ক্রিন বললে NFC কার্ড সেন্টার কনসোলে ট্যাপ করুন।</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="26" />
+      <location filename="../qml/pages/PairingPage.qml" line="29" />
       <source>Key generation failed: %1</source>
       <translation>চাবি তৈরি ব্যর্থ: %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="31" />
+      <location filename="../qml/pages/PairingPage.qml" line="34" />
       <source>Paired.</source>
       <translation>পেয়ার হয়েছে।</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="31" />
+      <location filename="../qml/pages/PairingPage.qml" line="34" />
       <source>Pairing failed: %1</source>
       <translation>পেয়ারিং ব্যর্থ: %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="61" />
+      <location filename="../qml/pages/PairingPage.qml" line="64" />
       <source>Pairing &amp; Keys</source>
       <translation>পেয়ারিং ও চাবি</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="68" />
+      <location filename="../qml/pages/PairingPage.qml" line="71" />
       <source>Set the VIN in Settings first. Then generate a key, then pair it with the car over BLE - you'll need to be next to the vehicle and tap the NFC card on the center console to approve.</source>
       <translation>আগে সেটিংসে VIN দিন। তারপর চাবি বানান এবং BLE দিয়ে গাড়ির সাথে পেয়ার করুন – গাড়ির পাশে দাঁড়ান এবং অনুমোদনের জন্য NFC কার্ড সেন্টার কনসোলে ট্যাপ করুন।</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="80" />
+      <location filename="../qml/pages/PairingPage.qml" line="83" />
       <source>Phone key starting...</source>
       <translation>ফোন চাবি চালু হচ্ছে...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="108" />
+      <location filename="../qml/pages/PairingPage.qml" line="111" />
       <source>Generating...</source>
       <translation>তৈরি হচ্ছে...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="108" />
+      <location filename="../qml/pages/PairingPage.qml" line="111" />
       <source>Generate Key</source>
       <translation>চাবি তৈরি করুন</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="134" />
+      <location filename="../qml/pages/PairingPage.qml" line="137" />
       <source>Waiting for NFC tap...</source>
       <translation>NFC ট্যাপের অপেক্ষা...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="134" />
+      <location filename="../qml/pages/PairingPage.qml" line="137" />
       <source>Pair with Vehicle</source>
       <translation>গাড়ি পেয়ার করুন</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="138" />
+      <location filename="../qml/pages/PairingPage.qml" line="141" />
       <source>Requesting pairing over BLE - approve on the car's touchscreen / NFC card now.</source>
       <translation>BLE পেয়ারিং অনুরোধিত – টাচস্ক্রিন / NFC কার্ডে এখনই অনুমোদন দিন।</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="158" />
+      <location filename="../qml/pages/PairingPage.qml" line="161" />
       <source>Enrolled Keys</source>
       <translation>নিবন্ধিত চাবি</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="162" />
+      <location filename="../qml/pages/PairingPage.qml" line="165" />
       <source>List Enrolled Keys</source>
       <translation>নিবন্ধিত চাবি তালিকাভুক্ত করুন</translation>
     </message>

@@ -1,7 +1,6 @@
 import QtQuick 2.6
 import Sailfish.Silica 1.0
 import "../js/VehicleState.js" as VState
-import "../js/PhoneKeyStatus.js" as PhoneKey
 
 CoverBackground {
     id: cover
@@ -12,41 +11,32 @@ CoverBackground {
     property bool hasKey: false
     property bool commandBusy: false
 
+    function phoneKeyStatusIsBluetoothOff(status) {
+        return status.indexOf("NotPowered") >= 0
+            || status.indexOf("RFKILL") >= 0
+            || status.indexOf("power on adapter") >= 0
+    }
+
+    function phoneKeyStatusIsConnected(status) {
+        return status === "Phone key connected"
+            || status === "Phone key authorized"
+    }
+
     readonly property bool isPaired: cover.hasKey && cover.vin.length > 0
 
-    // unpaired | bluetooth-off | connected | disconnected | error
-    // Same mapping as FirstPage — keep them in PhoneKeyStatus.js.
+    // unpaired | bluetooth-off | connected | disconnected
     readonly property string connectionKind: {
         var status = teslaClient ? teslaClient.phoneKeyStatus : ""
-        return PhoneKey.connectionKind(status, cover.isPaired)
+        if (phoneKeyStatusIsBluetoothOff(status))
+            return "bluetooth-off"
+        if (!isPaired)
+            return "unpaired"
+        if (phoneKeyStatusIsConnected(status))
+            return "connected"
+        return "disconnected"
     }
 
     readonly property bool isConnected: connectionKind === "connected"
-
-    // CoverActionList allows two actions. The first cycles this catalog;
-    // the second runs the selected command.
-    property int actionIndex: 0
-
-    function coverActionAt(i) {
-        var items = [
-            { cmd: "lock", label: "Lock", icon: "lock.svg" },
-            { cmd: "trunk-open", label: "Trunk", icon: "trunk.svg" },
-            { cmd: "frunk-open", label: "Frunk", icon: "frunk.svg" },
-            { cmd: "climate-on", label: "Climate", icon: "fan1.svg" },
-            { cmd: "charge-port-open", label: "Charge port", icon: "ev_station.svg" }
-        ]
-        return items[(i % items.length + items.length) % items.length]
-    }
-
-    readonly property var currentCoverAction: coverActionAt(actionIndex)
-
-    function coverActionIcon(file) {
-        return Qt.resolvedUrl("../../img/icons/" + file)
-    }
-
-    function cycleCoverAction() {
-        cover.actionIndex = (cover.actionIndex + 1) % 5 // lock, trunk, frunk, climate, charge port
-    }
 
     function runCoverCommand(cmd) {
         if (!teslaClient || cover.commandBusy || !cover.isConnected)
@@ -134,8 +124,6 @@ CoverBackground {
                             return Qt.resolvedUrl("../../img/icons/wifi.svg")
                         if (cover.connectionKind === "bluetooth-off")
                             return Qt.resolvedUrl("../../img/icons/bluetooth_disabled.svg")
-                        // disconnected and error both use the off icon; color
-                        // already flags failure via the red disc.
                         return Qt.resolvedUrl("../../img/icons/wifi_off.svg")
                     }
                 }
@@ -144,8 +132,8 @@ CoverBackground {
 
         Item {
             width: parent.width
-            height: parent.height - statusSlot.height - actionLabel.height
-                    - parent.spacing * (actionLabel.visible ? 2 : 1)
+            height: parent.height - statusSlot.height - actionRow.height
+                    - parent.spacing * (actionRow.visible ? 2 : 1)
 
             Image {
                 id: carImage
@@ -167,29 +155,78 @@ CoverBackground {
             }
         }
 
-        Label {
-            id: actionLabel
+        Row {
+            id: actionRow
             width: parent.width
             visible: cover.isConnected
-            horizontalAlignment: Text.AlignHCenter
-            font.pixelSize: Theme.fontSizeExtraSmall
-            color: Theme.highlightColor
-            text: cover.currentCoverAction.label
-            truncationMode: TruncationMode.Fade
-        }
-    }
+            height: visible ? Theme.iconSizeMedium : 0
+            spacing: 0
 
-    CoverActionList {
-        enabled: cover.isConnected && !!teslaClient && !cover.commandBusy
+            // IconButton + the 1200–1440px trunk/frunk SVGs overflow the
+            // cover (native image size, stacked). HighlightImage + sourceSize
+            // keeps a compact three-across row.
+            Item {
+                width: actionRow.width / 3
+                height: actionRow.height
+                enabled: !!teslaClient && !cover.commandBusy
+                opacity: enabled ? 1.0 : Theme.opacityLow
 
-        CoverAction {
-            iconSource: "image://theme/icon-cover-next"
-            onTriggered: cover.cycleCoverAction()
-        }
+                HighlightImage {
+                    anchors.centerIn: parent
+                    width: Theme.iconSizeSmall
+                    height: Theme.iconSizeSmall
+                    sourceSize: Qt.size(width, height)
+                    source: Qt.resolvedUrl("../../img/icons/lock.svg")
+                    color: Theme.primaryColor
+                }
 
-        CoverAction {
-            iconSource: cover.coverActionIcon(cover.currentCoverAction.icon)
-            onTriggered: cover.runCoverCommand(cover.currentCoverAction.cmd)
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: cover.runCoverCommand("lock")
+                }
+            }
+
+            Item {
+                width: actionRow.width / 3
+                height: actionRow.height
+                enabled: !!teslaClient && !cover.commandBusy
+                opacity: enabled ? 1.0 : Theme.opacityLow
+
+                HighlightImage {
+                    anchors.centerIn: parent
+                    width: Theme.iconSizeSmall
+                    height: Theme.iconSizeSmall
+                    sourceSize: Qt.size(width, height)
+                    source: Qt.resolvedUrl("../../img/icons/trunk.svg")
+                    color: Theme.primaryColor
+                }
+
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: cover.runCoverCommand("trunk-open")
+                }
+            }
+
+            Item {
+                width: actionRow.width / 3
+                height: actionRow.height
+                enabled: !!teslaClient && !cover.commandBusy
+                opacity: enabled ? 1.0 : Theme.opacityLow
+
+                HighlightImage {
+                    anchors.centerIn: parent
+                    width: Theme.iconSizeSmall
+                    height: Theme.iconSizeSmall
+                    sourceSize: Qt.size(width, height)
+                    source: Qt.resolvedUrl("../../img/icons/frunk.svg")
+                    color: Theme.primaryColor
+                }
+
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: cover.runCoverCommand("frunk-open")
+                }
+            }
         }
     }
 }

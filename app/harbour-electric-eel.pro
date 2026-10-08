@@ -1,7 +1,7 @@
 TARGET = harbour-electric-eel
 
 CONFIG += sailfishapp
-QT += dbus network
+QT += network
 
 # Single source of the app version, surfaced on the Settings page and
 # compared against the core's GetVersion. The release workflow stamps
@@ -9,7 +9,6 @@ QT += dbus network
 # reports equal versions. Keep in sync with helper/Cargo.toml when bumping
 # outside a release.
 VERSION = 0.2.36
-
 DEFINES += APP_VERSION=\\\"$$VERSION\\\"
 
 # In-process Rust control core (docs/architecture.md phase 4): the cbindgen
@@ -21,18 +20,17 @@ LIBS += $$PWD/thirdparty/libelectriceelcore.a -lpthread -ldl -lm
 SOURCES += \
     src/harbour-electric-eel.cpp \
     src/teslaclient.cpp \
-    src/phonekeybus.cpp \
     src/automagicsetup.cpp
 
 HEADERS += \
     src/teslaclient.h \
-    src/phonekeybus.h \
     src/automagicsetup.h
 
 DISTFILES += \
     rpm/harbour-electric-eel.spec \
     harbour-electric-eel.desktop \
     qml/harbour-electric-eel.qml \
+    qml/PhoneKeyEvents.qml \
     qml/cover/CoverPage.qml \
     qml/pages/*.qml \
     qml/js/*.js \

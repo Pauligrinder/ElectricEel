@@ -8,13 +8,13 @@
       <translation>运行</translation>
     </message>
     <message>
-      <location filename="../qml/pages/ArgumentDialog.qml" line="92" />
-      <location filename="../qml/pages/ArgumentDialog.qml" line="171" />
+      <location filename="../qml/pages/ArgumentDialog.qml" line="109" />
+      <location filename="../qml/pages/ArgumentDialog.qml" line="188" />
       <source> (optional)</source>
       <translation>（可选）</translation>
     </message>
     <message>
-      <location filename="../qml/pages/ArgumentDialog.qml" line="96" />
+      <location filename="../qml/pages/ArgumentDialog.qml" line="113" />
       <source>(not set)</source>
       <translation>（未设置）</translation>
     </message>
@@ -22,52 +22,52 @@
   <context>
     <name>CategoryPage</name>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="43" />
+      <location filename="../qml/pages/CategoryPage.qml" line="48" />
       <source>%1 • %2°C inside</source>
       <translation>%1 • 内部%2°C</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="44" />
+      <location filename="../qml/pages/CategoryPage.qml" line="49" />
       <source>Climate on</source>
       <translation>空调开</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="44" />
+      <location filename="../qml/pages/CategoryPage.qml" line="49" />
       <source>Climate off</source>
       <translation>空调关</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="50" />
+      <location filename="../qml/pages/CategoryPage.qml" line="55" />
       <source>%1% battery%2</source>
       <translation>%1% 电量%2</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="52" />
+      <location filename="../qml/pages/CategoryPage.qml" line="57" />
       <source> • Charging</source>
       <translation> • 充电中</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="57" />
+      <location filename="../qml/pages/CategoryPage.qml" line="62" />
       <source>Doors locked</source>
       <translation>车门已锁</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="57" />
+      <location filename="../qml/pages/CategoryPage.qml" line="62" />
       <source>Doors unlocked</source>
       <translation>车门未锁</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="69" />
+      <location filename="../qml/pages/CategoryPage.qml" line="74" />
       <source>OK</source>
       <translation>OK</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="69" />
+      <location filename="../qml/pages/CategoryPage.qml" line="74" />
       <source>exit code %1</source>
       <translation>退出码 %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="167" />
+      <location filename="../qml/pages/CategoryPage.qml" line="174" />
       <source>Running %1...</source>
       <translation>正在运行 %1...</translation>
     </message>
@@ -516,72 +516,72 @@
   <context>
     <name>NavigationPage</name>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="30" />
+      <location filename="../qml/pages/NavigationPage.qml" line="35" />
       <source>Paste or type a destination first.</source>
       <translation>请先粘贴或输入目的地。</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="33" />
+      <location filename="../qml/pages/NavigationPage.qml" line="38" />
       <source>Checking...</source>
       <translation>检查中...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="40" />
+      <location filename="../qml/pages/NavigationPage.qml" line="47" />
       <source>Nothing to send.</source>
       <translation>没有要发送的内容。</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="54" />
+      <location filename="../qml/pages/NavigationPage.qml" line="63" />
       <source>Cannot use this: %1</source>
       <translation>无法使用：%1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="58" />
+      <location filename="../qml/pages/NavigationPage.qml" line="67" />
       <source>Coordinates %1, %2 — navigation will start there.</source>
       <translation>坐标 %1, %2 — 导航将在那里开始。</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="61" />
+      <location filename="../qml/pages/NavigationPage.qml" line="70" />
       <source>Address "%1" — the car will look it up.</source>
       <translation>地址“%1” — 车辆会自动查找。</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="67" />
+      <location filename="../qml/pages/NavigationPage.qml" line="76" />
       <source>Send failed: %1</source>
       <translation>发送失败：%1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="87" />
+      <location filename="../qml/pages/NavigationPage.qml" line="96" />
       <source>Car Navigation</source>
       <translation>车辆导航</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="92" />
+      <location filename="../qml/pages/NavigationPage.qml" line="101" />
       <source>Destination</source>
       <translation>目的地</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="93" />
+      <location filename="../qml/pages/NavigationPage.qml" line="102" />
       <source>Paste address, coordinates, or map link</source>
       <translation>粘贴地址、坐标或地图链接</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="101" />
+      <location filename="../qml/pages/NavigationPage.qml" line="110" />
       <source>Preview</source>
       <translation>预览</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="119" />
+      <location filename="../qml/pages/NavigationPage.qml" line="128" />
       <source>Send to Car</source>
       <translation>发送到车辆</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="141" />
+      <location filename="../qml/pages/NavigationPage.qml" line="150" />
       <source>Notes</source>
       <translation>说明</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="150" />
+      <location filename="../qml/pages/NavigationPage.qml" line="159" />
       <source>This uses Bluetooth, like lock/unlock — the car must be in range, no internet needed on either side. Coordinates are sent exactly; addresses and links are looked up by the car itself, so unusual spellings may resolve differently than on your phone. From Android apps: copy the address or link, then paste it above.</source>
       <translation>像锁定/解锁一样使用蓝牙 — 车辆必须在范围内，双方都不需要互联网。坐标精确发送；地址和链接由车辆自行查找，因此生僻拼写可能与手机解析不同。从 Android 应用：复制地址或链接后粘贴到上方。</translation>
     </message>
@@ -589,72 +589,72 @@
   <context>
     <name>PairingPage</name>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="24" />
+      <location filename="../qml/pages/PairingPage.qml" line="27" />
       <source>Key generated. Tap "Pair with Vehicle", then tap your NFC card on the center console when prompted on the car's screen.</source>
       <translation>钥匙已生成。点击“配对车辆”，然后在车辆屏幕提示时将 NFC 卡贴到中控台。</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="26" />
+      <location filename="../qml/pages/PairingPage.qml" line="29" />
       <source>Key generation failed: %1</source>
       <translation>钥匙生成失败：%1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="31" />
+      <location filename="../qml/pages/PairingPage.qml" line="34" />
       <source>Paired.</source>
       <translation>已配对。</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="31" />
+      <location filename="../qml/pages/PairingPage.qml" line="34" />
       <source>Pairing failed: %1</source>
       <translation>配对失败：%1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="61" />
+      <location filename="../qml/pages/PairingPage.qml" line="64" />
       <source>Pairing &amp; Keys</source>
       <translation>配对与钥匙</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="68" />
+      <location filename="../qml/pages/PairingPage.qml" line="71" />
       <source>Set the VIN in Settings first. Then generate a key, then pair it with the car over BLE - you'll need to be next to the vehicle and tap the NFC card on the center console to approve.</source>
       <translation>请先在设置中填入 VIN。然后生成钥匙并通过 BLE 与车辆配对 - 站在车辆旁边，将 NFC 卡贴到中控台确认。</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="80" />
+      <location filename="../qml/pages/PairingPage.qml" line="83" />
       <source>Phone key starting...</source>
       <translation>手机钥匙启动中...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="108" />
+      <location filename="../qml/pages/PairingPage.qml" line="111" />
       <source>Generating...</source>
       <translation>生成中...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="108" />
+      <location filename="../qml/pages/PairingPage.qml" line="111" />
       <source>Generate Key</source>
       <translation>生成钥匙</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="134" />
+      <location filename="../qml/pages/PairingPage.qml" line="137" />
       <source>Waiting for NFC tap...</source>
       <translation>等待 NFC 触碰...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="134" />
+      <location filename="../qml/pages/PairingPage.qml" line="137" />
       <source>Pair with Vehicle</source>
       <translation>配对车辆</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="138" />
+      <location filename="../qml/pages/PairingPage.qml" line="141" />
       <source>Requesting pairing over BLE - approve on the car's touchscreen / NFC card now.</source>
       <translation>已请求 BLE 配对 - 请立即在触摸屏 / NFC 卡上确认。</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="158" />
+      <location filename="../qml/pages/PairingPage.qml" line="161" />
       <source>Enrolled Keys</source>
       <translation>已注册钥匙</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="162" />
+      <location filename="../qml/pages/PairingPage.qml" line="165" />
       <source>List Enrolled Keys</source>
       <translation>列出已注册钥匙</translation>
     </message>

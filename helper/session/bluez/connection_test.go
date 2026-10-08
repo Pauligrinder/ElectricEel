@@ -82,15 +82,20 @@ func TestConnectScansWhenNoTarget(t *testing.T) {
 	}
 }
 
-// TestConnectUsesLiveAdvertisementWithoutRemoveDevice locks in the
-// Tesla-Android reconnect contract: a Device1 that is advertising (HasRSSI)
-// is Connected in place. RemoveDevice+rescan was dropping the live object
-// (Sailfish RemoveDevice returns AuthFailed) and then refusing to Connect
-// the leftover — the 2026-09-13 phone-key hang.
-func TestConnectUsesLiveAdvertisementWithoutRemoveDevice(t *testing.T) {
+// TestConnectDoesNotScanWithTarget locks in the assumption
+// electric-eel-session/main.go's ensureConnectedLocked depends on: passing
+// a target skips connect()'s own scan entirely. Without this, a caller that
+// already holds its own long-lived discovery session (presenceLoop's
+// Watcher) and then calls Connect with a target would still be safe from
+// self-collision; if this ever regressed to scanning regardless, that
+// caller would silently start colliding with itself again - confirmed live
+// as "bluez: start discovery: Operation already in progress" before
+// ensureConnectedLocked was fixed to pass its Watcher's last Peek() result
+// through instead of nil.
+func TestConnectDoesNotScanWithTarget(t *testing.T) {
 	bus := newFakeBluez()
 	vin := "5YJ3E1EA0PF000000"
-	bus.dev = &fakeDevice{path: bus.devPath(), name: vehicleBeaconName(vin), rssi: -55}
+	bus.dev = &fakeDevice{path: bus.devPath(), name: vehicleBeaconName(vin)}
 	bus.deviceVisible = true
 	bus.servicesResolved = true
 	bus.gattReady = true
@@ -98,17 +103,11 @@ func TestConnectUsesLiveAdvertisementWithoutRemoveDevice(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	if _, err := connect(ctx, bus, "", vin, &ScanResult{Path: bus.dev.path, HasRSSI: true, RSSI: -55}); err != nil {
-		t.Fatalf("connect(with live target): %v", err)
-	}
-	if bus.removeDeviceN != 0 {
-		t.Fatalf("live advertisement must not RemoveDevice, got %d", bus.removeDeviceN)
+	if _, err := connect(ctx, bus, "", vin, &ScanResult{Path: bus.dev.path}); err != nil {
+		t.Fatalf("connect(with target): %v", err)
 	}
 	if hasCall(bus.calls, adapterIface+".StartDiscovery") {
-		t.Fatal("live advertisement must Connect without a new scan")
-	}
-	if !bus.connected {
-		t.Fatal("expected Device1.Connect on the live advertisement")
+		t.Error("connect with a target must not scan - it would collide with a caller's own already-open discovery session")
 	}
 }
 
@@ -266,9 +265,6 @@ func TestCloseIsIdempotent(t *testing.T) {
 	if bus.connected {
 		t.Error("expected Disconnect on Close")
 	}
-	if bus.removeDeviceN != 0 {
-		t.Error("Close must Disconnect, not RemoveDevice — Tesla Android reconnects to the same MAC")
-	}
 	if bus.matches != 0 {
 		t.Errorf("match rule not removed: matches = %d", bus.matches)
 	}
@@ -328,8 +324,7 @@ func TestDroppedClosesOnDeviceDisconnectSignal(t *testing.T) {
 	c := cc.(*Connection)
 	defer c.Close()
 
-	bus.connected = false
-	bus.sig <- &dbus.Signal{
+	bus.emitSignal(&dbus.Signal{
 		Name: propsIface + ".PropertiesChanged",
 		Path: bus.devPath(),
 		Body: []interface{}{
@@ -337,7 +332,7 @@ func TestDroppedClosesOnDeviceDisconnectSignal(t *testing.T) {
 			map[string]dbus.Variant{"Connected": dbus.MakeVariant(false)},
 			[]string{},
 		},
-	}
+	})
 	select {
 	case <-c.Dropped():
 	case <-time.After(time.Second):
@@ -345,86 +340,87 @@ func TestDroppedClosesOnDeviceDisconnectSignal(t *testing.T) {
 	}
 }
 
-func TestDroppedIgnoresStaleDisconnectWhileStillConnected(t *testing.T) {
+func TestReconnectDoesNotReplayOldDisconnect(t *testing.T) {
 	bus := newFakeBluez()
 	vin := "5YJ3E1EA0PF000000"
-	bus.dev = &fakeDevice{path: bus.devPath(), name: vehicleBeaconName(vin), rssi: -55}
-	bus.deviceVisible = true
-	bus.servicesResolved = true
-	bus.gattReady = true
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	cc, err := connect(ctx, bus, "hci0", vin, &ScanResult{Path: bus.dev.path, HasRSSI: true, RSSI: -55})
+	bus.dev = &fakeDevice{path: bus.devPath(), name: vehicleBeaconName(vin)}
+	bus.deviceVisible, bus.servicesResolved, bus.gattReady = true, true, true
+	ctx := context.Background()
+	cc, err := connect(ctx, bus, "hci0", vin, &ScanResult{Path: bus.devPath()})
 	if err != nil {
-		t.Fatalf("connect: %v", err)
+		t.Fatal(err)
 	}
-	c := cc.(*Connection)
-	defer c.Close()
-
-	// Leftover Connected=false from the previous Close, while BlueZ still
-	// reports this Device1 as Connected. Presence used to tear down here.
-	bus.sig <- &dbus.Signal{
-		Name: propsIface + ".PropertiesChanged",
-		Path: bus.devPath(),
-		Body: []interface{}{
-			deviceIface,
-			map[string]dbus.Variant{"Connected": dbus.MakeVariant(false)},
-			[]string{},
-		},
-	}
+	old := cc.(*Connection)
+	old.Close()
+	// A watcher keeps a broad PropertiesChanged match active while the
+	// old link's Disconnect emits its final signal. The previous permanent
+	// RX subscription would retain this until the next connection started.
+	watchSignals := make(chan *dbus.Signal, 16)
+	bus.subscribeSignals(watchSignals)
+	defer bus.unsubscribeSignals(watchSignals)
+	bus.emitSignal(&dbus.Signal{
+		Name: propsIface + ".PropertiesChanged", Path: bus.devPath(),
+		Body: []interface{}{deviceIface, map[string]dbus.Variant{"Connected": dbus.MakeVariant(false)}, []string{}},
+	})
 	select {
-	case <-c.Dropped():
-		t.Fatal("Dropped() must not close while Device1.Connected is still true")
-	case <-time.After(200 * time.Millisecond):
+	case <-old.signalCh:
+		t.Fatal("closed link still receives disconnect signals")
+	default:
 	}
-
-	bus.connected = false
-	bus.sig <- &dbus.Signal{
-		Name: propsIface + ".PropertiesChanged",
-		Path: bus.devPath(),
-		Body: []interface{}{
-			deviceIface,
-			map[string]dbus.Variant{"Connected": dbus.MakeVariant(false)},
-			[]string{},
-		},
+	cc, err = connect(ctx, bus, "hci0", vin, &ScanResult{Path: bus.devPath()})
+	if err != nil {
+		t.Fatal(err)
 	}
+	next := cc.(*Connection)
+	defer next.Close()
+	bus.notify(next.rxPath, []byte{0, 3, 'n', 'e', 'w'})
 	select {
-	case <-c.Dropped():
+	case msg := <-next.Receive():
+		if string(msg) != "new" {
+			t.Fatalf("received %q", msg)
+		}
 	case <-time.After(time.Second):
-		t.Fatal("expected Dropped() after a confirmed disconnect")
+		t.Fatal("replacement link did not receive notification")
+	}
+	select {
+	case <-next.Dropped():
+		t.Fatal("old disconnect poisoned replacement link")
+	default:
 	}
 }
 
-func TestDrainSignalsDropsBufferedDisconnect(t *testing.T) {
+type blockedWriteBus struct{ *fakeBluez }
+type blockedWriteCaller struct{ dbusCaller }
+
+func (b blockedWriteBus) object(dest string, path dbus.ObjectPath) dbusCaller {
+	return blockedWriteCaller{b.fakeBluez.object(dest, path)}
+}
+
+func (c blockedWriteCaller) call(ctx context.Context, method string, args ...interface{}) ([]interface{}, error) {
+	if method == gattChrIface+".WriteValue" {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	return c.dbusCaller.call(ctx, method, args...)
+}
+
+func TestSendHonorsWriteDeadline(t *testing.T) {
 	bus := newFakeBluez()
-	vin := "5YJ3E1EA0PF000000"
-	bus.dev = &fakeDevice{path: bus.devPath(), name: vehicleBeaconName(vin), rssi: -55}
-	bus.deviceVisible = true
-	bus.servicesResolved = true
-	bus.gattReady = true
-	bus.sig <- &dbus.Signal{
-		Name: propsIface + ".PropertiesChanged",
-		Path: bus.devPath(),
-		Body: []interface{}{
-			deviceIface,
-			map[string]dbus.Variant{"Connected": dbus.MakeVariant(false)},
-			[]string{},
-		},
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	c := newTestConnection(bus)
+	c.bus = blockedWriteBus{bus}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()
-	cc, err := connect(ctx, bus, "hci0", vin, &ScanResult{Path: bus.dev.path, HasRSSI: true, RSSI: -55})
-	if err != nil {
-		t.Fatalf("connect: %v", err)
-	}
-	c := cc.(*Connection)
-	defer c.Close()
-
+	done := make(chan error, 1)
+	go func() { done <- c.Send(ctx, []byte("status")) }()
 	select {
-	case <-c.Dropped():
-		t.Fatal("buffered Connected=false from before Connect must not close Dropped")
-	case <-time.After(200 * time.Millisecond):
+	case err := <-done:
+		if err != context.DeadlineExceeded {
+			t.Fatalf("Send = %v; want deadline exceeded", err)
+		}
+		if c.blockLength != maxExpectedMTU-3 {
+			t.Fatal("deadline must not trigger an MTU fallback/retry")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("blocked Bluetooth write ignored command deadline")
 	}
 }

@@ -10,5 +10,3 @@ mkdir       ${HOME}/.config/app.qml/automagic
 noblacklist ${HOME}/.config/app.qml
 noblacklist ${HOME}/.config/app.qml/automagic
 whitelist   ${HOME}/.config/app.qml/automagic
-
-dbus-user.own org.electriceel.PhoneKey

@@ -7,26 +7,12 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/godbus/dbus"
 )
 
 // TestConnectRetriesTransientFailures mirrors upstream ble_test.go's
 // NewConnectionFromScanResult test: a device that only appears in the object
 // tree after a couple of enumeration attempts must not fail the connect, it
 // must be retried until it shows up (within ctx).
-func TestLiveAdvertisement(t *testing.T) {
-	if liveAdvertisement(nil) {
-		t.Fatal("nil is not a live advertisement")
-	}
-	if liveAdvertisement(&ScanResult{Path: "/org/bluez/hci1/dev_AA"}) {
-		t.Fatal("Device1 without RSSI is the leftover that hangs bluetoothd")
-	}
-	if !liveAdvertisement(&ScanResult{Path: "/org/bluez/hci1/dev_AA", HasRSSI: true, RSSI: -60}) {
-		t.Fatal("advertising Device1 must be treated as live")
-	}
-}
-
 func TestConnectRetriesTransientFailures(t *testing.T) {
 	bus := newFakeBluez()
 	vin := "5YJ3E1EA0PF000000"
@@ -165,149 +151,55 @@ func TestConnectAbortsPendingLinkOnFailure(t *testing.T) {
 	if n := countCalls(bus.calls, deviceIface+".Disconnect"); n == 0 {
 		t.Fatal("failed Connect must Disconnect so the next attempt is not aborted-by-local")
 	}
-	if bus.removeDeviceN != 0 {
-		t.Fatal("failed Connect must not RemoveDevice; the next attempt reconnects to the same MAC")
-	}
 }
 
-func TestConnectDoesNotConnectLeftoverDeviceWithoutRSSI(t *testing.T) {
+func TestConnectWaitsForScannerAndReleasesOrphanLink(t *testing.T) {
 	bus := newFakeBluez()
 	vin := "5YJ3E1EA0PF000000"
-	bus.dev = &fakeDevice{path: bus.devPath(), name: vehicleBeaconName(vin), omitRSSI: true}
-	bus.deviceVisible = true
-
-	ctx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
-	defer cancel()
-	_, err := connect(ctx, bus, "hci0", vin, &ScanResult{Path: bus.dev.path})
-	if err == nil {
-		t.Fatal("expected leftover Device1 with no RSSI to refuse Connect")
-	}
-	if n := countCalls(bus.calls, deviceIface+".Connect"); n != 0 {
-		t.Fatalf("Device.Connect called %d times on a leftover Device1, want 0", n)
-	}
-	if bus.removeDeviceN != 0 {
-		t.Fatal("must not RemoveDevice a leftover Device1 while waiting for a live advert")
-	}
-}
-
-func TestConnectProceedsWhenLeftoverHasLiveRSSI(t *testing.T) {
-	bus := newFakeBluez()
-	vin := "5YJ3E1EA0PF000000"
-	bus.dev = &fakeDevice{path: bus.devPath(), name: vehicleBeaconName(vin), rssi: -52}
-	bus.deviceVisible = true
-	bus.servicesResolved = true
-	bus.gattReady = true
-	bus.removeDeviceErr = errors.New("org.freedesktop.DBus.Error.AuthFailed")
-
+	bus.dev = &fakeDevice{path: bus.devPath(), name: vehicleBeaconName(vin)}
+	bus.deviceVisible, bus.servicesResolved, bus.gattReady = true, true, true
+	bus.discovering, bus.connected = true, true
+	bus.stopDiscoveryPolls = 3
+	bus.rejectDiscoveryConnect = true
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	if _, err := connect(ctx, bus, "hci0", vin, &ScanResult{Path: bus.dev.path, HasRSSI: true, RSSI: -52}); err != nil {
-		t.Fatalf("live advertisement must connect even if RemoveDevice would fail: %v", err)
+	cc, err := connect(ctx, bus, "hci0", vin, &ScanResult{Path: bus.devPath()})
+	if err != nil {
+		t.Fatal(err)
 	}
-	if n := countCalls(bus.calls, deviceIface+".Connect"); n == 0 {
-		t.Fatal("expected Device.Connect when the Device1 still has RSSI")
+	defer cc.Close()
+	disconnectAt, connectAt := -1, -1
+	for i, call := range bus.calls {
+		if call == deviceIface+".Disconnect" && disconnectAt < 0 {
+			disconnectAt = i
+		}
+		if call == deviceIface+".Connect" && connectAt < 0 {
+			connectAt = i
+		}
 	}
-	if bus.removeDeviceN != 0 {
-		t.Fatal("live RSSI must skip RemoveDevice")
-	}
-}
-
-func TestConnectScansWhenTargetHasNoRSSI(t *testing.T) {
-	bus := newFakeBluez()
-	vin := "5YJ3E1EA0PF000000"
-	bus.dev = &fakeDevice{path: bus.devPath(), name: vehicleBeaconName(vin), rssi: -55}
-	bus.deviceVisible = true
-	bus.servicesResolved = true
-	bus.gattReady = true
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if _, err := connect(ctx, bus, "hci0", vin, nil); err != nil {
-		t.Fatalf("connect: %v", err)
-	}
-	if bus.removeDeviceN != 0 {
-		t.Fatal("scan+Connect must not RemoveDevice")
-	}
-	if !hasCall(bus.calls, adapterIface+".StartDiscovery") {
-		t.Fatal("nil target must scan for a live advertisement")
-	}
-	if !bus.connected {
-		t.Fatal("expected a live connection after scan")
-	}
-}
-
-func TestConnectUsesAdvertisementAdapter(t *testing.T) {
-	bus := newFakeBluez()
-	vin := "5YJ3E1EA0PF000000"
-	hci1Path := dbus.ObjectPath("/org/bluez/hci1/dev_98_04_ED_D7_EE_5E")
-	bus.extraAdapters = map[string]bool{"hci1": true}
-	bus.dev = &fakeDevice{path: hci1Path, name: vehicleBeaconName(vin), rssi: -58}
-	bus.deviceVisible = true
-	bus.servicesResolved = true
-	bus.gattReady = true
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if _, err := connect(ctx, bus, "", vin, &ScanResult{Path: hci1Path, HasRSSI: true, RSSI: -58}); err != nil {
-		t.Fatalf("connect on hci1 advertisement: %v", err)
-	}
-	if !bus.connected {
-		t.Fatal("expected Connect on the advertisement's adapter, not a different Adapter1")
+	if disconnectAt < 0 || disconnectAt >= connectAt || bus.stopDiscoveryPolls != 0 {
+		t.Fatal("new Connect raced old link/scanner cleanup")
 	}
 }
 
 func TestConnectUsesNegotiatedMTU(t *testing.T) {
 	bus := newFakeBluez()
 	vin := "5YJ3E1EA0PF000000"
-	bus.dev = &fakeDevice{path: bus.devPath(), name: vehicleBeaconName(vin), rssi: -55}
-	bus.deviceVisible = true
-	bus.servicesResolved = true
-	bus.gattReady = true
-	bus.mtu = 250 // Tesla Android requestMtu(250)
-
+	bus.dev = &fakeDevice{path: bus.devPath(), name: vehicleBeaconName(vin)}
+	bus.deviceVisible, bus.servicesResolved, bus.gattReady = true, true, true
+	bus.mtu = 247
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	cc, err := connect(ctx, bus, "hci0", vin, &ScanResult{Path: bus.dev.path, HasRSSI: true, RSSI: -55})
+	cc, err := connect(ctx, bus, "hci0", vin, &ScanResult{Path: bus.devPath()})
 	if err != nil {
-		t.Fatalf("connect: %v", err)
+		t.Fatal(err)
 	}
-	c, ok := cc.(*Connection)
-	if !ok {
-		t.Fatalf("got %T", cc)
+	defer cc.Close()
+	if err := cc.Send(ctx, make([]byte, 500)); err != nil {
+		t.Fatal(err)
 	}
-	if c.blockLength != 247 {
-		t.Fatalf("blockLength = %d, want 247 (negotiated MTU 250 - 3)", c.blockLength)
-	}
-}
-
-func TestConnectDeviceAbortsHungConnect(t *testing.T) {
-	bus := newFakeBluez()
-	vin := "5YJ3E1EA0PF000000"
-	bus.dev = &fakeDevice{path: bus.devPath(), name: vehicleBeaconName(vin)}
-	bus.deviceVisible = true
-	bus.connectHang = 5 * time.Second
-
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
-	defer cancel()
-	start := time.Now()
-	err := connectDevice(ctx, bus, bus.devPath())
-	if err == nil {
-		t.Fatal("expected hung Connect to fail when ctx expires")
-	}
-	if elapsed := time.Since(start); elapsed > time.Second {
-		t.Fatalf("hung Connect returned after %v, want roughly the 200ms deadline", elapsed)
-	}
-	if n := countCalls(bus.calls, deviceIface+".Disconnect"); n == 0 {
-		t.Fatal("expired Connect must Disconnect to cancel the in-flight LE create")
-	}
-}
-
-func TestAdapterPathForDevice(t *testing.T) {
-	if got := adapterPathForDevice("/org/bluez/hci0/dev_AA_BB_CC"); got != "/org/bluez/hci0" {
-		t.Fatalf("adapterPathForDevice = %q, want /org/bluez/hci0", got)
-	}
-	if got := adapterPathForDevice("/org/bluez/hci0"); got != "" {
-		t.Fatalf("adapterPathForDevice(adapter) = %q, want empty", got)
+	if len(bus.writes) != 3 || len(bus.writes[0]) != 244 || len(bus.writes[1]) != 244 || len(bus.writes[2]) != 14 {
+		t.Fatal("writes did not use negotiated MTU minus ATT overhead")
 	}
 }
 
@@ -316,7 +208,6 @@ func TestServicesTimeoutReportsDeviceStateBeforeDisconnect(t *testing.T) {
 	vin := "5YJ3E1EA0PF000000"
 	bus.dev = &fakeDevice{path: bus.devPath(), name: vehicleBeaconName(vin)}
 	bus.deviceVisible = true
-	bus.holdServices = true
 	// Device1.Connect succeeds but BlueZ never completes service discovery.
 	var lines []string
 	SetDiagnosticLogger(func(format string, args ...interface{}) {
@@ -326,7 +217,7 @@ func TestServicesTimeoutReportsDeviceStateBeforeDisconnect(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
 	defer cancel()
-	_, _, err := tryConnect(ctx, bus, "hci0", vin, &ScanResult{Path: bus.dev.path, HasRSSI: true, RSSI: -55})
+	_, _, err := tryConnect(ctx, bus, "hci0", vin, &ScanResult{Path: bus.dev.path})
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("tryConnect error = %v, want deadline exceeded", err)
 	}

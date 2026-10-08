@@ -116,8 +116,8 @@ impl From<ConfigVersion> for u8 {
 
 /// Pairing state of the current VIN's local key. `Paired` means the key is
 /// eligible for automatic phone-key presence (NFC enrollment completed, or
-/// `Core::new` healed it because the VIN is set and both key files are on
-/// disk); `Unpaired` (the serde default) means it hasn't. This replaces the
+/// a pre-phone-key V0 config was migrated); explicit `Unpaired` state is
+/// preserved across restarts. This replaces the
 /// old `paired_vin: Option<String>` field, which stored a duplicate copy of
 /// the VIN just to say "this VIN is paired".
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -181,6 +181,23 @@ impl<'de> Deserialize<'de> for Config {
     where
         D: serde::Deserializer<'de>,
     {
+        // Null is an explicit default value; absence identifies legacy schemas.
+        #[derive(Default)]
+        enum EnrollmentField<T> {
+            #[default]
+            Missing,
+            Present(T),
+        }
+
+        fn present_optional<'de, D, T>(deserializer: D) -> Result<EnrollmentField<T>, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+            T: Deserialize<'de> + Default,
+        {
+            Option::<T>::deserialize(deserializer)
+                .map(|value| EnrollmentField::Present(value.unwrap_or_default()))
+        }
+
         #[derive(Deserialize)]
         struct LegacyConfig {
             #[serde(default)]
@@ -191,16 +208,16 @@ impl<'de> Deserialize<'de> for Config {
             key_name: String,
             connect_timeout_sec: i32,
             command_timeout_sec: i32,
-            #[serde(default)]
-            vin_state: Option<VinState>,
-            #[serde(default)]
-            paired_vin: Option<String>,
+            #[serde(default, deserialize_with = "present_optional")]
+            vin_state: EnrollmentField<VinState>,
+            #[serde(default, deserialize_with = "present_optional")]
+            paired_vin: EnrollmentField<String>,
         }
 
         let raw = LegacyConfig::deserialize(deserializer)?;
-        let (vin_state, version) = if let Some(state) = raw.vin_state {
+        let (vin_state, version) = if let EnrollmentField::Present(state) = raw.vin_state {
             (state, raw.version.unwrap_or(ConfigVersion::V2))
-        } else if let Some(v) = raw.paired_vin.as_deref() {
+        } else if let EnrollmentField::Present(v) = raw.paired_vin {
             let state = if !v.is_empty() && v == raw.vin {
                 VinState::Paired
             } else {
@@ -225,7 +242,9 @@ impl<'de> Deserialize<'de> for Config {
 impl Config {
     /// Reads the config, returning an I/O error if the file exists but can't
     /// be read. A missing file is the caller's signal to fall back to
-    /// [`Config::default`]; an unparseable file is logged and defaults too.
+    /// [`Config::default`]; an unparseable file is backed up alongside the
+    /// original (`.corrupt-<timestamp>`) and defaults too, so a truncated
+    /// write never silently discards the VIN without forensic evidence.
     pub(crate) fn load(path: &Path) -> io::Result<Config> {
         let data = match fs::read(path) {
             Ok(d) => d,
@@ -235,11 +254,26 @@ impl Config {
         let mut cfg: Config = match serde_json::from_slice(&data) {
             Ok(cfg) => cfg,
             Err(e) => {
+                // A future schema may change required fields or enum values.
+                // Treat it as unsupported, not corrupt: defaulting would allow
+                // this build's next save to overwrite a perfectly valid file.
+                let version = serde_json::from_slice::<serde_json::Value>(&data)
+                    .ok()
+                    .and_then(|json| json.get("version").and_then(serde_json::Value::as_u64));
+                if version
+                    .is_some_and(|version| version > u64::from(u8::from(ConfigVersion::CURRENT)))
+                {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("unsupported newer config schema: {e}"),
+                    ));
+                }
                 eprintln!(
                     "electric-eel: ignoring unparseable config {}: {}",
                     path.display(),
                     e
                 );
+                backup_corrupt_config(path, &data);
                 return Ok(Config::default());
             }
         };
@@ -273,9 +307,12 @@ impl Config {
             );
             self.command_timeout_sec = default.command_timeout_sec;
         }
-        if !self.vin.trim().is_empty() && !VIN_RE.is_match(self.vin.trim()) {
+        let vin_trimmed = self.vin.trim().to_string();
+        if !vin_trimmed.is_empty() && !VIN_RE.is_match(&vin_trimmed) {
             eprintln!("electric-eel: config.json vin fails validation, clearing");
             self.vin = String::new();
+        } else {
+            self.vin = vin_trimmed;
         }
         let model = self.model.trim().to_ascii_lowercase();
         if VALID_MODELS.contains(&model.as_str()) {
@@ -284,10 +321,12 @@ impl Config {
             eprintln!("electric-eel: config.json model fails validation, resetting to default");
             self.model = default.model;
         }
-        let key_name = self.key_name.trim();
-        if key_name.len() > MAX_KEY_NAME_LEN || !KEY_NAME_RE.is_match(key_name) {
+        let key_name_trimmed = self.key_name.trim().to_string();
+        if key_name_trimmed.len() > MAX_KEY_NAME_LEN || !KEY_NAME_RE.is_match(&key_name_trimmed) {
             eprintln!("electric-eel: config.json key_name fails validation, resetting to default");
             self.key_name = default.key_name;
+        } else {
+            self.key_name = key_name_trimmed;
         }
     }
 
@@ -297,16 +336,57 @@ impl Config {
     /// directory entry (fsync after rename) are flushed to disk, so a power
     /// loss right after the rename can't lose the new config either.
     pub(crate) fn save(&self, path: &Path) -> io::Result<()> {
+        self.ensure_writable()?;
         let data = serde_json::to_vec_pretty(self)?;
-        let dir = path.parent().unwrap_or_else(|| Path::new("."));
-        let mut tmp = NamedTempFile::new_in(dir)?;
-        tmp.as_file()
-            .set_permissions(fs::Permissions::from_mode(0o600))?;
-        tmp.write_all(&data)?;
-        tmp.as_file().sync_all()?;
-        tmp.persist(path)?;
-        fs::File::open(dir)?.sync_all()
+        write_atomic(path, &data)
     }
+
+    pub(crate) fn ensure_writable(&self) -> io::Result<()> {
+        if let ConfigVersion::Unknown(version) = self.version {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("config schema {version} is newer than this build; update the app before changing settings or keys"),
+            ));
+        }
+        Ok(())
+    }
+}
+
+/// Durable owner-only replacement shared by configuration and public-key writes.
+pub(crate) fn write_atomic(path: &Path, data: &[u8]) -> io::Result<()> {
+    let dir = path.parent().unwrap_or_else(|| Path::new("."));
+    let mut tmp = NamedTempFile::new_in(dir)?;
+    tmp.as_file()
+        .set_permissions(fs::Permissions::from_mode(0o600))?;
+    tmp.write_all(data)?;
+    tmp.as_file().sync_all()?;
+    tmp.persist(path)?;
+    fs::File::open(dir)?.sync_all()
+}
+
+/// Preserve an unparseable config for forensics instead of silently dropping
+/// it. Best-effort: failures are logged and ignored so a backup problem can
+/// never turn a recoverable corrupt config into a hard startup failure.
+fn backup_corrupt_config(path: &Path, data: &[u8]) {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
+    let backup = path.with_extension(format!("corrupt-{stamp}.json"));
+    if let Err(e) = fs::write(&backup, data) {
+        eprintln!(
+            "electric-eel: could not back up corrupt config {}: {}",
+            backup.display(),
+            e
+        );
+        return;
+    }
+    // Keep the evidence readable only by the owner, like config.json itself.
+    let _ = fs::set_permissions(&backup, fs::Permissions::from_mode(0o600));
+    eprintln!(
+        "electric-eel: backed up unparseable config to {}",
+        backup.display()
+    );
 }
 
 /// Returns `Ok(())` if the inputs are acceptable, else a human-readable error.
@@ -342,6 +422,46 @@ pub(crate) fn validate_config(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn explicit_null_enrollment_is_not_misclassified_as_legacy_v0() {
+        for (field, version) in [
+            (r#""paired_vin":null"#, ConfigVersion::V1),
+            (r#""vin_state":null"#, ConfigVersion::V2),
+        ] {
+            let json = format!(
+                r#"{{"vin":"5YJ3E1EA0PF000000","key_name":"phone","connect_timeout_sec":20,"command_timeout_sec":5,{field}}}"#
+            );
+            let config: Config = serde_json::from_str(&json).unwrap();
+            assert_eq!(config.version, version);
+            assert_eq!(config.vin_state, VinState::Unpaired);
+        }
+    }
+
+    #[test]
+    fn unknown_schema_save_is_refused_without_modifying_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        let original = b"future config evidence";
+        fs::write(&path, original).unwrap();
+        let config = Config {
+            version: ConfigVersion::Unknown(99),
+            ..Config::default()
+        };
+        assert!(config.save(&path).is_err());
+        assert_eq!(fs::read(path).unwrap(), original);
+    }
+
+    #[test]
+    fn unknown_schema_with_new_fields_is_not_treated_as_corrupt() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        let original = r#"{"version":99,"vin_state":"new_enrollment_state"}"#;
+        fs::write(&path, original).unwrap();
+        assert!(Config::load(&path).is_err());
+        assert_eq!(fs::read_to_string(&path).unwrap(), original);
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
 
     // (name, vin, model, key_name, connect_timeout, command_timeout, want)
     type ValidateConfigCase<'a> = (
@@ -756,5 +876,29 @@ mod tests {
         assert_eq!(cfg.vin_state, VinState::Paired);
 
         fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_load_trims_whitespace_fields() {
+        // validate_config/set_config trim VIN and key_name, but sanitize()
+        // only validates the trimmed value and stores the raw one with
+        // surrounding spaces. A hand-edited config then carries "-vin ' 5YJ… '"
+        // (with spaces) into tesla-control and fails every command.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        fs::write(
+            &path,
+            r#"{"vin":" 5YJ3E1EA0PF000000 ","model":"","key_name":"  mykey  ","connect_timeout_sec":20,"command_timeout_sec":5}"#,
+        )
+        .unwrap();
+        let cfg = Config::load(&path).expect("load");
+        assert_eq!(
+            cfg.vin, "5YJ3E1EA0PF000000",
+            "VIN with surrounding spaces must load trimmed"
+        );
+        assert_eq!(
+            cfg.key_name, "mykey",
+            "key_name with surrounding spaces must load trimmed"
+        );
     }
 }

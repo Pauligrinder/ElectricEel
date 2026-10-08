@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -152,6 +153,10 @@ func main() {
 					return
 				}
 				status = 0
+				return
+			}
+			if config.KeyFilename != "" && !errors.Is(err, os.ErrNotExist) {
+				writeErr("Failed to load existing private key: %s. Use -f to replace it.", err)
 				return
 			}
 		}

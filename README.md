@@ -56,4 +56,9 @@ Technical details live in `docs/`: `architecture.md` (how the app is
 built), `navigation-share.md` (destination sharing), `translations.md`
 (localization workflow), `build.md` (building and releasing),
 `limitations.md` (current limits), `vehicle-command-patch.md`
-(Bluetooth protocol additions).
+(Bluetooth protocol additions), and `phone-key-events.md` (D-Bus integration
+events for other apps).
+
+To launch an app or run another automation on phone-key events, follow
+[Configure Automagic](docs/automagic.md). It includes an importable example;
+Automagic handles the actions.
