@@ -183,16 +183,26 @@ func (o *godbusObject) setProp(ctx context.Context, iface, prop string, value in
 
 // Conn is a handle to a system-bus connection prepared for org.bluez calls.
 // Watchers and GATT links own independent signal subscriptions; callers
-// reuse the bus connection for the lifetime of the app.
+// reuse the bus connection for the lifetime of the owning protocol session.
 type Conn struct {
 	raw *dbus.Conn
 	bus dbusBus
 }
 
-// Open establishes a system-bus connection for BlueZ access.
+// Open establishes an owned system-bus connection for BlueZ access.
 func Open() (*Conn, error) {
-	raw, err := dbus.SystemBus()
+	// SystemBus caches a process-wide connection, even after Close. Session
+	// teardown must not close that shared handle and poison every later retry.
+	raw, err := dbus.SystemBusPrivate()
 	if err != nil {
+		return nil, err
+	}
+	if err := raw.Auth(nil); err != nil {
+		_ = raw.Close()
+		return nil, err
+	}
+	if err := raw.Hello(); err != nil {
+		_ = raw.Close()
 		return nil, err
 	}
 	return &Conn{raw: raw, bus: adaptConn(raw)}, nil

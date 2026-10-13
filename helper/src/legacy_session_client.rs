@@ -475,7 +475,7 @@ impl SessionClient {
         if self.shutdown_rx.is_closed() {
             return Err(SessionError::Cancelled);
         }
-        future::race(
+        let result = future::race(
             work,
             future::race(
                 async {
@@ -488,7 +488,16 @@ impl SessionClient {
                 },
             ),
         )
-        .await
+        .await;
+        // Shutdown also stops the reader, which closes the response channel.
+        // That transport error can win the race against the cancellation
+        // waiter; report the shutdown cause while retaining successful work.
+        match result {
+            Err(SessionError::BrokenPipe) if self.shutdown_rx.is_closed() => {
+                Err(SessionError::Cancelled)
+            }
+            result => result,
+        }
     }
 
     pub(crate) fn is_presence_active(&self) -> bool {
@@ -1059,6 +1068,22 @@ pub(crate) mod tests {
             Duration::from_secs(1),
         ));
         assert!(matches!(result, Ok(42)));
+    }
+
+    #[test]
+    fn shutdown_transport_error_is_reported_as_cancellation() {
+        let dir = tempfile::tempdir().unwrap();
+        let client = test_client(dir.path());
+        let result = future::block_on(client.cancellable::<()>(
+            async {
+                // Model the reader closing the response channel in the same
+                // poll that observes shutdown, before the cancellation waiter.
+                client.cancel();
+                Err(SessionError::BrokenPipe)
+            },
+            Duration::from_secs(1),
+        ));
+        assert!(matches!(result, Err(SessionError::Cancelled)));
     }
 
     fn tmp_state_dir(tag: &str) -> tempfile::TempDir {
