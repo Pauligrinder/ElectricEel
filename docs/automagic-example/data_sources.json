@@ -14,10 +14,10 @@
       "signal": "PhoneKeyEvent",
       "filters": { "arg0": "presence_inside" },
       "transformations": [
-        { "type": "copy", "in": "arg0", "out": "kind" },
-        { "type": "copy", "in": "arg1", "out": "vin" },
-        { "type": "copy", "in": "arg2", "out": "event_time" },
-        { "type": "copy", "in": "arg3", "out": "error" }
+        { "type": "copy", "in": "arg0", "out": "kind", "optional": true },
+        { "type": "copy", "in": "arg1", "out": "vin", "optional": true },
+        { "type": "copy", "in": "arg2", "out": "event_time", "optional": true },
+        { "type": "copy", "in": "arg3", "out": "error", "optional": true }
       ]
     },
     {
@@ -33,10 +33,10 @@
       "signal": "PhoneKeyEvent",
       "filters": { "arg0": "presence_far" },
       "transformations": [
-        { "type": "copy", "in": "arg0", "out": "kind" },
-        { "type": "copy", "in": "arg1", "out": "vin" },
-        { "type": "copy", "in": "arg2", "out": "event_time" },
-        { "type": "copy", "in": "arg3", "out": "error" }
+        { "type": "copy", "in": "arg0", "out": "kind", "optional": true },
+        { "type": "copy", "in": "arg1", "out": "vin", "optional": true },
+        { "type": "copy", "in": "arg2", "out": "event_time", "optional": true },
+        { "type": "copy", "in": "arg3", "out": "error", "optional": true }
       ]
     }
   ]

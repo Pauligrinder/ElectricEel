@@ -2,6 +2,7 @@ TARGET = harbour-electric-eel
 
 CONFIG += sailfishapp
 CONFIG += c++11
+QT += network
 
 # Single source of the app version, surfaced on the Settings page and
 # compared against the core's GetVersion. The release workflow stamps
@@ -19,11 +20,13 @@ LIBS += $$PWD/thirdparty/libelectriceelcore.a -lpthread -ldl -lm
 
 SOURCES += \
     src/harbour-electric-eel.cpp \
-    src/teslaclient.cpp
+    src/teslaclient.cpp \
+    src/automagicsetup.cpp
 
 HEADERS += \
     src/commandarguments.h \
-    src/teslaclient.h
+    src/teslaclient.h \
+    src/automagicsetup.h
 
 DISTFILES += \
     rpm/harbour-electric-eel.spec \
@@ -112,4 +115,7 @@ TRANSLATIONS += \
 transqm.files = translations/*.qm
 transqm.path = /usr/share/$${TARGET}/translations
 
-INSTALLS += imgdir protocol_lib icon86 icon108 icon128 icon172 transqm
+sailjailperm.files = sailjail/ElectricEelAutomagic.permission
+sailjailperm.path = /etc/sailjail/permissions
+
+INSTALLS += imgdir protocol_lib icon86 icon108 icon128 icon172 transqm sailjailperm

@@ -10,6 +10,9 @@ Item {
     DBusAdaptor {
         id: eventBus
         bus: DBus.SessionBus
+        // Same well-known name as the Share adaptor so Destination-based
+        // tooling and introspection agree with path/interface/signal matches.
+        service: "org.electriceel.harbour-electric-eel"
         path: "/org/electriceel/PhoneKey"
         iface: "org.electriceel.PhoneKey1"
         xml: '<interface name="org.electriceel.PhoneKey1">'
@@ -29,7 +32,12 @@ Item {
     Connections {
         target: root.client
         ignoreUnknownSignals: true
-        onPhoneKeyEvent: eventBus.emitSignal("PhoneKeyEvent", [kind, vin, time, errorMessage])
-        onPhoneKeyStateChanged: eventBus.emitSignal("PhoneKeyStateChanged", [active, link, status])
+        // Pass strings explicitly: an undefined trailing arg can drop from the
+        // D-Bus body, and automagic-daemon then fails required transformations.
+        onPhoneKeyEvent: eventBus.emitSignal("PhoneKeyEvent",
+                                             [String(kind), String(vin),
+                                              String(time), String(errorMessage || "")])
+        onPhoneKeyStateChanged: eventBus.emitSignal("PhoneKeyStateChanged",
+                                                    [active, String(link), String(status || "")])
     }
 }
