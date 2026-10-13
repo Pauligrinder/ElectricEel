@@ -96,6 +96,7 @@ test("a replacement share ignores the old preview and double send preserves corr
 for (const hardFailure of [false, true]) {
     test(`a failed dashboard toggle restores confirmed state (${hardFailure ? "transport" : "vehicle"} failure)`, () => {
         const confirmed = { locked: true };
+        let refreshes = 0;
         const page = {
             vin: "VIN", statusSeq: 0, statusInstance: "test", statusRequestId: "",
             vehicleStatus: confirmed, statusBeforeToggle: null, statusStage: "", statusError: "",
@@ -103,6 +104,7 @@ for (const hardFailure of [false, true]) {
         const context = vm.createContext({
             page, VState: { clone: (state) => ({ ...state }) },
             teslaClient: { runCommand: () => {} },
+            refreshStatus: () => { refreshes++; },
             ok: false, stdErr: "Vehicle refused", exitCode: 1, message: "Transport failed",
         });
         loadFunctions(firstPageSource, ["runStatus", "setOptimistic", "toggleLock"], context);
@@ -114,5 +116,6 @@ for (const hardFailure of [false, true]) {
         assert.equal(page.statusError, hardFailure ? "Transport failed" : "Vehicle refused");
         assert.equal(page.statusStage, "");
         assert.equal(page.statusBeforeToggle, null);
+        assert.equal(refreshes, hardFailure ? 1 : 0);
     });
 }

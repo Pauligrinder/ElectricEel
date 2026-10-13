@@ -7,6 +7,8 @@ Page {
     property var teslaClient
     property string categoryId
     property string categoryTitle
+    property string vin: ""
+    property bool configReady: false
     // Last dashboard reading from FirstPage, passed through at push time -
     // shown as a subheader below. Not re-fetched here: it's a snapshot, not
     // a live binding, so it can go stale while this page is open (matches
@@ -66,6 +68,16 @@ Page {
 
     Connections {
         target: teslaClient
+        onConfigLoaded: {
+            if (page.vin !== vin) {
+                page.pendingCmd = ""
+                page.pendingLabel = ""
+                page.lastResult = ""
+                page.vehicleStatus = null
+            }
+            page.vin = vin
+            page.configReady = true
+        }
         onCommandFinished: {
             if (requestId !== page.pendingCmd)
                 return
@@ -84,11 +96,13 @@ Page {
 
     function execute(commandDef, argValues) {
         page.requestSeq++
-        page.pendingCmd = commandDef.id + "#" + page.requestSeq + "@" + Date.now() + ":" + Math.random()
+        page.pendingCmd = commandDef.id + "#" + page.requestSeq + "@" + Date.now() + ":" + Math.random() + ":" + page.vin
         page.pendingLabel = commandDef.label
         page.lastResult = ""
         teslaClient.runCommand(page.pendingCmd, commandDef.id, argValues || [])
     }
+
+    Component.onCompleted: teslaClient.refreshConfig()
 
     function openArgs(commandDef) {
         var dialog = pageStack.push(Qt.resolvedUrl("ArgumentDialog.qml"), { commandDef: page.commandWithStateDefaults(commandDef) })
@@ -183,7 +197,7 @@ Page {
         delegate: BackgroundItem {
             width: listView.width
             height: Theme.itemSizeMedium
-            enabled: page.pendingCmd.length === 0
+            enabled: page.configReady && page.pendingCmd.length === 0
 
             onClicked: {
                 if (modelData.args && modelData.args.length > 0)

@@ -32,18 +32,15 @@ pub unsafe extern "C" fn electric_eel_app_main(
     let state = unsafe { CStr::from_ptr(state) }
         .to_string_lossy()
         .into_owned();
-    let bin = "/usr/share/harbour-electric-eel/bin";
-    let session = SessionClient::new(
-        format!("{bin}/tesla-session").into(),
-        "bluez",
-        state.clone().into(),
-    );
+    let bin = "/usr/share/harbour-electric-eel/lib";
+    let session =
+        SessionClient::library(format!("{bin}/libteslable.so").into(), state.clone().into());
     let result = match Core::new(bin.to_string(), state, Some(session)) {
         Ok(core) => {
             let mut runtime = Box::new(Runtime::new(core));
             // Rust starts all work; Qt only submits actions and receives updates.
             let result = unsafe { electric_eel_ui_run(std::ptr::addr_of_mut!(*runtime).cast()) };
-            drop(runtime); // Join Rust threads, stop presence and reap Go.
+            drop(runtime); // Join Rust threads and cross the Go shutdown barrier.
             result
         }
         Err(error) => {

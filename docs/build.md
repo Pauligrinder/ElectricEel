@@ -4,11 +4,11 @@
 
 `helper/make-app-bundle.sh` cross-builds the Rust staticlib with `app-entry`
 (Rust application entrypoint, autonomous runtime, and MCE client)
-(`aarch64-unknown-linux-gnu`, glibc) and the Go `tesla-session` child
-(`CGO_ENABLED=0 GOOS=linux GOARCH=arm64`), staging them into
-`app/thirdparty/` and `app/bin/`. Requires the `aarch64-unknown-linux-gnu`
+(`aarch64-unknown-linux-gnu`, glibc) and the Go `libteslable.so` protocol library
+(`CGO_ENABLED=1`, SDK target compiler), staging them into
+`app/thirdparty/` and `app/lib/`. Requires Go, Docker with the Sailfish image and the `aarch64-unknown-linux-gnu`
 Rust target (installed automatically if missing). Re-run whenever
-`helper/` changes; nothing under `app/thirdparty` or `app/bin` is
+`helper/` changes; nothing under `app/thirdparty` or `app/lib` is
 committed. `tools/build-qm.sh` refreshes the translation catalogs.
 
 ## Build the RPM (Sailfish Platform SDK, Docker)
@@ -34,9 +34,10 @@ docker rm -f electric-eel-build
 
 rpmlint's Sailfish config accepts only old Fedora short license names
 (`ASL 2.0`, not `Apache-2.0`) and requires a `%changelog` section. The
-remaining rpmlint errors on the Go child (statically linked binary in
-`/usr/share`) are pre-existing and treated as warnings by the build
-config. QML files are not compiled by `mb2`, only reviewed.
+private Go library is non-executable (0644) under the app's `lib/` directory;
+both final ELF files are stripped. The SDK 5.2 Harbour validator passes the
+migrated RPM, including Libraries, Permissions and Requires.
+QML files are not compiled by `mb2`, only reviewed.
 
 ## Runtime checks
 
@@ -51,6 +52,9 @@ cargo clippy --manifest-path helper/Cargo.toml --lib --features app-entry -- -D 
 After staging the bundle and copying `app/` into the SDK, test the real Rust
 entrypoint/runtime against the Qt adapter without loading a Sailfish view:
 
+The SDK needs `pkgconfig(Qt5Test)` (`qt5-qttest-devel`) for this test. It is a
+test-only dependency, not a runtime dependency of the RPM.
+
 ```sh
 docker exec -w /home/mersdk/app/tests electric-eel-build \
   sb2 -t SailfishOS-5.2.0.15-aarch64 qmake rustruntime.pro
@@ -63,6 +67,18 @@ docker exec -w /home/mersdk/app/tests electric-eel-build \
 This checks action/result marshaling, GUI-thread delivery, and Rust's delayed
 refresh while the GUI thread is sleeping. The only production QML timer is
 the dashboard label-age update; backend deadlines do not depend on Qt.
+
+The test also loads the real Go shared library alongside Qt/Rust and verifies
+asynchronous callbacks and shutdown. Copy `helper/session/abi` to the matching
+`/home/mersdk/helper/session/abi` location in the SDK before building the test.
+
+Native ABI checks and host integration commands are in [tesla-ble-abi.md](tesla-ble-abi.md).
+Run Harbour validation on the final RPM with:
+
+```sh
+docker exec -w /home/mersdk/app electric-eel-build \
+  mb2 --target SailfishOS-5.2.0.15-aarch64 check --suites harbour
+```
 
 ## Install on the phone
 
@@ -92,6 +108,6 @@ git push origin v<version>
 The RPM version comes from the tag (leading `v` stripped); the spec,
 the `.pro` `VERSION`, and `helper/Cargo.toml` are stamped from it, so
 the Settings page versions and `core_version()` match. The bundle
-(staticlib + `tesla-session`) is rebuilt on the runner; no binaries are
+(staticlib + `libteslable.so`) is rebuilt on the runner; no binaries are
 committed. Tag pushes attach the RPM to the release; manual
 `workflow_dispatch` runs upload a workflow artifact instead.

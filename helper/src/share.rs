@@ -355,7 +355,7 @@ fn looks_like_latlon_pair(s: &str) -> bool {
     numeric_pair(s).is_some()
 }
 
-fn valid_latlon(lat: f64, lon: f64) -> bool {
+pub(crate) fn valid_latlon(lat: f64, lon: f64) -> bool {
     lat.is_finite()
         && lon.is_finite()
         && (-90.0..=90.0).contains(&lat)

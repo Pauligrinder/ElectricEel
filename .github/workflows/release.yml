@@ -7,7 +7,7 @@ name: Build & publish RPM
 #
 # Phase 4 end-state: the Rust control core is an in-process staticlib
 # (aarch64 glibc) staged into the app tree by helper/make-app-bundle.sh,
-# which also builds the Go tesla-session child that the core spawns. The app
+# which also builds the private Go protocol library against the Sailfish SDK. The app
 # RPM is self-contained - there is no electric-eel-daemon helper package anymore
 # (BLUEZ_BACKEND_PLAN.md).
 
@@ -90,10 +90,13 @@ jobs:
                "$(sed -n 's/^version = "\(.*\)"/\1/p' helper/Cargo.toml)" \
             || { echo "app (.pro) and core (Cargo.toml) build versions diverged"; exit 1; }
 
-      # Rust staticlib (aarch64 glibc - matches the app's Qt/Silica) + Go
-      # tesla-session child, staged into app/thirdparty and app/bin. Nothing
+      - name: Pull Sailfish Platform SDK
+        run: docker pull coderus/sailfishos-platform-sdk-aarch64
+
+      # Rust staticlib + SDK-built Go shared library, staged into app/thirdparty
+      # and app/lib. Nothing
       # here is committed to git (see .gitignore) - it is build output.
-      - name: Stage the in-app core bundle (staticlib + tesla-session)
+      - name: Stage the in-app core bundle (staticlib + Go protocol library)
         run: |
           ./helper/make-app-bundle.sh
 
@@ -102,9 +105,6 @@ jobs:
           sed -i "s/^Version:.*/Version:       ${{ steps.version.outputs.version }}/" app/rpm/harbour-electric-eel.spec
           grep '^Version:' app/rpm/harbour-electric-eel.spec
 
-      - name: Pull Sailfish Platform SDK
-        run: docker pull coderus/sailfishos-platform-sdk-aarch64
-
       - name: Build the app RPM in the Sailfish SDK container
         run: |
           set -euxo pipefail
@@ -112,8 +112,7 @@ jobs:
           docker start electric-eel-build
           trap 'docker rm -f electric-eel-build >/dev/null 2>&1 || true' EXIT
 
-          # harbour-electric-eel.aarch64.rpm (staticlib + Go child staged by
-          # make-app-bundle.sh ride along in app/thirdparty + app/bin)
+          # Staticlib + private shared library staged by make-app-bundle.sh.
           docker cp app electric-eel-build:/home/mersdk/app
           docker exec -u root electric-eel-build chown -R mersdk:mersdk /home/mersdk/app
           docker exec -w /home/mersdk/app electric-eel-build \

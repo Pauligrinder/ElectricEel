@@ -226,7 +226,9 @@ func newWatcher(ctx context.Context, bus dbusBus, adapterID, vin string) (*Watch
 		err = startDiscovery(ctx, bus, adapterPath)
 	}
 	if err != nil {
-		w.Stop(context.Background())
+		stopCtx, stopCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		w.Stop(stopCtx)
+		stopCancel()
 		return nil, fmt.Errorf("bluez: start watcher: %w", err)
 	}
 	diagnostic("event watcher started adapter=%s", adapterPath)

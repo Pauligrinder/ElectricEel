@@ -58,7 +58,7 @@ version. Legacy integrations can continue listening only for `PhoneKeyEvent`.
 Internally Rust publishes `phone_key_state { active, link, status }` and Qt
 exposes `phoneKeyActive`, `phoneKeyLink` and display-only `phoneKeyStatus`.
 Adapter-off detection originates from typed BlueZ errors (`error_code` in the
-Go-to-Rust event); diagnostic wording is not a machine contract.
+Go-to-Rust observation, mapped by Rust to the public event); diagnostic wording is not a machine contract.
 
 ## Events
 
@@ -84,7 +84,9 @@ new event.
 Consumers can start an integration on `presence_inside` and reset it on
 `presence_disconnected` / `presence_far`. These are live notifications without
 history replay. Repeated events are forwarded even if the dashboard status
-text is unchanged. Watch the service's `NameOwnerChanged` to handle app exit;
+text is unchanged during normal consumption; queued derived snapshots can
+coalesce under a slow consumer. Terminal stopped state is retained separately.
+Watch the service's `NameOwnerChanged` to handle app exit;
 a final presence event is not guaranteed during shutdown. Future event kinds
 may be added, so consumers should ignore unknown kinds.
 

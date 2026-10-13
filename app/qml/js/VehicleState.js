@@ -77,7 +77,7 @@ function modelName(id) {
 
 function modelIndex(id) {
     var found = findModel(id)
-    return found.index >= 0 ? found.index : 0
+    return found.index
 }
 
 // Effective model id to render on the front page: an explicit config

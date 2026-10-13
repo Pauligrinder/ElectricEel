@@ -18,6 +18,7 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"electric-eel-session/bluez"
+	"electric-eel-session/internal/phoneprotocol"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -227,24 +228,17 @@ const addKeyRequestGracePeriod = 90 * time.Second
 // does not authenticate a missing domain lazily. VCSEC-only actions must not
 // wait for sleeping infotainment. An empty slice means no handshake is needed.
 func sessionDomains(cmd string) []protocol.Domain {
-	switch cmd {
-	case "", "lock", "unlock", "drive", "wake", "add-key", "remove-key", "list-keys",
-		"trunk-open", "trunk-move", "trunk-close", "frunk-open",
-		"tonneau-open", "tonneau-close", "tonneau-stop", "autosecure-modelx":
+	if _, ok := commands[cmd]; !ok && cmd != "" && cmd != "navigate" {
+		return nil
+	}
+	switch phoneprotocol.CommandDomain(cmd) {
+	case 0:
+		return []protocol.Domain{}
+	case 1:
 		return []protocol.Domain{protocol.DomainVCSEC}
-	case "state", "navigate":
+	default:
 		return []protocol.Domain{protocol.DomainInfotainment}
 	}
-	if info, ok := commands[cmd]; ok {
-		if info.domain != protocol.DomainNone {
-			return []protocol.Domain{info.domain}
-		}
-		if !info.requiresAuth {
-			return []protocol.Domain{}
-		}
-		return []protocol.Domain{protocol.DomainInfotainment}
-	}
-	return nil
 }
 
 // ensureConnectedLocked reuses the live session if there is one; otherwise
@@ -280,6 +274,7 @@ func (s *session) ensureConnectedLocked(ctx context.Context, cmd string, target 
 				keylog("connect", "StartSession additional domains=%v", domains)
 				if err := s.car.StartSession(ctx, domains); err != nil {
 					keylog("connect", "StartSession additional failed: %v", err)
+					s.teardownLocked()
 					return err
 				}
 			}
@@ -1024,7 +1019,9 @@ func (s *session) presenceLoop(ctx context.Context, cfg presenceConfig, generati
 		}
 		keylog("presence", "watcher started")
 		watcher = s.runPresenceWatcher(ctx, cfg, watcher)
-		watcher.Stop(context.Background())
+		stopCtx, stopCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		watcher.Stop(stopCtx)
+		stopCancel()
 	}
 }
 
@@ -1404,8 +1401,14 @@ func (s *session) dispatch(req request) response {
 				execErr = fmt.Errorf("missing key argument for enrollment check")
 			} else {
 				enrollmentCtx, enrollmentCancel := context.WithTimeout(s.requestContext(), addKeyRequestGracePeriod)
-				execErr = s.confirmEnrollment(enrollmentCtx, req.Args[0])
+				car := s.car
+				s.mu.Unlock()
+				execErr = s.confirmEnrollment(enrollmentCtx, req.Args[0], car)
 				enrollmentCancel()
+				s.mu.Lock()
+				if s.car != car {
+					return response{ID: req.ID, Stderr: "pairing connection changed during enrollment", ExitCode: 1}
+				}
 			}
 		}
 		// This connection never called StartSession (see

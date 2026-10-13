@@ -5,24 +5,26 @@ Release:    1
 License:    ASL 2.0
 URL:        https://github.com/nappa85/ElectricEel
 Source0:    %{name}-%{version}.tar.bz2
-Requires:   sailfishsilica-qt5 >= 0.10.9
-Requires:   qt5-qtcore
-Requires:   qt5-qtdeclarative
-Requires:   libkeepalive >= 1.8.0
+Requires:   sailfishsilica-qt5
+Requires:   libkeepalive
 BuildRequires:  pkgconfig(sailfishapp) >= 1.0.2
 BuildRequires:  pkgconfig(Qt5Core)
 BuildRequires:  pkgconfig(Qt5Qml)
 BuildRequires:  pkgconfig(Qt5Quick)
 BuildRequires:  desktop-file-utils
 
+# Private library must not advertise a system-wide RPM capability.
+%define __provides_exclude_from ^%{_datadir}/%{name}/lib/.*$
+%define __requires_exclude ^libteslable\.so.*$
+
 %description
 Sandboxed Silica UI for controlling a Tesla over Bluetooth, grouped like
 the official Tesla app: quick actions, climate, charging, locks & security,
 trunk/frunk/windows, media, software, keys and diagnostics. BLE transport
 runs through a cooperative org.bluez backend (no raw HCI takeover), driven
-by an in-process Rust control core (staticlib) that spawns the bundled
-tesla-session binary. No privileged helper service, no CAP_NET_ADMIN, no
-devel-su - a single self-contained Harbour app.
+by an in-process Rust control core (staticlib) using a private Go protocol
+library through an asynchronous C ABI. No privileged helper service,
+no CAP_NET_ADMIN, no devel-su - a single self-contained Harbour app.
 
 %prep
 %setup -q -n %{name}-%{version}
@@ -34,6 +36,10 @@ make %{?_smp_mflags}
 %install
 rm -rf %{buildroot}
 %qmake5_install
+
+chmod 0644 %{buildroot}%{_datadir}/%{name}/lib/libteslable.so
+strip --strip-unneeded %{buildroot}%{_bindir}/%{name}
+strip --strip-unneeded %{buildroot}%{_datadir}/%{name}/lib/libteslable.so
 
 desktop-file-install --delete-original \
   --dir %{buildroot}%{_datadir}/applications \

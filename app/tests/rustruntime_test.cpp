@@ -4,6 +4,9 @@
 #include <QTemporaryDir>
 #include <QThread>
 #include <QtTest>
+#include <QSemaphore>
+#include <dlfcn.h>
+#include "tesla_ble.h"
 
 extern "C" {
 #include "electriceelcore.h"
@@ -25,6 +28,43 @@ class RustRuntimeTest : public QObject
 {
     Q_OBJECT
 private slots:
+    void goCallbacksAndRuntimeCoexistWithQt() {
+        void *library = dlopen(TESLA_BLE_LIBRARY, RTLD_NOW | RTLD_LOCAL);
+        QVERIFY2(library, dlerror());
+        auto version = reinterpret_cast<decltype(&ee_abi_version)>(dlsym(library, "ee_abi_version"));
+        auto create = reinterpret_cast<decltype(&ee_session_create)>(dlsym(library, "ee_session_create"));
+        auto submit = reinterpret_cast<decltype(&ee_session_submit)>(dlsym(library, "ee_session_submit"));
+        auto stop = reinterpret_cast<decltype(&ee_session_stop)>(dlsym(library, "ee_session_stop"));
+        auto destroy = reinterpret_cast<decltype(&ee_session_destroy)>(dlsym(library, "ee_session_destroy"));
+        QVERIFY(version && create && submit && stop && destroy);
+        QCOMPARE(version(), uint32_t(2));
+        struct CallbackState { QSemaphore ready; uint32_t status = EE_INTERNAL_BUG; QByteArray payload; } state;
+        uint8_t scalar[32] = {}; scalar[31] = 1;
+        const QByteArray vin("5YJ3E1EA7KF000001");
+        ee_config config = {};
+        config.size = sizeof(config); config.version = 2;
+        config.vin = {reinterpret_cast<const uint8_t *>(vin.constData()), uint64_t(vin.size())};
+        config.private_scalar = {scalar, sizeof(scalar)};
+        uint64_t handle = 0;
+        QCOMPARE(create(&config, [](void *context, const ee_message *message) {
+            auto *state = static_cast<CallbackState *>(context);
+            if (message->kind != EE_COMPLETE) return;
+            state->status = message->status;
+            state->payload = QByteArray(reinterpret_cast<const char *>(message->payload.data), int(message->payload.len));
+            state->ready.release();
+        }, &state, &handle), uint32_t(EE_OK));
+        ee_request request = {};
+        request.size = sizeof(request); request.operation = EE_PUBLIC_KEY;
+        request.id = 1; request.timeout_ms = 1000;
+        QCOMPARE(submit(handle, &request), uint32_t(EE_OK));
+        QVERIFY(state.ready.tryAcquire(1, 10000));
+        QCOMPARE(state.status, uint32_t(EE_OK));
+        QCOMPARE(state.payload.size(), 65);
+        QCOMPARE(stop(handle), uint32_t(EE_OK));
+        QCOMPARE(destroy(handle), uint32_t(EE_OK));
+        // Keep the Go runtime loaded until process exit, like the Rust loader.
+    }
+
     void rustPushesResultsToTheGuiThread() {
         TeslaClient client(runtime);
         QSignalSpy configs(&client, &TeslaClient::configLoaded);

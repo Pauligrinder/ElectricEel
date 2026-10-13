@@ -52,12 +52,10 @@ DISTFILES += \
 imgdir.files = img
 imgdir.path = /usr/share/$${TARGET}
 
-# tesla-session child (Go) bundled by helper/make-app-bundle.sh; the in-process
-# Rust core (~/.local/share data dir) spawns it from this read-only app dir.
-# Binaries keep 0755 here; no setcap/CAP_NET_ADMIN needed with the bluez
-# backend (Phase 4/5).
-bindir.files = bin
-bindir.path = /usr/share/$${TARGET}
+# Go protocol runtime is a private shared library loaded through the Rust C ABI.
+# Install only the explicit library, so stale app/bin build products cannot ship.
+protocol_lib.files = lib/libteslable.so
+protocol_lib.path = /usr/share/$${TARGET}/lib
 
 icon86.files = icons/86x86/harbour-electric-eel.png
 icon86.path = /usr/share/icons/hicolor/86x86/apps
@@ -114,4 +112,4 @@ TRANSLATIONS += \
 transqm.files = translations/*.qm
 transqm.path = /usr/share/$${TARGET}/translations
 
-INSTALLS += imgdir bindir icon86 icon108 icon128 icon172 transqm
+INSTALLS += imgdir protocol_lib icon86 icon108 icon128 icon172 transqm

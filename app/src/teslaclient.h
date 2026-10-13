@@ -44,8 +44,6 @@ public slots:
     void setConfig(const QString &vin, const QString &model, const QString &keyName,
                    int connectTimeoutSec, int commandTimeoutSec);
     void refreshConfig();
-    void refreshHelperAvailable();
-    void refreshHelperVersion();
     void logPowerState(const QString &state);
 
 signals:

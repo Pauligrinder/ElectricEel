@@ -1,7 +1,7 @@
 //! Daily phone-key log files under Documents/ElectricEel (or
-//! `$ELECTRIC_EEL_LOG_DIR`). Written by both the Rust core and the
-//! tesla-session child so start/stop/resume and BLE presence share one
-//! readable trail on the phone.
+//! `$ELECTRIC_EEL_LOG_DIR`). Rust is the application's sole file writer;
+//! Go/BlueZ diagnostics arrive through queued callbacks and share this trail.
+//! File locking retains compatibility with the optional standalone daemon.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};

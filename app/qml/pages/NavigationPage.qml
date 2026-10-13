@@ -17,6 +17,8 @@ Page {
     id: page
     objectName: "navigationPage"
     property var teslaClient
+    property string vin: ""
+    property bool configReady: false
     // Prefilled by the Share handler (harbour-electric-eel.qml) or left
     // empty for manual paste/typing.
     property string initialText: ""
@@ -51,7 +53,7 @@ Page {
         page.previewing = true
         page.previewText = qsTr("Checking...")
         page.navSeq++
-        page.pendingPreviewId = "nav:preview#" + page.navSeq + "@" + Date.now() + ":" + Math.random()
+        page.pendingPreviewId = "nav:preview#" + page.navSeq + "@" + Date.now() + ":" + Math.random() + ":" + page.vin
         teslaClient.previewDestination(page.pendingPreviewId, destField.text)
     }
 
@@ -66,12 +68,28 @@ Page {
         page.sending = true
         page.resultText = ""
         page.navSeq++
-        page.pendingSendId = "nav:send#" + page.navSeq + "@" + Date.now() + ":" + Math.random()
+        page.pendingSendId = "nav:send#" + page.navSeq + "@" + Date.now() + ":" + Math.random() + ":" + page.vin
         teslaClient.shareDestination(page.pendingSendId, text)
     }
 
     Connections {
         target: teslaClient
+        onConfigLoaded: {
+            if (page.vin !== vin) {
+                page.pendingPreviewId = ""
+                page.pendingSendId = ""
+                page.previewing = false
+                page.sending = false
+                page.previewText = ""
+                page.resultText = ""
+            }
+            page.vin = vin
+            if (!page.configReady) {
+                page.configReady = true
+                if (page.initialText.length > 0)
+                    page.preview()
+            }
+        }
         onDestinationPreviewed: {
             if (requestId !== page.pendingPreviewId)
                 return
@@ -95,9 +113,9 @@ Page {
     }
 
     Component.onCompleted: {
+        teslaClient.refreshConfig()
         if (page.initialText.length > 0) {
             destField.text = page.initialText
-            page.preview()
         }
     }
 
@@ -125,7 +143,7 @@ Page {
             Button {
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: qsTr("Preview")
-                enabled: !page.sending && !page.previewing
+                enabled: page.configReady && !page.sending && !page.previewing
                 onClicked: page.preview()
             }
 
@@ -143,7 +161,7 @@ Page {
             Button {
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: qsTr("Send to Car")
-                enabled: !page.sending
+                enabled: page.configReady && !page.sending
                 onClicked: page.send()
             }
 

@@ -21,16 +21,29 @@ Page {
     // just unlikely.
     property bool configReady: false
     property bool configLoading: true
+    property string savedModel: ""
+    property bool vinDirty: false
+    property bool modelDirty: false
+    property bool keyNameDirty: false
+    property bool connectTimeoutDirty: false
+    property bool commandTimeoutDirty: false
 
     Connections {
         target: teslaClient
         onConfigLoaded: {
             page.loadingConfig = true
-            vinField.text = vin
-            modelField.currentIndex = VState.modelIndex(model)
-            keyNameField.text = keyName
-            connectTimeoutSlider.value = connectTimeoutSec
-            commandTimeoutSlider.value = commandTimeoutSec
+            if (!page.vinDirty && !vinField.activeFocus)
+                vinField.text = vin
+            if (!page.modelDirty && !modelField.activeFocus) {
+                page.savedModel = model
+                modelField.currentIndex = VState.modelIndex(model)
+            }
+            if (!page.keyNameDirty && !keyNameField.activeFocus)
+                keyNameField.text = keyName
+            if (!page.connectTimeoutDirty && !connectTimeoutSlider.activeFocus)
+                connectTimeoutSlider.value = connectTimeoutSec
+            if (!page.commandTimeoutDirty && !commandTimeoutSlider.activeFocus)
+                commandTimeoutSlider.value = commandTimeoutSec
             page.loadingConfig = false
             page.configReady = true
             page.configLoading = false
@@ -95,8 +108,10 @@ Page {
                 // can always re-pick after. Suppressed while config loads so
                 // a saved explicit/model value survives repopulation.
                 onTextChanged: {
-                    if (page.loadingConfig)
+                    if (page.loadingConfig || (!activeFocus && !page.configReady))
                         return
+                    page.vinDirty = true
+                    page.modelDirty = true
                     modelField.currentIndex = VState.modelIndex(VState.guessModel(text))
                 }
             }
@@ -111,6 +126,10 @@ Page {
                 width: parent.width
                 label: qsTr("Front-page car model")
                 description: qsTr("Auto selects the model from the VIN")
+                onCurrentIndexChanged: {
+                    if (!page.loadingConfig && page.configReady)
+                        page.modelDirty = true
+                }
                 menu: ContextMenu {
                     Repeater {
                         model: VState.MODELS
@@ -124,6 +143,10 @@ Page {
                 width: parent.width
                 label: qsTr("Key name")
                 placeholderText: qsTr("harbour-electric-eel")
+                onTextChanged: {
+                    if (!page.loadingConfig && activeFocus)
+                        page.keyNameDirty = true
+                }
             }
 
             Slider {
@@ -137,6 +160,10 @@ Page {
                 maximumValue: 300
                 stepSize: 1
                 valueText: qsTr("%1 s").arg(value)
+                onValueChanged: {
+                    if (!page.loadingConfig && page.configReady)
+                        page.connectTimeoutDirty = true
+                }
             }
 
             Slider {
@@ -147,6 +174,10 @@ Page {
                 maximumValue: 300
                 stepSize: 1
                 valueText: qsTr("%1 s").arg(value)
+                onValueChanged: {
+                    if (!page.loadingConfig && page.configReady)
+                        page.commandTimeoutDirty = true
+                }
             }
 
             Button {
@@ -166,7 +197,7 @@ Page {
                 // page.configReady) - otherwise this fires against the
                 // fields' blank/default values, not what's really saved.
                 enabled: page.configReady
-                onClicked: teslaClient.setConfig(vinField.text, VState.MODELS[modelField.currentIndex].id,
+                onClicked: teslaClient.setConfig(vinField.text, modelField.currentIndex < 0 ? page.savedModel : VState.MODELS[modelField.currentIndex].id,
                                                   keyNameField.text,
                                                   connectTimeoutSlider.value, commandTimeoutSlider.value)
             }

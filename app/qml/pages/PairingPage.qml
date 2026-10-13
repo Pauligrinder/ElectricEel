@@ -54,6 +54,8 @@ Page {
             page.hasVin = vin.length > 0
             if (hasKey)
                 page.publicKeyPem = publicKeyPem
+            else
+                page.publicKeyPem = ""
         }
     }
 

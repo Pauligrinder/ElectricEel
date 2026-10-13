@@ -113,9 +113,13 @@ func variantInt16(v dbus.Variant) (int16, bool) {
 	case int16:
 		return n, true
 	case int32:
-		return int16(n), true
+		if n >= -32768 && n <= 32767 {
+			return int16(n), true
+		}
 	case int:
-		return int16(n), true
+		if n >= -32768 && n <= 32767 {
+			return int16(n), true
+		}
 	}
 	return 0, false
 }

@@ -154,8 +154,6 @@ void TeslaClient::setConfig(const QString &vin, const QString &model, const QStr
 }
 
 void TeslaClient::refreshConfig() { submit({{"op", "get_config"}}); }
-void TeslaClient::refreshHelperAvailable() { emit helperAvailableChanged(); }
-void TeslaClient::refreshHelperVersion() { emit helperVersionChanged(); }
 
 void TeslaClient::previewDestination(const QString &requestId, const QString &text)
 {

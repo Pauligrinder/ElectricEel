@@ -41,7 +41,7 @@ func connect(ctx context.Context, bus dbusBus, adapterID, vin string, target *Sc
 		case <-ctx.Done():
 			diagnostic("connect deadline attempts=%d elapsed=%s", attempts, time.Since(started).Round(time.Millisecond))
 			if lastErr != nil {
-				return nil, lastErr
+				return nil, fmt.Errorf("%v: %w", lastErr, ctx.Err())
 			}
 			return nil, ctx.Err()
 		case <-time.After(backoff):

@@ -13,6 +13,7 @@
 //! app's staticlib carries the zbus MCE client but no daemon server or
 //! caller-authorization plumbing.
 
+#[cfg(any(test, feature = "dbus"))]
 pub mod child;
 pub mod commands;
 pub mod config;
@@ -20,8 +21,15 @@ pub mod core;
 pub mod error;
 pub mod ffi;
 pub mod keylog;
+mod keys;
+#[cfg(any(test, feature = "dbus"))]
+mod legacy_session_client;
+mod phone_key;
+mod protocol_client;
+mod protocol_commands;
 pub mod session_client;
 pub mod share;
+pub mod tesla_ble;
 
 #[cfg(feature = "runtime")]
 mod cpukeepalive;

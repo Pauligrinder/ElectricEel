@@ -20,9 +20,12 @@ historically (see `git log` for history).
   drop the previous `__value` before applying state defaults, so stale
   values cannot survive across dialogs.
 - `CommandCatalog.js` argument bounds and enum values are best-effort
-  from public docs; `tesla-control` itself is the final authority and
+  from public docs; the typed protocol adapter and vehicle firmware
   rejects anything it dislikes.
 - QML files are not compiled by `mb2`; runtime QML errors remain
   possible despite a clean C++/Qt build.
 - Only QML/JS user strings are translated; Rust/C++ diagnostics stay
   English. See `translations.md`.
+- The C ABI migration passes host/SDK tests and Harbour validation on the
+  Sailfish 5.2 target. Real-device Sailjail, NFC enrollment, passive entry,
+  reconnect and suspend/resume still require a field pass before submission.

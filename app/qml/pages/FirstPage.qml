@@ -47,7 +47,6 @@ Page {
     // to render a fresh reading. Only the label-age timer above stays in QML.
 
     function refresh() {
-        teslaClient.refreshHelperAvailable()
         teslaClient.refreshConfig()
     }
 
@@ -98,10 +97,6 @@ Page {
         var next = VState.clone(page.vehicleStatus)
         next[field] = value
         page.vehicleStatus = next
-    }
-
-    function optimistic(field) {
-        setOptimistic(field, !page.vehicleStatus[field])
     }
 
     function toggleLock() {
@@ -174,6 +169,8 @@ Page {
         onCommandFinished: {
             if (requestId !== page.statusRequestId || page.statusStage.length === 0)
                 return
+            if (ok)
+                page.statusError = ""
             if (page.statusStage === "body") {
                 if (ok)
                     page.vehicleStatus = VState.mergeBodyControllerState(page.vehicleStatus, stdOut)
@@ -219,27 +216,19 @@ Page {
         onCommandError: {
             if (requestId !== page.statusRequestId || page.statusStage.length === 0)
                 return
-            if (page.statusStage === "toggle") {
+            var wasToggle = page.statusStage === "toggle"
+            if (wasToggle) {
                 if (page.statusBeforeToggle !== null)
                     page.vehicleStatus = page.statusBeforeToggle
                 page.statusBeforeToggle = null
             }
-            if (requestId === page.statusRequestId) {
-                page.statusStage = ""
-                page.statusRequestId = ""
-                if (page.statusError.length === 0)
-                    page.statusError = message
-                // status:toggle's optimistic() flip (toggleLock/toggleClimate/
-                // toggleWindows) assumed the command would reach the vehicle -
-                // a hard failure (busy adapter, no session, core not
-                // initialized) means it never did, so the icon is now
-                // showing a state that was never actually requested. Re-fetch
-                // the same way onCommandFinished does for a soft (ok=false)
-                // failure, rather than leaving the wrong icon up until the
-                // user happens to pull down to refresh.
-                // Rust schedules confirmation for toggle actions regardless
-                // of when this UI receives the result.
-            }
+            page.statusStage = ""
+            page.statusRequestId = ""
+            if (page.statusError.length === 0)
+                page.statusError = message
+            // Local submission failures never reach Rust's settle scheduler.
+            if (wasToggle)
+                refreshStatus()
         }
     }
 
@@ -519,6 +508,7 @@ Page {
                 teslaClient: teslaClient,
                 categoryId: modelData.id,
                 categoryTitle: modelData.title,
+                vin: page.vin,
                 vehicleStatus: page.vehicleStatus
             })
 

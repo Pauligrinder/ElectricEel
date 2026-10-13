@@ -130,14 +130,13 @@ pub extern "C" fn core_version() -> *const c_char {
 /// Create the control core.
 ///
 /// # Arguments
-/// - `bin_dir`: directory holding the bundled tesla-session (and, as
-///   fallback, tesla-control/tesla-keygen) binaries.
+/// - `bin_dir`: private library directory (legacy daemon: binary directory).
 /// - `state_dir`: writable directory for config.json / `private_key.pem` /
 ///   `public_key.pem`.
-/// - `session_bin`: path to the bundled `tesla-session` binary; NULL disables
-///   the persistent session (falls back to one-shot binaries).
-/// - `ble_backend`: "bluez" or "hci" (spawn flag for tesla-session); NULL is
-///   treated as "hci".
+/// - `session_bin`: trusted private Go shared-library path for the app; NULL
+///   disables BLE. The legacy daemon/test backend interprets it as a binary path.
+/// - `ble_backend`: app requires "bluez"; legacy daemon also accepts "hci".
+///   NULL defaults to "bluez" in the app and "hci" in the legacy backend.
 /// - `err_out`: receives a caller-freed error message on failure, may be NULL.
 ///
 /// # Safety
@@ -180,6 +179,11 @@ pub unsafe extern "C" fn core_new(
         // enabling the raw-HCI fallback, which takes exclusive adapter
         // control.
         let backend = if ble_backend.is_null() {
+            #[cfg(not(any(test, feature = "dbus")))]
+            {
+                "bluez".to_string()
+            }
+            #[cfg(any(test, feature = "dbus"))]
             "hci".to_string()
         } else {
             match cstr(ble_backend) {
@@ -196,11 +200,23 @@ pub unsafe extern "C" fn core_new(
                 }
             }
         };
-        Some(SessionClient::new(
+        #[cfg(any(test, feature = "dbus"))]
+        let session = SessionClient::new(
             PathBuf::from(path),
             &backend,
             PathBuf::from(state_dir.clone()),
-        ))
+        );
+        #[cfg(not(any(test, feature = "dbus")))]
+        let session = {
+            if backend != "bluez" {
+                if !err_out.is_null() {
+                    unsafe { *err_out = err_str("in-process BLE requires bluez") };
+                }
+                return std::ptr::null_mut();
+            }
+            SessionClient::library(PathBuf::from(path), PathBuf::from(state_dir.clone()))
+        };
+        Some(session)
     };
 
     // If the core can't be constructed (bad state dir), the app must know.

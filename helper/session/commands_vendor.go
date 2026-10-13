@@ -8,6 +8,7 @@ package main
 
 import (
 	"context"
+	"electric-eel-session/internal/phoneprotocol"
 	"errors"
 	"fmt"
 	"io"
@@ -113,7 +114,7 @@ func GetLatitude(latStr string) (float32, error) {
 	if math.IsNaN(deg) || math.IsInf(deg, 0) {
 		return 0.0, errors.New("latitude must be a finite number in the range [-90, 90]")
 	}
-	if deg < -90 || deg > 90 {
+	if !phoneprotocol.ValidCoordinate(deg, 90) {
 		return 0.0, errors.New("latitude must be in the range [-90, 90]")
 	}
 	return float32(deg), nil
@@ -127,7 +128,7 @@ func GetLongitude(lonStr string) (float32, error) {
 	if math.IsNaN(deg) || math.IsInf(deg, 0) {
 		return 0.0, errors.New("longitude must be a finite number in the range [-180, 180]")
 	}
-	if deg < -180 || deg > 180 {
+	if !phoneprotocol.ValidCoordinate(deg, 180) {
 		return 0.0, errors.New("longitude must be in the range [-180, 180]")
 	}
 	return float32(deg), nil
@@ -1024,7 +1025,7 @@ var commands = map[string]*Command{
 			if strings.Contains(positionsArg, "R") {
 				positions = append(positions, vehicle.SeatFrontRight)
 			}
-			if len(positions) != len(positionsArg) {
+			if len(positionsArg) == 0 || len(positions) != len(positionsArg) {
 				return fmt.Errorf("invalid seat position")
 			}
 			enabled := true
@@ -1130,6 +1131,9 @@ var commands = map[string]*Command{
 			r := strings.Split(args["TIME"], "-")
 			if len(r) != 2 {
 				return errors.New("invalid time range")
+			}
+			if r[0] == "" && r[1] == "" {
+				return errors.New("empty time interval")
 			}
 
 			if r[0] != "" {

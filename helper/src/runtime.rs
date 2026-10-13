@@ -598,7 +598,7 @@ fn dispatch(core: &Core, request: Request, sink: &Notifications, phone: &mut Pho
             let (ok, output, error) = core.share_destination(&text).unwrap_or_else(|e| (false, String::new(), e.to_string()));
             sink.send(&json!({"type":"share_finished", "request_id":request_id, "ok":ok, "output":output, "error":error}));
         }
-        _ => unreachable!("runtime control requests are handled by run"),
+        _ => crate::keylog::log("runtime", "unexpected control request in dispatch"),
     }
 }
 

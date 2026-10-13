@@ -44,6 +44,7 @@ ui_*.h
 # binary after the module (electric-eel-session)
 /helper/session/electric-eel-session
 /helper/session/tesla-session
+/app/lib/
 
 # Local build counter: "<version> <release>"
 .build-release

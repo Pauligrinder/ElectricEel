@@ -12,6 +12,7 @@ package main
 
 import (
 	"context"
+	"electric-eel-session/internal/phoneprotocol"
 	"math"
 	"strconv"
 	"strings"
@@ -51,7 +52,7 @@ func (s *session) dispatchNavigate(req request) response {
 		if lon, err = strconv.ParseFloat(strings.TrimSpace(req.Args[2]), 64); err != nil || math.IsNaN(lon) || math.IsInf(lon, 0) {
 			return response{ID: req.ID, OK: false, Stderr: "navigate: invalid lon\n", ExitCode: 2}
 		}
-		if lat < -90 || lat > 90 || lon < -180 || lon > 180 {
+		if !phoneprotocol.ValidLatLon(lat, lon) {
 			return response{ID: req.ID, OK: false, Stderr: "navigate: coordinates out of range (lat -90..90, lon -180..180)\n", ExitCode: 2}
 		}
 		isGPS = true

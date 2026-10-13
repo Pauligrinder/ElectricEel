@@ -11,7 +11,7 @@ capabilities, no `devel-su` install. Sailjail permissions: `Bluetooth;Documents`
   C++ `main` forwarding function. It calls Qt's
   platform setup to resolve Sailjail paths, constructs and owns the runtime,
   runs the UI with a borrowed runtime handle, then joins Rust's threads,
-  stops presence and reaps Go before Qt teardown. There is one application
+   stops presence and joins the Go library before Qt teardown. There is one application
   process; the UI does not construct, start, poll or free the Rust core.
 - **Application runtime** (`helper/src/runtime.rs`): starts phone-key mode
   independently of the UI. An async control loop serves configuration reads,
@@ -40,76 +40,55 @@ capabilities, no `devel-su` install. Sailjail permissions: `Bluetooth;Documents`
 - **Control core** (`helper/src`, Rust staticlib `libelectriceelcore.a`,
   C ABI via cbindgen `electriceelcore.h`): config + key files
   (`config.json`, `private_key.pem`, `public_key.pem` under the app data
-  dir), command allow-list, destination parser (`share.rs`), spawning and
-  speaking to the session child. One BLE command at a time (`ble_sem`).
-- **Session child** (`helper/session`, Go `tesla-session` binary in
-  `/usr/share/harbour-electric-eel/bin/`): holds one authenticated BLE
-  session across commands, driven over a private Unix-domain socket
-  (one request in flight). Commands execute through the vendored
-  `tesla-control` handlers (`commands_vendor.go`, pinned
-  vehicle-command v0.4.1). Navigation dispatches to `navigate.go`
+  dir), command allow-list, destination parser (`share.rs`) and typed command
+  parsing (`protocol_commands.rs`). Keys/PEM persistence live in `keys.rs`.
+  One foreground BLE command at a time (`ble_sem`).
+- **Phone-key controller** (`helper/src/protocol_client.rs`, `phone_key.rs`):
+  Rust owns proximity, target eligibility, reconnect backoff, idle retention,
+  periodic status, inside inference and NFC enrollment polling. Its controller
+  and logging/idle maintenance run independently of the UI executor.
+- **Protocol library** (`helper/session/library`, Go `libteslable.so` in
+  `/usr/share/harbour-electric-eel/lib/`): holds authenticated BLE sessions and
+  executes typed operations through an async C ABI. It calls pinned
+  vehicle-command v0.4.1 directly, without the CLI dispatcher. Passive-entry
+  responses are independent of foreground commands. Navigation uses
+  the existing vehicle protocol methods
   (field-53/field-21 actions, see `navigation-share.md`).
   Fresh and reused links authenticate only the domain required by the command:
   passive entry, locks and body-controller actions use VCSEC, while climate,
   charging, media, windows and navigation use infotainment.
 
-## Parent/child protocol
+## Asynchronous protocol ABI
 
-Unix socket at `<state-dir>/tesla-session-<pid>-<n>.sock`, created by
-the parent per spawn (`--socket-path`): accept exactly once, then
-unlink the path so no other same-UID process can dial in later.
-Tagged newline-delimited JSON frames (`{"type":...}`, never
-shape-sniffed), versioned by a `hello` handshake (`v: 1` both sides —
-mismatch kills the child instead of parsing unknown frames):
+`helper/session/abi/tesla_ble.h` defines ABI v2. Rust checks the private library's
+version and symbols before creating sessions. The Go runtime remains loaded for
+process lifetime; session replacement never unloads it.
 
-- parent → child: `request` (`id`, `cmd`, `args`)
-- child → parent: `hello` (first line), `response` (replies),
-  `event` (unsolicited presence updates, with optional structured `error_code`), `heartbeat` (every 10 s,
-  including mid-command)
+Rust submits typed operations with monotonic request IDs and awaits copied
+completion data. Serialized callbacks can race submission return and run on Go
+threads; they only copy/enqueue/wake Rust state. The app uses no communication
+socket, JSON frame envelope, subprocess, hello handshake or heartbeat.
 
-Both Rust read phases limit each frame to 1 MiB including its newline, rejecting
-oversized or unterminated input without unbounded buffering.
+Go reports fresh advertisements with opaque time-bounded target tokens, link
+loss, authentication outcomes, watcher failures and diagnostics. Rust derives
+near/far/inside events. Advertisements and derived state snapshots can coalesce;
+command completions and terminal lifecycle notifications are reliable. Complex
+telemetry retains protobuf-derived JSON result payloads.
 
-stdin/stdout are not the protocol: stdout is plain logs. Command handlers
-receive explicit per-command writers, so replies contain only their output
-and background diagnostics cannot race process-wide stdout/stderr swaps. On any
-transport failure the child is dropped and the error surfaces — never
-a silent fallback, never an unbounded buffer. A failed heartbeat
-(dead parent) or closed connection makes the child tear down BLE state
-and exit rather than linger. Any frame gap over 30 s (no response,
-event, or heartbeat) kills the child as wedged instead of hanging the
-caller until the command deadline.
+Cancellation and stop bypass operation admission. Deadlines reach BLE/D-Bus
+contexts. Uncertain or cancelled action streams are retired before reuse;
+cancellation cannot undo a sent action. Only an explicit ATT write-length
+rejection permits MTU fallback on a stream.
 
-Any terminal outbound frame-write failure closes the child's parent transport,
-wakes its request reader, cancels in-flight work and triggers BLE teardown.
-Partially or uncertainly transmitted BLE frames retire their connection; only an explicit ATT
-write-length rejection allows safe MTU fallback on that stream.
+Shutdown stops admission, detaches Qt observers, cancels Go operations and joins
+the Rust controller/maintenance threads. Go closes discovery, link observers,
+vehicle and BlueZ resources. Destroy waits for the terminal callback itself to
+return before Rust frees callback memory. A stuck teardown or teardown panic
+cannot fabricate a successful ownership barrier.
 
-Reader failures also publish `presence_stopped` while idle. The core reaps
-the old reader/process before restarting presence; failed restarts are retried
-at five-second intervals. Intentional stops cancel retries. Optional command
-arguments retain their positional slots: an empty optional value means omitted,
-and only trailing empty slots can be removed from the request.
-
-Child processes are never leaked: explicit kill-and-wait on every error
-path, plus drop-based reaping (`KillOnDrop` for the process,
-`ChildHandle::drop` for the socket path) covering early-returns and
-panics. The socket transport uses async-io readiness, async channels and an
-async single-flight mutex. A background async reader demultiplexes events and
-responses without holding the operation mutex. Synchronous Core/FFI entry
-points drive the same request futures with `block_on` on the serial executor;
-they do not block the control loop. The MCE client retains zbus's blocking API.
-
-Shutdown closes a cancellation channel independent of queue admission and the
-operation mutex. Accept, hello, socket writes and response waits are all
-interruptible. The runtime stops admitting work, skips queued commands, waits
-for in-flight observer callbacks during detachment, cancels transport work,
-joins both workers and releases the CPU lease after reaping the child. Legacy
-one-shot subprocess waits also check shutdown every 100 ms. Workers are joined,
-not detached after an artificial join timeout. Cancelling an already-sent
-command does not prove it had no effect on the vehicle; it retires the session
-so a late reply cannot be mistaken for the next request. Dropping an async
-request future provides the same session-retirement guarantee.
+Recoverable Go operation/background panics are logged with stacks and fault the
+session; they are bugs to repair. Fatal runtime or dependency-goroutine failures
+can still terminate the application. See [tesla-ble-abi.md](tesla-ble-abi.md).
 
 Configuration changes are persisted before runtime settings/session changes.
 Unknown newer schemas are read-only (or rejected if their shape is unsupported).
@@ -118,11 +97,11 @@ use the legacy key-file migration. Key generation validates reuse and requires
 force to replace an unreadable key. Private/public key replacements are atomic
 and synced, with enrollment reset persisted before key rotation.
 
-Pairing requires the persistent session. After transmitting the NFC request,
-the child checks enrollment of the requested key for up to 90 seconds; pairing
+Pairing requires the protocol library. After transmitting the NFC request,
+Rust polls enrollment of the requested key for up to 90 seconds; pairing
 this phone's key also requires a successful authenticated VCSEC handshake.
 Transmission alone is never persisted as successful pairing.
-The internal `pair` request also checks that the public key belongs to this
+Rust also checks that the public key belongs to this
 phone's private key before touching BLE, so an interrupted key-file update
 cannot pair a stale public half and mark a different private key enrolled.
 
@@ -131,13 +110,13 @@ cannot pair a stale public half and mark a different private key enrolled.
 Cooperative `org.bluez` D-Bus backend (`helper/session/bluez/`):
 discovery, GATT connect, notify/write framing over the system bus. The
 radio stays owned by the OS stack, so other Bluetooth users (e.g. a
-soundbar) are never disturbed. The legacy raw-HCI (`hci`) backend still
-exists for dev-hardware diagnostics only; it needs `CAP_NET_ADMIN` and
-is not shipped as default.
+soundbar) remain owned by the OS stack. Legacy socket/raw-HCI code is retained
+only for standalone-daemon compatibility and regression fixtures; it is excluded
+from the Harbour application build.
 
 ## Phone-key presence
 
-After NFC pairing, the core runs a proximity loop (`presence-start`)
+After NFC pairing, the Rust controller runs a proximity loop
 while the app is alive: it keeps an authenticated session up while the
 vehicle beacon is near (RSSI hysteresis) and answers VCSEC
 `AuthenticationRequest` messages, so handle-pull unlock and drive work
@@ -169,9 +148,9 @@ successful hold, every D-Bus failure, and display status (`0` unknown, `1` off,
 `2` dimmed, `3` on), separately from Qt app lifecycle. Periodic wakeups cannot
 preserve an authenticated GATT session and are not used.
 
-Rust and Go retain daily append handles and prune on day rollover. The shared
-daily log is capped at 10 MiB, with cross-process file locking for size checks
-and appends; additional diagnostics continue to stderr until the next day.
+Rust owns daily append handles, pruning, retention and the 10 MiB daily cap.
+Go/BlueZ callbacks enqueue diagnostics for Rust's logging worker. Overflow is
+counted and reported; private key material is not diagnostic data.
 
 Phone-key events are also published on the session bus through
 `org.electriceel.PhoneKey1`, including the fork's settled `presence_inside`
@@ -182,17 +161,22 @@ contract and integration examples.
 
 ```
 helper/src/{app,runtime,cpukeepalive,lib,core,ffi,config,commands,share,session_client}.rs
-helper/session/{main,commands_vendor,navigate,auth}.go
+helper/src/{tesla_ble,protocol_client,protocol_commands,phone_key,keys,keylog}.rs
+helper/session/abi/              public C ABI and C smoke test
+helper/session/cmd/teslable/     Go c-shared entrypoint
+helper/session/library/          protocol operations, observations, auth responder
 helper/session/bluez/            org.bluez D-Bus transport
 helper/session/thirdparty/vehicle-command/   patched upstream (see vehicle-command-patch.md)
 app/src/teslaclient.{h,cpp}      UI-only action/notification adapter
 app/qml/{harbour-electric-eel.qml,cover/CoverPage.qml,pages/*.qml,js/*.js}
 app/translations/                qsTr catalogs (see translations.md)
 app/rpm/harbour-electric-eel.spec
-helper/make-app-bundle.sh        stages staticlib + tesla-session into app/
+helper/make-app-bundle.sh        stages Rust staticlib + private Go library
+helper/build-go-library-sdk.sh   cgo cross-build against Sailfish's libc
 ```
 
-`app/thirdparty/` and `app/bin/` are build output (gitignored),
+`app/thirdparty/` and `app/lib/` are build output (gitignored),
 regenerated by `make-app-bundle.sh`. The Rust staticlib targets
-`aarch64-unknown-linux-gnu` (glibc, links against Qt); the Go child
-builds with `CGO_ENABLED=0 GOOS=linux GOARCH=arm64`.
+`aarch64-unknown-linux-gnu` (glibc, links against Qt); the Go library uses cgo
+and the Sailfish target toolchain. The installed library has 0644 permissions;
+both installed ELF files are stripped for Harbour.

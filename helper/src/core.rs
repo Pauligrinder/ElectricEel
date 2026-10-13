@@ -8,17 +8,21 @@
 //!
 //! No zbus, no `authorize` - the caller is the app itself, which already
 //! satisfied Sailjail/dbus policy before its first call. Config, key files
-//! and the persistent `tesla-session` child behave exactly as they did for
-//! the daemon.
+//! and the in-process protocol library are owned by Rust. The standalone
+//! daemon retains its legacy subprocess transport behind the `dbus` feature.
 
+#[cfg(any(test, feature = "dbus"))]
 use std::io::Read;
 use std::path::{Path, PathBuf};
+#[cfg(any(test, feature = "dbus"))]
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
+#[cfg(any(test, feature = "dbus"))]
 use std::thread;
 use std::time::{Duration, Instant};
 
+#[cfg(any(test, feature = "dbus"))]
 use wait_timeout::ChildExt;
 
 use crate::commands::{is_known_command, is_pin_command};
@@ -54,16 +58,13 @@ const fn envelope(connect: i32, command: i32, extra: u32) -> Duration {
 
 pub struct Core {
     cfg: Mutex<Config>,
-    /// Capacity-1 semaphore serializing Run/Pair through the single HCI
-    /// adapter: a second simultaneous BLE command is rejected rather than
-    /// spawning a second tesla-control that fights over the adapter.
+    /// Capacity-1 foreground-command admission gate. Background protocol
+    /// responses remain independent of foreground command scheduling.
     ble_sem: Mutex<()>,
     bin_dir: String,
     state_dir: String,
-    /// `Some()` only when a persistent session is desired (the daemon only
-    /// enables it with `ELECTRICEEL_PERSISTENT_SESSION`; the app always
-    /// enables it) - None means `run()` behaves exactly as one-shot did,
-    /// not "session client that always fails over".
+    /// The app always supplies the in-process library client. Only the
+    /// standalone daemon/test feature retains optional one-shot compatibility.
     session: Option<SessionClient>,
     /// Serializes lifecycle/config/key mutations. Always acquired before cfg;
     /// a second start waits for the first caller's actual outcome.
@@ -179,9 +180,9 @@ impl Core {
         ])
     }
 
-    /// Executes a single command against the vehicle, either through the
-    /// persistent session or (no session / session error) by spawning a
-    /// one-shot binary. cmd must be one of the known subcommands.
+    /// Executes a known command through the protocol client. Legacy one-shot
+    /// compatibility is compiled only for the standalone daemon and fixtures.
+    #[allow(clippy::too_many_lines)]
     pub(crate) fn run(
         &self,
         cmd: &str,
@@ -283,16 +284,24 @@ impl Core {
                         eprintln!(
                             "Core: persistent session unavailable ({e}); falling back to one-shot tesla-control for {cmd}"
                         );
-                        run_binary_cancellable(
-                            &self.bin_dir,
-                            "tesla-control",
-                            &command_argv,
-                            timeout,
-                            Some(&self.shutdown),
-                        )
+                        #[cfg(any(test, feature = "dbus"))]
+                        {
+                            run_binary_cancellable(
+                                &self.bin_dir,
+                                "tesla-control",
+                                &command_argv,
+                                timeout,
+                                Some(&self.shutdown),
+                            )
+                        }
+                        #[cfg(not(any(test, feature = "dbus")))]
+                        {
+                            return Err(HelperError::SessionUnavailable(e.to_string()));
+                        }
                     }
                 }
             }
+            #[cfg(any(test, feature = "dbus"))]
             None => run_binary_cancellable(
                 &self.bin_dir,
                 "tesla-control",
@@ -300,6 +309,13 @@ impl Core {
                 timeout,
                 Some(&self.shutdown),
             ),
+            #[cfg(not(any(test, feature = "dbus")))]
+            None => {
+                return Err(HelperError::SessionUnavailable(format!(
+                    "protocol library unavailable in {}",
+                    self.bin_dir
+                )))
+            }
         };
 
         Ok((
@@ -370,6 +386,7 @@ impl Core {
         eprintln!("Core: generate_key(force={force})");
 
         let pubkey = match &self.session {
+            #[cfg(any(test, feature = "dbus"))]
             None => generate_key_one_shot(
                 &self.bin_dir,
                 &key_path,
@@ -377,6 +394,9 @@ impl Core {
                 force,
                 &self.shutdown,
             )?,
+            #[cfg(not(any(test, feature = "dbus")))]
+            None => crate::keys::generate(Path::new(&key_path), &self.public_key_path(), force)
+                .map_err(OperationError::KeygenFailed)?,
             Some(session) => {
                 // Never retry a possibly completed key rotation through a
                 // different binary after a transport failure.
@@ -504,6 +524,9 @@ impl Core {
         ]
         .map(str::to_string);
 
+        // Configuration changes and presence stop must not wait for NFC approval.
+        drop(gate);
+
         eprintln!("Core: pair()");
         // Only the persistent dispatcher confirms vehicle enrollment. A lost
         // response must not replay the request through an unverified fallback.
@@ -531,11 +554,23 @@ impl Core {
         if !outcome.ok {
             return Ok((false, outcome.stdout, outcome.stderr.trim().to_string()));
         }
+        let gate = self
+            .phone_key_gate
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         {
             let mut cfg = self
                 .cfg
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
+            cfg.ensure_writable()
+                .map_err(|e| HelperError::SessionUnavailable(e.to_string()))?;
+            if cfg.vin != vin {
+                return Err(HelperError::SessionUnavailable(
+                    "configuration changed during pairing; refusing to mark another VIN paired"
+                        .into(),
+                ));
+            }
             let mut candidate = cfg.clone();
             candidate.vin_state = VinState::Paired;
             candidate.save(&self.config_path()).map_err(|e| {
@@ -563,6 +598,11 @@ impl Core {
             .phone_key_gate
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.cfg
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .ensure_writable()
+            .map_err(OperationError::Persist)?;
         if self.phone_key_started.load(Ordering::SeqCst)
             && self
                 .session
@@ -1069,10 +1109,9 @@ impl Core {
 
 impl Drop for Core {
     fn drop(&mut self) {
-        // Never block in Drop: stop_phone_key() performs a bounded BLE RPC
-        // that can stall for seconds and lock cfg/gate (deadlock if dropped
-        // while the same thread holds them). Best-effort non-blocking
-        // teardown only; the runtime already stops presence explicitly.
+        // The runtime explicitly cancels/stops workers before final destruction.
+        // Invalidation is the lifetime backstop: do not free callback state or
+        // detach live protocol workers merely to make Drop appear non-blocking.
         self.set_phone_key_enabled(false);
         *self
             .phone_key_retry_at
@@ -1089,6 +1128,7 @@ impl Drop for Core {
 /// `pubkey_text`); on failure the second element holds the trimmed stderr
 /// instead. Kept as the fallback until Phase 4 removes the binary
 /// dependency entirely.
+#[cfg(any(test, feature = "dbus"))]
 fn generate_key_one_shot(
     bin_dir: &str,
     key_path: &str,
@@ -1296,6 +1336,7 @@ fn validate_arg_ranges(cmd: &str, args: &[String]) -> Result<(), HelperError> {
 
 /// Execs a bundled binary with a hard deadline, returning combined exit
 /// status. Never invoked with attacker-controlled binary names.
+#[cfg(any(test, feature = "dbus"))]
 fn run_binary_cancellable(
     bin_dir: &str,
     name: &str,
@@ -1602,6 +1643,10 @@ mod tests {
             .is_err());
         assert!(core.generate_key(true).is_err());
         assert!(core.pair().is_err());
+        assert!(matches!(
+            core.start_phone_key(),
+            Err(crate::error::OperationError::Persist(_))
+        ));
         assert_eq!(std::fs::read_to_string(path).unwrap(), original);
         assert!(!core.private_key_path().exists());
     }

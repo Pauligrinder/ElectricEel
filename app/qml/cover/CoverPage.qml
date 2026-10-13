@@ -11,6 +11,8 @@ CoverBackground {
     property string model: ""
     property bool hasKey: false
     property bool commandBusy: false
+    property int requestSeq: 0
+    property string pendingCmd: ""
 
     readonly property bool isPaired: cover.hasKey && cover.vin.length > 0
 
@@ -27,7 +29,9 @@ CoverBackground {
         if (!cover.canCommand || cover.commandBusy)
             return
         cover.commandBusy = true
-        teslaClient.runCommand("cover:" + cmd, cmd, [])
+        cover.requestSeq = (cover.requestSeq || 0) + 1
+        cover.pendingCmd = "cover:" + cmd + "#" + cover.requestSeq + "@" + Date.now() + ":" + Math.random() + ":" + cover.vin
+        teslaClient.runCommand(cover.pendingCmd, cmd, [])
     }
 
     Component.onCompleted: {
@@ -38,17 +42,25 @@ CoverBackground {
     Connections {
         target: teslaClient
         onConfigLoaded: {
+            if (cover.vin !== vin) {
+                cover.pendingCmd = ""
+                cover.commandBusy = false
+            }
             cover.vin = vin
             cover.model = model
             cover.hasKey = hasKey
         }
         onCommandFinished: {
-            if (requestId.indexOf("cover:") === 0)
+            if (requestId === cover.pendingCmd) {
                 cover.commandBusy = false
+                cover.pendingCmd = ""
+            }
         }
         onCommandError: {
-            if (requestId.indexOf("cover:") === 0)
+            if (requestId === cover.pendingCmd) {
                 cover.commandBusy = false
+                cover.pendingCmd = ""
+            }
         }
     }
 

@@ -60,14 +60,13 @@ const char *core_version(void);
  * Create the control core.
  *
  * # Arguments
- * - `bin_dir`: directory holding the bundled tesla-session (and, as
- *   fallback, tesla-control/tesla-keygen) binaries.
+ * - `bin_dir`: private library directory (legacy daemon: binary directory).
  * - `state_dir`: writable directory for config.json / `private_key.pem` /
  *   `public_key.pem`.
- * - `session_bin`: path to the bundled `tesla-session` binary; NULL disables
- *   the persistent session (falls back to one-shot binaries).
- * - `ble_backend`: "bluez" or "hci" (spawn flag for tesla-session); NULL is
- *   treated as "hci".
+ * - `session_bin`: trusted private Go shared-library path for the app; NULL
+ *   disables BLE. The legacy daemon/test backend interprets it as a binary path.
+ * - `ble_backend`: app requires "bluez"; legacy daemon also accepts "hci".
+ *   NULL defaults to "bluez" in the app and "hci" in the legacy backend.
  * - `err_out`: receives a caller-freed error message on failure, may be NULL.
  *
  * # Safety

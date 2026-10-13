@@ -46,11 +46,13 @@ ApplicationWindow
 
     function openNavigation(text) {
         appWindow.activate()
-        // Dedup: updating the top NavigationPage beats stacking a new one
-        // per share (5 shares = 5 pages otherwise).
-        var top = pageStack.currentPage
-        if (top && top.objectName === "navigationPage") {
-            top.setSharedText(text)
+        var navigation = pageStack.find(function(candidate) {
+            return candidate.objectName === "navigationPage"
+        })
+        if (navigation) {
+            if (pageStack.currentPage !== navigation)
+                pageStack.pop(navigation)
+            navigation.setSharedText(text)
             return
         }
         pageStack.push(Qt.resolvedUrl("pages/NavigationPage.qml"), {

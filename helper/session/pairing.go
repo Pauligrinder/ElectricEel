@@ -8,6 +8,7 @@ import (
 
 	"github.com/teslamotors/vehicle-command/pkg/protocol"
 	"github.com/teslamotors/vehicle-command/pkg/protocol/protobuf/signatures"
+	"github.com/teslamotors/vehicle-command/pkg/vehicle"
 )
 
 // Core pairing must enroll the key that this phone will actually use. A crash
@@ -34,17 +35,34 @@ func (s *session) dispatchPair(req request) response {
 
 // Transmission is not enrollment. Keep the link up while awaiting NFC approval,
 // querying the requested public key, not merely whether some other key works.
-func (s *session) confirmEnrollment(ctx context.Context, publicKeyFile string) error {
+func (s *session) confirmEnrollment(ctx context.Context, publicKeyFile string, car *vehicle.Vehicle) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	s.mu.Lock()
+	keyFile := s.keyFile
+	s.mu.Unlock()
+	if car == nil {
+		return protocol.ErrNotConnected
+	}
 	key, err := protocol.LoadPublicKey(publicKeyFile)
 	if err != nil {
 		return err
 	}
-	privateKey, err := protocol.LoadPrivateKey(s.keyFile)
+	privateKey, err := protocol.LoadPrivateKey(keyFile)
 	if err != nil {
 		return err
 	}
 	return waitForEnrollment(ctx, time.Second, func(attempt context.Context) error {
-		info, err := s.car.SessionInfo(attempt, key, protocol.DomainVCSEC)
+		// Snapshot identity under the lock, then poll without blocking presence
+		// or shutdown. Vehicle's dispatcher supports concurrent requests.
+		s.mu.Lock()
+		current := s.car == car
+		s.mu.Unlock()
+		if !current {
+			cancel()
+			return protocol.ErrNotConnected
+		}
+		info, err := car.SessionInfo(attempt, key, protocol.DomainVCSEC)
 		if err != nil {
 			return err
 		}
@@ -52,9 +70,16 @@ func (s *session) confirmEnrollment(ctx context.Context, publicKeyFile string) e
 			return fmt.Errorf("vehicle has not enrolled the requested key (%s)", info.GetStatus())
 		}
 		if bytes.Equal(key.Bytes(), privateKey.PublicBytes()) {
+			s.mu.Lock()
+			current = s.car == car
+			s.mu.Unlock()
+			if !current {
+				cancel()
+				return protocol.ErrNotConnected
+			}
 			// Pairing this phone's own key additionally proves that an
 			// authenticated VCSEC session can actually be established.
-			return s.car.StartSession(attempt, []protocol.Domain{protocol.DomainVCSEC})
+			return car.StartSession(attempt, []protocol.Domain{protocol.DomainVCSEC})
 		}
 		return nil
 	})
