@@ -22,52 +22,52 @@
   <context>
     <name>CategoryPage</name>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="48" />
+      <location filename="../qml/pages/CategoryPage.qml" line="50" />
       <source>%1 • %2°C inside</source>
       <translation>%1 • %2 °C znotraj</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="49" />
+      <location filename="../qml/pages/CategoryPage.qml" line="51" />
       <source>Climate on</source>
       <translation>Klimatska naprava vklopljena</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="49" />
+      <location filename="../qml/pages/CategoryPage.qml" line="51" />
       <source>Climate off</source>
       <translation>Klimatska naprava izklopljena</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="55" />
+      <location filename="../qml/pages/CategoryPage.qml" line="57" />
       <source>%1% battery%2</source>
       <translation>%1 % baterije%2</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="57" />
+      <location filename="../qml/pages/CategoryPage.qml" line="59" />
       <source> • Charging</source>
       <translation> • Polni se</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="62" />
+      <location filename="../qml/pages/CategoryPage.qml" line="64" />
       <source>Doors locked</source>
       <translation>Vrata zaklenjena</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="62" />
+      <location filename="../qml/pages/CategoryPage.qml" line="64" />
       <source>Doors unlocked</source>
       <translation>Vrata odklenjena</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="74" />
+      <location filename="../qml/pages/CategoryPage.qml" line="86" />
       <source>OK</source>
       <translation>OK</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="74" />
+      <location filename="../qml/pages/CategoryPage.qml" line="86" />
       <source>exit code %1</source>
       <translation>koda izhoda %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="177" />
+      <location filename="../qml/pages/CategoryPage.qml" line="191" />
       <source>Running %1...</source>
       <translation>Zaganjam %1...</translation>
     </message>
@@ -418,109 +418,109 @@
   <context>
     <name>FirstPage</name>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="298" />
+      <location filename="../qml/pages/FirstPage.qml" line="287" />
       <source>The control core failed to start. Reinstall the app, then pull down to refresh.</source>
       <translation>Krmilno jedro se ni zagnalo. Znova namesti aplikacijo in povleci navzdol za osvežitev.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="300" />
+      <location filename="../qml/pages/FirstPage.qml" line="289" />
       <source>The control core is too old to report its version. Reinstall the app (%1), then pull down to refresh.</source>
       <translation>Krmilno jedro je prestaro in ne sporoča različice. Znova namesti aplikacijo (%1) in povleci navzdol za osvežitev.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="301" />
+      <location filename="../qml/pages/FirstPage.qml" line="290" />
       <source>Version mismatch: app %1, core %2. Reinstall the app, then pull down to refresh.</source>
       <translation>Neskladje različic: aplikacija %1, jedro %2. Znova namesti aplikacijo in povleci navzdol za osvežitev.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="66" />
-      <location filename="../qml/pages/FirstPage.qml" line="319" />
+      <location filename="../qml/pages/FirstPage.qml" line="65" />
+      <location filename="../qml/pages/FirstPage.qml" line="308" />
       <source>No VIN configured</source>
       <translation>VIN ni nastavljen</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="58" />
+      <location filename="../qml/pages/FirstPage.qml" line="57" />
       <source>Control helper unavailable</source>
       <translation type="unfinished" />
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="62" />
+      <location filename="../qml/pages/FirstPage.qml" line="61" />
       <source>No key: generate and pair a key first</source>
       <translation type="unfinished" />
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="323" />
+      <location filename="../qml/pages/FirstPage.qml" line="312" />
       <source>Key ready</source>
       <translation>Ključ pripravljen</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="323" />
+      <location filename="../qml/pages/FirstPage.qml" line="312" />
       <source>No key - tap for Settings / Pairing</source>
       <translation>Ni ključa – tapni za Nastavitve / Seznanjanje</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="377" />
+      <location filename="../qml/pages/FirstPage.qml" line="366" />
       <source> • charging</source>
       <translation> • se polni</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="386" />
+      <location filename="../qml/pages/FirstPage.qml" line="375" />
       <source>• %1°C</source>
       <translation>• %1 °C</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="411" />
+      <location filename="../qml/pages/FirstPage.qml" line="400" />
       <source>Updating...</source>
       <translation>Posodabljanje...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="413" />
+      <location filename="../qml/pages/FirstPage.qml" line="402" />
       <source>Status unavailable (%1). Vehicle may be asleep - try Wake Vehicle (Attention), then Refresh Status.</source>
       <translation>Stanje ni na voljo (%1). Vozilo morda spi – poskusi Zbudi vozilo (Pozornost) in nato Osveži stanje.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="415" />
+      <location filename="../qml/pages/FirstPage.qml" line="404" />
       <source>Pull down to refresh status</source>
       <translation>Povleci navzdol za osvežitev stanja</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="417" />
+      <location filename="../qml/pages/FirstPage.qml" line="406" />
       <source>Updated just now</source>
       <translation>Posodobljeno pravkar</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="418" />
+      <location filename="../qml/pages/FirstPage.qml" line="407" />
       <source>Updated %1m ago</source>
       <translation>Posodobljeno pred %1 min</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="511" />
+      <location filename="../qml/pages/FirstPage.qml" line="500" />
       <source>Categories</source>
       <translation>Kategorije</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="560" />
+      <location filename="../qml/pages/FirstPage.qml" line="550" />
       <source>Send Destination</source>
       <translation>Pošlji cilj</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="564" />
+      <location filename="../qml/pages/FirstPage.qml" line="554" />
       <source>Pair Vehicle</source>
       <translation>Seznani vozilo</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="568" />
+      <location filename="../qml/pages/FirstPage.qml" line="558" />
       <source>Settings</source>
       <translation>Nastavitve</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="572" />
-      <location filename="../qml/pages/SettingsPage.qml" line="154" />
+      <location filename="../qml/pages/FirstPage.qml" line="562" />
+      <location filename="../qml/pages/SettingsPage.qml" line="185" />
       <source>Refresh</source>
       <translation>Osveži</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="576" />
+      <location filename="../qml/pages/FirstPage.qml" line="566" />
       <source>Refresh Status</source>
       <translation>Osveži stanje</translation>
     </message>
@@ -528,72 +528,72 @@
   <context>
     <name>NavigationPage</name>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="48" />
+      <location filename="../qml/pages/NavigationPage.qml" line="50" />
       <source>Paste or type a destination first.</source>
       <translation>Najprej prilepi ali vpiši cilj.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="52" />
+      <location filename="../qml/pages/NavigationPage.qml" line="54" />
       <source>Checking...</source>
       <translation>Preverjanje...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="63" />
+      <location filename="../qml/pages/NavigationPage.qml" line="65" />
       <source>Nothing to send.</source>
       <translation>Ni nič za pošiljanje.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="80" />
+      <location filename="../qml/pages/NavigationPage.qml" line="98" />
       <source>Cannot use this: %1</source>
       <translation>Ni uporabno: %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="84" />
+      <location filename="../qml/pages/NavigationPage.qml" line="102" />
       <source>Coordinates %1, %2 — navigation will start there.</source>
       <translation>Koordinate %1, %2 — navigacija se bo začela tam.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="87" />
+      <location filename="../qml/pages/NavigationPage.qml" line="105" />
       <source>Address "%1" — the car will look it up.</source>
       <translation>Naslov „%1“ — vozilo ga bo poiskalo.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="93" />
+      <location filename="../qml/pages/NavigationPage.qml" line="111" />
       <source>Send failed: %1</source>
       <translation>Pošiljanje ni uspelo: %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="113" />
+      <location filename="../qml/pages/NavigationPage.qml" line="131" />
       <source>Car Navigation</source>
       <translation>Navigacija vozila</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="118" />
+      <location filename="../qml/pages/NavigationPage.qml" line="136" />
       <source>Destination</source>
       <translation>Cilj</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="119" />
+      <location filename="../qml/pages/NavigationPage.qml" line="137" />
       <source>Paste address, coordinates, or map link</source>
       <translation>Prilepi naslov, koordinate ali povezavo zemljevida</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="127" />
+      <location filename="../qml/pages/NavigationPage.qml" line="145" />
       <source>Preview</source>
       <translation>Predogled</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="145" />
+      <location filename="../qml/pages/NavigationPage.qml" line="163" />
       <source>Send to Car</source>
       <translation>Pošlji v vozilo</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="167" />
+      <location filename="../qml/pages/NavigationPage.qml" line="185" />
       <source>Notes</source>
       <translation>Opombe</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="176" />
+      <location filename="../qml/pages/NavigationPage.qml" line="194" />
       <source>This uses Bluetooth, like lock/unlock — the car must be in range, no internet needed on either side. Coordinates are sent exactly; addresses and links are looked up by the car itself, so unusual spellings may resolve differently than on your phone. From Android apps: copy the address or link, then paste it above.</source>
       <translation>Uporablja Bluetooth kot zaklepanje/odklepanje — vozilo mora biti v dosegu, internet ni potreben. Koordinate se pošljejo natančno; naslove in povezave vozilo poišče samo, zato se lahko nenavadno črkovanje razreši drugače kot v telefonu. Iz aplikacij Android: kopiraj naslov ali povezavo in prilepi zgoraj.</translation>
     </message>
@@ -626,52 +626,52 @@
       <translation type="unfinished" />
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="71" />
+      <location filename="../qml/pages/PairingPage.qml" line="73" />
       <source>Pairing &amp; Keys</source>
       <translation>Seznanjanje in ključi</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="78" />
+      <location filename="../qml/pages/PairingPage.qml" line="80" />
       <source>Set the VIN in Settings first. Then generate a key, then pair it with the car over BLE - you'll need to be next to the vehicle and tap the NFC card on the center console to approve.</source>
       <translation>Najprej nastavi VIN v Nastavitvah. Nato ustvari ključ in ga seznani z vozilom prek BLE – stoj ob vozilu in za potrditev prisloni kartico NFC na sredinsko konzolo.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="90" />
+      <location filename="../qml/pages/PairingPage.qml" line="92" />
       <source>Phone key starting...</source>
       <translation>Telefonski ključ se zaganja...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="118" />
+      <location filename="../qml/pages/PairingPage.qml" line="120" />
       <source>Generating...</source>
       <translation>Ustvarjanje...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="118" />
+      <location filename="../qml/pages/PairingPage.qml" line="120" />
       <source>Generate Key</source>
       <translation>Ustvari ključ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="144" />
+      <location filename="../qml/pages/PairingPage.qml" line="146" />
       <source>Waiting for NFC tap...</source>
       <translation>Čakanje na dotik NFC...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="144" />
+      <location filename="../qml/pages/PairingPage.qml" line="146" />
       <source>Pair with Vehicle</source>
       <translation>Seznani vozilo</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="150" />
+      <location filename="../qml/pages/PairingPage.qml" line="152" />
       <source>Requesting pairing over BLE - approve on the car's touchscreen / NFC card now.</source>
       <translation>Seznanjanje BLE zahtevano – potrdi na zaslonu na dotik / kartici NFC.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="170" />
+      <location filename="../qml/pages/PairingPage.qml" line="172" />
       <source>Enrolled Keys</source>
       <translation>Registrirani ključi</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="174" />
+      <location filename="../qml/pages/PairingPage.qml" line="176" />
       <source>List Enrolled Keys</source>
       <translation>Izpiši registrirane ključe</translation>
     </message>
@@ -684,108 +684,108 @@
       <translation>Nalaganje nastavitev...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="37" />
+      <location filename="../qml/pages/SettingsPage.qml" line="50" />
       <source>Key on file</source>
       <translation>Ključ obstaja</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="37" />
+      <location filename="../qml/pages/SettingsPage.qml" line="50" />
       <source>No key yet - use Pair Vehicle from the main menu</source>
       <translation>Zaenkrat ni ključa – uporabi Seznani vozilo v glavnem meniju</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="45" />
+      <location filename="../qml/pages/SettingsPage.qml" line="58" />
       <source>Saved</source>
       <translation>Shranjeno</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="45" />
+      <location filename="../qml/pages/SettingsPage.qml" line="58" />
       <source>Save failed: %1</source>
       <translation>Shranjevanje ni uspelo: %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="60" />
+      <location filename="../qml/pages/SettingsPage.qml" line="73" />
       <source>Settings</source>
       <translation>Nastavitve</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="84" />
+      <location filename="../qml/pages/SettingsPage.qml" line="97" />
       <source>Vehicle VIN</source>
       <translation>VIN vozila</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="89" />
+      <location filename="../qml/pages/SettingsPage.qml" line="102" />
       <source>17-character VIN</source>
       <translation>17-mestni VIN</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="112" />
+      <location filename="../qml/pages/SettingsPage.qml" line="127" />
       <source>Front-page car model</source>
       <translation>Model avtomobila na naslovnici</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="113" />
+      <location filename="../qml/pages/SettingsPage.qml" line="128" />
       <source>Auto selects the model from the VIN</source>
       <translation>Samodejno izbere model iz VIN</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="125" />
+      <location filename="../qml/pages/SettingsPage.qml" line="144" />
       <source>Key name</source>
       <translation>Ime ključa</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="126" />
+      <location filename="../qml/pages/SettingsPage.qml" line="145" />
       <source>harbour-electric-eel</source>
       <translation>harbour-electric-eel</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="132" />
+      <location filename="../qml/pages/SettingsPage.qml" line="155" />
       <source>Connect timeout</source>
       <translation>Časovna omejitev povezave</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="139" />
-      <location filename="../qml/pages/SettingsPage.qml" line="149" />
+      <location filename="../qml/pages/SettingsPage.qml" line="162" />
+      <location filename="../qml/pages/SettingsPage.qml" line="176" />
       <source>%1 s</source>
       <translation type="unfinished" />
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="145" />
+      <location filename="../qml/pages/SettingsPage.qml" line="172" />
       <source>Command timeout</source>
       <translation>Časovna omejitev ukaza</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="164" />
+      <location filename="../qml/pages/SettingsPage.qml" line="195" />
       <source>Save</source>
       <translation>Shrani</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="176" />
+      <location filename="../qml/pages/SettingsPage.qml" line="207" />
       <source>Pairing &amp; Keys</source>
       <translation>Seznanjanje in ključi</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="180" />
+      <location filename="../qml/pages/SettingsPage.qml" line="211" />
       <source>About</source>
       <translation>O programu</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="194" />
+      <location filename="../qml/pages/SettingsPage.qml" line="225" />
       <source>App: ElectricEel %1   |   core: %2</source>
       <translation>Program: ElectricEel %1   |   jedro: %2</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="198" />
+      <location filename="../qml/pages/SettingsPage.qml" line="229" />
       <source>(too old / unknown)</source>
       <translation>(prestaro / neznano)</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="211" />
+      <location filename="../qml/pages/SettingsPage.qml" line="242" />
       <source>The control core is too old to report a version - reinstall the app.</source>
       <translation>Krmilno jedro je prestaro in ne sporoča različice – znova namesti aplikacijo.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="212" />
+      <location filename="../qml/pages/SettingsPage.qml" line="243" />
       <source>Version mismatch: core %1 vs app %2 - reinstall the app.</source>
       <translation>Neskladje različic: jedro %1 proti aplikaciji %2 – znova namesti aplikacijo.</translation>
     </message>

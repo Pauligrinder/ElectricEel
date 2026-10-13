@@ -22,52 +22,52 @@
   <context>
     <name>CategoryPage</name>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="48" />
+      <location filename="../qml/pages/CategoryPage.qml" line="50" />
       <source>%1 • %2°C inside</source>
       <translation>%1 • %2 °C эчтә</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="49" />
+      <location filename="../qml/pages/CategoryPage.qml" line="51" />
       <source>Climate on</source>
       <translation>Климат кабынган</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="49" />
+      <location filename="../qml/pages/CategoryPage.qml" line="51" />
       <source>Climate off</source>
       <translation>Климат сүнгән</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="55" />
+      <location filename="../qml/pages/CategoryPage.qml" line="57" />
       <source>%1% battery%2</source>
       <translation>%1% заряд%2</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="57" />
+      <location filename="../qml/pages/CategoryPage.qml" line="59" />
       <source> • Charging</source>
       <translation> • Зарядлана</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="62" />
+      <location filename="../qml/pages/CategoryPage.qml" line="64" />
       <source>Doors locked</source>
       <translation>Ишекләр бикле</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="62" />
+      <location filename="../qml/pages/CategoryPage.qml" line="64" />
       <source>Doors unlocked</source>
       <translation>Ишекләр ачык</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="74" />
+      <location filename="../qml/pages/CategoryPage.qml" line="86" />
       <source>OK</source>
       <translation>OK</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="74" />
+      <location filename="../qml/pages/CategoryPage.qml" line="86" />
       <source>exit code %1</source>
       <translation>чыгу коды %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="177" />
+      <location filename="../qml/pages/CategoryPage.qml" line="191" />
       <source>Running %1...</source>
       <translation>%1 эшләтелә...</translation>
     </message>
@@ -418,109 +418,109 @@
   <context>
     <name>FirstPage</name>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="298" />
+      <location filename="../qml/pages/FirstPage.qml" line="287" />
       <source>The control core failed to start. Reinstall the app, then pull down to refresh.</source>
       <translation>Идарә үзәге башланмады. Кушымтаны яңадан урнаштырыгыз һәм яңарту өчен аска тартыгыз.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="300" />
+      <location filename="../qml/pages/FirstPage.qml" line="289" />
       <source>The control core is too old to report its version. Reinstall the app (%1), then pull down to refresh.</source>
       <translation>Идарә үзәге версияне хәбәр итәр өчен бик иске. Кушымтаны (%1) яңадан урнаштырыгыз һәм яңарту өчен аска тартыгыз.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="301" />
+      <location filename="../qml/pages/FirstPage.qml" line="290" />
       <source>Version mismatch: app %1, core %2. Reinstall the app, then pull down to refresh.</source>
       <translation>Версияләр туры килми: кушымта %1, үзәк %2. Кушымтаны яңадан урнаштырыгыз һәм яңарту өчен аска тартыгыз.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="66" />
-      <location filename="../qml/pages/FirstPage.qml" line="319" />
+      <location filename="../qml/pages/FirstPage.qml" line="65" />
+      <location filename="../qml/pages/FirstPage.qml" line="308" />
       <source>No VIN configured</source>
       <translation>VIN көйләнмәгән</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="58" />
+      <location filename="../qml/pages/FirstPage.qml" line="57" />
       <source>Control helper unavailable</source>
       <translation type="unfinished" />
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="62" />
+      <location filename="../qml/pages/FirstPage.qml" line="61" />
       <source>No key: generate and pair a key first</source>
       <translation type="unfinished" />
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="323" />
+      <location filename="../qml/pages/FirstPage.qml" line="312" />
       <source>Key ready</source>
       <translation>Ачкыч әзер</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="323" />
+      <location filename="../qml/pages/FirstPage.qml" line="312" />
       <source>No key - tap for Settings / Pairing</source>
       <translation>Ачкыч юк – Көйләүләр / Бәйләү өчен басыгыз</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="377" />
+      <location filename="../qml/pages/FirstPage.qml" line="366" />
       <source> • charging</source>
       <translation> • зарядлана</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="386" />
+      <location filename="../qml/pages/FirstPage.qml" line="375" />
       <source>• %1°C</source>
       <translation>• %1 °C</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="411" />
+      <location filename="../qml/pages/FirstPage.qml" line="400" />
       <source>Updating...</source>
       <translation>Яңартыла...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="413" />
+      <location filename="../qml/pages/FirstPage.qml" line="402" />
       <source>Status unavailable (%1). Vehicle may be asleep - try Wake Vehicle (Attention), then Refresh Status.</source>
       <translation>Торыш билгесез (%1). Автомобиль йоклаган булырга мөмкин – Автомобильне уятырга (Игътибар) сынагыз, аннары Торышны яңартыгыз.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="415" />
+      <location filename="../qml/pages/FirstPage.qml" line="404" />
       <source>Pull down to refresh status</source>
       <translation>Торышны яңарту өчен аска тартыгыз</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="417" />
+      <location filename="../qml/pages/FirstPage.qml" line="406" />
       <source>Updated just now</source>
       <translation>Хәзер яңартылды</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="418" />
+      <location filename="../qml/pages/FirstPage.qml" line="407" />
       <source>Updated %1m ago</source>
       <translation>%1 мин элек яңартылды</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="511" />
+      <location filename="../qml/pages/FirstPage.qml" line="500" />
       <source>Categories</source>
       <translation>Категорияләр</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="560" />
+      <location filename="../qml/pages/FirstPage.qml" line="550" />
       <source>Send Destination</source>
       <translation>Максатны җибәрергә</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="564" />
+      <location filename="../qml/pages/FirstPage.qml" line="554" />
       <source>Pair Vehicle</source>
       <translation>Автомобильне бәйләргә</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="568" />
+      <location filename="../qml/pages/FirstPage.qml" line="558" />
       <source>Settings</source>
       <translation>Көйләүләр</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="572" />
-      <location filename="../qml/pages/SettingsPage.qml" line="154" />
+      <location filename="../qml/pages/FirstPage.qml" line="562" />
+      <location filename="../qml/pages/SettingsPage.qml" line="185" />
       <source>Refresh</source>
       <translation>Яңартырга</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="576" />
+      <location filename="../qml/pages/FirstPage.qml" line="566" />
       <source>Refresh Status</source>
       <translation>Торышны яңартырга</translation>
     </message>
@@ -528,72 +528,72 @@
   <context>
     <name>NavigationPage</name>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="48" />
+      <location filename="../qml/pages/NavigationPage.qml" line="50" />
       <source>Paste or type a destination first.</source>
       <translation>Башта максатны куегыз яки языгыз.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="52" />
+      <location filename="../qml/pages/NavigationPage.qml" line="54" />
       <source>Checking...</source>
       <translation>Тикшерелә...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="63" />
+      <location filename="../qml/pages/NavigationPage.qml" line="65" />
       <source>Nothing to send.</source>
       <translation>Җибәрерлек берни юк.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="80" />
+      <location filename="../qml/pages/NavigationPage.qml" line="98" />
       <source>Cannot use this: %1</source>
       <translation>Кулланып булмый: %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="84" />
+      <location filename="../qml/pages/NavigationPage.qml" line="102" />
       <source>Coordinates %1, %2 — navigation will start there.</source>
       <translation>%1, %2 координатлары — навигация шунда башланачак.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="87" />
+      <location filename="../qml/pages/NavigationPage.qml" line="105" />
       <source>Address "%1" — the car will look it up.</source>
       <translation>„%1“ адресы — автомобиль үзе табачак.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="93" />
+      <location filename="../qml/pages/NavigationPage.qml" line="111" />
       <source>Send failed: %1</source>
       <translation>Җибәрү уңышсыз: %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="113" />
+      <location filename="../qml/pages/NavigationPage.qml" line="131" />
       <source>Car Navigation</source>
       <translation>Автомобиль навигациясе</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="118" />
+      <location filename="../qml/pages/NavigationPage.qml" line="136" />
       <source>Destination</source>
       <translation>Максат</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="119" />
+      <location filename="../qml/pages/NavigationPage.qml" line="137" />
       <source>Paste address, coordinates, or map link</source>
       <translation>Адрес, координатлар яки карта сылтамасын куегыз</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="127" />
+      <location filename="../qml/pages/NavigationPage.qml" line="145" />
       <source>Preview</source>
       <translation>Карап алу</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="145" />
+      <location filename="../qml/pages/NavigationPage.qml" line="163" />
       <source>Send to Car</source>
       <translation>Автомобильгә җибәрергә</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="167" />
+      <location filename="../qml/pages/NavigationPage.qml" line="185" />
       <source>Notes</source>
       <translation>Искәрмәләр</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="176" />
+      <location filename="../qml/pages/NavigationPage.qml" line="194" />
       <source>This uses Bluetooth, like lock/unlock — the car must be in range, no internet needed on either side. Coordinates are sent exactly; addresses and links are looked up by the car itself, so unusual spellings may resolve differently than on your phone. From Android apps: copy the address or link, then paste it above.</source>
       <translation>Бигеләү/ачу кебек Bluetooth куллана — автомобиль якында булырга тиеш, интернет кирәкми. Координатлар төгәл җибәрелә; адресларны һәм сылтамаларны автомобиль үзе эзли, шуңа күрә гадәти булмаган язылыш телефондагыдан аерылырга мөмкин. Android кушымталарыннан: адресны яки сылтаманы күчереп, өстә куегыз.</translation>
     </message>
@@ -626,52 +626,52 @@
       <translation type="unfinished" />
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="71" />
+      <location filename="../qml/pages/PairingPage.qml" line="73" />
       <source>Pairing &amp; Keys</source>
       <translation>Бәйләү һәм ачкычлар</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="78" />
+      <location filename="../qml/pages/PairingPage.qml" line="80" />
       <source>Set the VIN in Settings first. Then generate a key, then pair it with the car over BLE - you'll need to be next to the vehicle and tap the NFC card on the center console to approve.</source>
       <translation>Башта VIN-ны Көйләүләрдә кертегез. Аннары ачкыч ясагыз һәм BLE аша автомобиль белән бәйләгез – раслау өчен автомобиль янында басыгыз һәм NFC-картаны үзәк консольгә терәгез.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="90" />
+      <location filename="../qml/pages/PairingPage.qml" line="92" />
       <source>Phone key starting...</source>
       <translation>Телефон ачкычы башлана...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="118" />
+      <location filename="../qml/pages/PairingPage.qml" line="120" />
       <source>Generating...</source>
       <translation>Ясала...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="118" />
+      <location filename="../qml/pages/PairingPage.qml" line="120" />
       <source>Generate Key</source>
       <translation>Ачкыч ясарга</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="144" />
+      <location filename="../qml/pages/PairingPage.qml" line="146" />
       <source>Waiting for NFC tap...</source>
       <translation>NFC тию көтелә...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="144" />
+      <location filename="../qml/pages/PairingPage.qml" line="146" />
       <source>Pair with Vehicle</source>
       <translation>Автомобильне бәйләргә</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="150" />
+      <location filename="../qml/pages/PairingPage.qml" line="152" />
       <source>Requesting pairing over BLE - approve on the car's touchscreen / NFC card now.</source>
       <translation>BLE бәйләү соралды – сенсор экранда / NFC-картада раслагыз.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="170" />
+      <location filename="../qml/pages/PairingPage.qml" line="172" />
       <source>Enrolled Keys</source>
       <translation>Теркәлгән ачкычлар</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="174" />
+      <location filename="../qml/pages/PairingPage.qml" line="176" />
       <source>List Enrolled Keys</source>
       <translation>Теркәлгән ачкычларны күрсәтергә</translation>
     </message>
@@ -684,108 +684,108 @@
       <translation>Көйләүләр йөкләнә...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="37" />
+      <location filename="../qml/pages/SettingsPage.qml" line="50" />
       <source>Key on file</source>
       <translation>Ачкыч бар</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="37" />
+      <location filename="../qml/pages/SettingsPage.qml" line="50" />
       <source>No key yet - use Pair Vehicle from the main menu</source>
       <translation>Әлегә ачкыч юк – төп менюда Автомобильне бәйләргә кулланыгыз</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="45" />
+      <location filename="../qml/pages/SettingsPage.qml" line="58" />
       <source>Saved</source>
       <translation>Сакланды</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="45" />
+      <location filename="../qml/pages/SettingsPage.qml" line="58" />
       <source>Save failed: %1</source>
       <translation>Саклау уңышсыз: %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="60" />
+      <location filename="../qml/pages/SettingsPage.qml" line="73" />
       <source>Settings</source>
       <translation>Көйләүләр</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="84" />
+      <location filename="../qml/pages/SettingsPage.qml" line="97" />
       <source>Vehicle VIN</source>
       <translation>Автомобиль VIN-ы</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="89" />
+      <location filename="../qml/pages/SettingsPage.qml" line="102" />
       <source>17-character VIN</source>
       <translation>17 символлы VIN</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="112" />
+      <location filename="../qml/pages/SettingsPage.qml" line="127" />
       <source>Front-page car model</source>
       <translation>Баш биттә автомобиль моделе</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="113" />
+      <location filename="../qml/pages/SettingsPage.qml" line="128" />
       <source>Auto selects the model from the VIN</source>
       <translation>Авто модельне VIN буенча сайлый</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="125" />
+      <location filename="../qml/pages/SettingsPage.qml" line="144" />
       <source>Key name</source>
       <translation>Ачкыч исеме</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="126" />
+      <location filename="../qml/pages/SettingsPage.qml" line="145" />
       <source>harbour-electric-eel</source>
       <translation>harbour-electric-eel</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="132" />
+      <location filename="../qml/pages/SettingsPage.qml" line="155" />
       <source>Connect timeout</source>
       <translation>Тоташу вакыты</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="139" />
-      <location filename="../qml/pages/SettingsPage.qml" line="149" />
+      <location filename="../qml/pages/SettingsPage.qml" line="162" />
+      <location filename="../qml/pages/SettingsPage.qml" line="176" />
       <source>%1 s</source>
       <translation type="unfinished" />
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="145" />
+      <location filename="../qml/pages/SettingsPage.qml" line="172" />
       <source>Command timeout</source>
       <translation>Боерык вакыты</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="164" />
+      <location filename="../qml/pages/SettingsPage.qml" line="195" />
       <source>Save</source>
       <translation>Сакларга</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="176" />
+      <location filename="../qml/pages/SettingsPage.qml" line="207" />
       <source>Pairing &amp; Keys</source>
       <translation>Бәйләү һәм ачкычлар</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="180" />
+      <location filename="../qml/pages/SettingsPage.qml" line="211" />
       <source>About</source>
       <translation>Программа турында</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="194" />
+      <location filename="../qml/pages/SettingsPage.qml" line="225" />
       <source>App: ElectricEel %1   |   core: %2</source>
       <translation>Кушымта: ElectricEel %1   |   үзәк: %2</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="198" />
+      <location filename="../qml/pages/SettingsPage.qml" line="229" />
       <source>(too old / unknown)</source>
       <translation>(бик иске / билгесез)</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="211" />
+      <location filename="../qml/pages/SettingsPage.qml" line="242" />
       <source>The control core is too old to report a version - reinstall the app.</source>
       <translation>Идарә үзәге версияне хәбәр итәр өчен бик иске – кушымтаны яңадан урнаштырыгыз.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="212" />
+      <location filename="../qml/pages/SettingsPage.qml" line="243" />
       <source>Version mismatch: core %1 vs app %2 - reinstall the app.</source>
       <translation>Туры килми: үзәк %1 каршы кушымта %2 – кушымтаны яңадан урнаштырыгыз.</translation>
     </message>

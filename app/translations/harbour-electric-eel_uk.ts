@@ -22,52 +22,52 @@
   <context>
     <name>CategoryPage</name>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="48" />
+      <location filename="../qml/pages/CategoryPage.qml" line="50" />
       <source>%1 • %2°C inside</source>
       <translation>%1 • %2 °C у салоні</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="49" />
+      <location filename="../qml/pages/CategoryPage.qml" line="51" />
       <source>Climate on</source>
       <translation>Клімат увімкнено</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="49" />
+      <location filename="../qml/pages/CategoryPage.qml" line="51" />
       <source>Climate off</source>
       <translation>Клімат вимкнено</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="55" />
+      <location filename="../qml/pages/CategoryPage.qml" line="57" />
       <source>%1% battery%2</source>
       <translation>%1% заряду%2</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="57" />
+      <location filename="../qml/pages/CategoryPage.qml" line="59" />
       <source> • Charging</source>
       <translation> • Заряджається</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="62" />
+      <location filename="../qml/pages/CategoryPage.qml" line="64" />
       <source>Doors locked</source>
       <translation>Двері заблоковано</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="62" />
+      <location filename="../qml/pages/CategoryPage.qml" line="64" />
       <source>Doors unlocked</source>
       <translation>Двері розблоковано</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="74" />
+      <location filename="../qml/pages/CategoryPage.qml" line="86" />
       <source>OK</source>
       <translation>OK</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="74" />
+      <location filename="../qml/pages/CategoryPage.qml" line="86" />
       <source>exit code %1</source>
       <translation>код виходу %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="177" />
+      <location filename="../qml/pages/CategoryPage.qml" line="191" />
       <source>Running %1...</source>
       <translation>Виконання %1...</translation>
     </message>
@@ -418,109 +418,109 @@
   <context>
     <name>FirstPage</name>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="298" />
+      <location filename="../qml/pages/FirstPage.qml" line="287" />
       <source>The control core failed to start. Reinstall the app, then pull down to refresh.</source>
       <translation>Керувальне ядро не запустилось. Перевстановіть застосунок і потягніть вниз для оновлення.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="300" />
+      <location filename="../qml/pages/FirstPage.qml" line="289" />
       <source>The control core is too old to report its version. Reinstall the app (%1), then pull down to refresh.</source>
       <translation>Керувальне ядро застаре і не повідомляє версію. Перевстановіть застосунок (%1) і потягніть вниз для оновлення.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="301" />
+      <location filename="../qml/pages/FirstPage.qml" line="290" />
       <source>Version mismatch: app %1, core %2. Reinstall the app, then pull down to refresh.</source>
       <translation>Невідповідність версій: застосунок %1, ядро %2. Перевстановіть застосунок і потягніть вниз для оновлення.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="66" />
-      <location filename="../qml/pages/FirstPage.qml" line="319" />
+      <location filename="../qml/pages/FirstPage.qml" line="65" />
+      <location filename="../qml/pages/FirstPage.qml" line="308" />
       <source>No VIN configured</source>
       <translation>VIN не налаштовано</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="58" />
+      <location filename="../qml/pages/FirstPage.qml" line="57" />
       <source>Control helper unavailable</source>
       <translation type="unfinished" />
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="62" />
+      <location filename="../qml/pages/FirstPage.qml" line="61" />
       <source>No key: generate and pair a key first</source>
       <translation type="unfinished" />
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="323" />
+      <location filename="../qml/pages/FirstPage.qml" line="312" />
       <source>Key ready</source>
       <translation>Ключ готовий</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="323" />
+      <location filename="../qml/pages/FirstPage.qml" line="312" />
       <source>No key - tap for Settings / Pairing</source>
       <translation>Немає ключа — натисніть для Налаштування / Сполучення</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="377" />
+      <location filename="../qml/pages/FirstPage.qml" line="366" />
       <source> • charging</source>
       <translation> • заряджається</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="386" />
+      <location filename="../qml/pages/FirstPage.qml" line="375" />
       <source>• %1°C</source>
       <translation>• %1 °C</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="411" />
+      <location filename="../qml/pages/FirstPage.qml" line="400" />
       <source>Updating...</source>
       <translation>Оновлення...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="413" />
+      <location filename="../qml/pages/FirstPage.qml" line="402" />
       <source>Status unavailable (%1). Vehicle may be asleep - try Wake Vehicle (Attention), then Refresh Status.</source>
       <translation>Стан недоступний (%1). Автомобіль, можливо, спить — спробуйте Розбудити автомобіль (Увага), потім Оновити стан.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="415" />
+      <location filename="../qml/pages/FirstPage.qml" line="404" />
       <source>Pull down to refresh status</source>
       <translation>Потягніть вниз, щоб оновити стан</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="417" />
+      <location filename="../qml/pages/FirstPage.qml" line="406" />
       <source>Updated just now</source>
       <translation>Оновлено щойно</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="418" />
+      <location filename="../qml/pages/FirstPage.qml" line="407" />
       <source>Updated %1m ago</source>
       <translation>Оновлено %1 хв тому</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="511" />
+      <location filename="../qml/pages/FirstPage.qml" line="500" />
       <source>Categories</source>
       <translation>Категорії</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="560" />
+      <location filename="../qml/pages/FirstPage.qml" line="550" />
       <source>Send Destination</source>
       <translation>Надіслати пункт призначення</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="564" />
+      <location filename="../qml/pages/FirstPage.qml" line="554" />
       <source>Pair Vehicle</source>
       <translation>Спарувати автомобіль</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="568" />
+      <location filename="../qml/pages/FirstPage.qml" line="558" />
       <source>Settings</source>
       <translation>Налаштування</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="572" />
-      <location filename="../qml/pages/SettingsPage.qml" line="154" />
+      <location filename="../qml/pages/FirstPage.qml" line="562" />
+      <location filename="../qml/pages/SettingsPage.qml" line="185" />
       <source>Refresh</source>
       <translation>Оновити</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="576" />
+      <location filename="../qml/pages/FirstPage.qml" line="566" />
       <source>Refresh Status</source>
       <translation>Оновити стан</translation>
     </message>
@@ -528,72 +528,72 @@
   <context>
     <name>NavigationPage</name>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="48" />
+      <location filename="../qml/pages/NavigationPage.qml" line="50" />
       <source>Paste or type a destination first.</source>
       <translation>Спочатку вставте або введіть пункт призначення.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="52" />
+      <location filename="../qml/pages/NavigationPage.qml" line="54" />
       <source>Checking...</source>
       <translation>Перевірка...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="63" />
+      <location filename="../qml/pages/NavigationPage.qml" line="65" />
       <source>Nothing to send.</source>
       <translation>Немає чого надсилати.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="80" />
+      <location filename="../qml/pages/NavigationPage.qml" line="98" />
       <source>Cannot use this: %1</source>
       <translation>Не можна використати: %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="84" />
+      <location filename="../qml/pages/NavigationPage.qml" line="102" />
       <source>Coordinates %1, %2 — navigation will start there.</source>
       <translation>Координати %1, %2 — навігація почнеться там.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="87" />
+      <location filename="../qml/pages/NavigationPage.qml" line="105" />
       <source>Address "%1" — the car will look it up.</source>
       <translation>Адреса «%1» — автомобіль знайде її сам.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="93" />
+      <location filename="../qml/pages/NavigationPage.qml" line="111" />
       <source>Send failed: %1</source>
       <translation>Надсилання не вдалося: %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="113" />
+      <location filename="../qml/pages/NavigationPage.qml" line="131" />
       <source>Car Navigation</source>
       <translation>Навігація автомобіля</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="118" />
+      <location filename="../qml/pages/NavigationPage.qml" line="136" />
       <source>Destination</source>
       <translation>Пункт призначення</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="119" />
+      <location filename="../qml/pages/NavigationPage.qml" line="137" />
       <source>Paste address, coordinates, or map link</source>
       <translation>Вставте адресу, координати або посилання на мапу</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="127" />
+      <location filename="../qml/pages/NavigationPage.qml" line="145" />
       <source>Preview</source>
       <translation>Попередній перегляд</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="145" />
+      <location filename="../qml/pages/NavigationPage.qml" line="163" />
       <source>Send to Car</source>
       <translation>Надіслати в автомобіль</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="167" />
+      <location filename="../qml/pages/NavigationPage.qml" line="185" />
       <source>Notes</source>
       <translation>Примітки</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="176" />
+      <location filename="../qml/pages/NavigationPage.qml" line="194" />
       <source>This uses Bluetooth, like lock/unlock — the car must be in range, no internet needed on either side. Coordinates are sent exactly; addresses and links are looked up by the car itself, so unusual spellings may resolve differently than on your phone. From Android apps: copy the address or link, then paste it above.</source>
       <translation>Використовується Bluetooth, як блокування/розблокування — автомобіль має бути в радіусі дії, інтернет не потрібен. Координати надсилаються точно; адреси й посилання автомобіль шукає сам, тож незвичне написання може розпізнатися інакше, ніж у телефоні. З Android-застосунків: скопіюйте адресу або посилання та вставте вище.</translation>
     </message>
@@ -626,52 +626,52 @@
       <translation type="unfinished" />
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="71" />
+      <location filename="../qml/pages/PairingPage.qml" line="73" />
       <source>Pairing &amp; Keys</source>
       <translation>Спарювання та ключі</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="78" />
+      <location filename="../qml/pages/PairingPage.qml" line="80" />
       <source>Set the VIN in Settings first. Then generate a key, then pair it with the car over BLE - you'll need to be next to the vehicle and tap the NFC card on the center console to approve.</source>
       <translation>Спочатку задайте VIN у Налаштуваннях. Потім створіть ключ і спаруйте його з автомобілем через BLE — стійте поруч з автомобілем і прикладіть NFC-картку до центральної консолі для підтвердження.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="90" />
+      <location filename="../qml/pages/PairingPage.qml" line="92" />
       <source>Phone key starting...</source>
       <translation>Ключ телефона запускається...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="118" />
+      <location filename="../qml/pages/PairingPage.qml" line="120" />
       <source>Generating...</source>
       <translation>Створення...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="118" />
+      <location filename="../qml/pages/PairingPage.qml" line="120" />
       <source>Generate Key</source>
       <translation>Створити ключ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="144" />
+      <location filename="../qml/pages/PairingPage.qml" line="146" />
       <source>Waiting for NFC tap...</source>
       <translation>Очікування дотику NFC...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="144" />
+      <location filename="../qml/pages/PairingPage.qml" line="146" />
       <source>Pair with Vehicle</source>
       <translation>Спарувати автомобіль</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="150" />
+      <location filename="../qml/pages/PairingPage.qml" line="152" />
       <source>Requesting pairing over BLE - approve on the car's touchscreen / NFC card now.</source>
       <translation>Запитано спарювання BLE — підтвердьте на сенсорному екрані / NFC-картці.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="170" />
+      <location filename="../qml/pages/PairingPage.qml" line="172" />
       <source>Enrolled Keys</source>
       <translation>Зареєстровані ключі</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="174" />
+      <location filename="../qml/pages/PairingPage.qml" line="176" />
       <source>List Enrolled Keys</source>
       <translation>Список зареєстрованих ключів</translation>
     </message>
@@ -684,108 +684,108 @@
       <translation>Завантаження конфігурації...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="37" />
+      <location filename="../qml/pages/SettingsPage.qml" line="50" />
       <source>Key on file</source>
       <translation>Ключ існує</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="37" />
+      <location filename="../qml/pages/SettingsPage.qml" line="50" />
       <source>No key yet - use Pair Vehicle from the main menu</source>
       <translation>Ключа поки немає — скористайтеся Спарувати автомобіль у головному меню</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="45" />
+      <location filename="../qml/pages/SettingsPage.qml" line="58" />
       <source>Saved</source>
       <translation>Збережено</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="45" />
+      <location filename="../qml/pages/SettingsPage.qml" line="58" />
       <source>Save failed: %1</source>
       <translation>Не вдалося зберегти: %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="60" />
+      <location filename="../qml/pages/SettingsPage.qml" line="73" />
       <source>Settings</source>
       <translation>Налаштування</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="84" />
+      <location filename="../qml/pages/SettingsPage.qml" line="97" />
       <source>Vehicle VIN</source>
       <translation>VIN автомобіля</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="89" />
+      <location filename="../qml/pages/SettingsPage.qml" line="102" />
       <source>17-character VIN</source>
       <translation>17-значний VIN</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="112" />
+      <location filename="../qml/pages/SettingsPage.qml" line="127" />
       <source>Front-page car model</source>
       <translation>Модель авто на головній</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="113" />
+      <location filename="../qml/pages/SettingsPage.qml" line="128" />
       <source>Auto selects the model from the VIN</source>
       <translation>Авто обирає модель за VIN</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="125" />
+      <location filename="../qml/pages/SettingsPage.qml" line="144" />
       <source>Key name</source>
       <translation>Ім'я ключа</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="126" />
+      <location filename="../qml/pages/SettingsPage.qml" line="145" />
       <source>harbour-electric-eel</source>
       <translation>harbour-electric-eel</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="132" />
+      <location filename="../qml/pages/SettingsPage.qml" line="155" />
       <source>Connect timeout</source>
       <translation>Таймаут підключення</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="139" />
-      <location filename="../qml/pages/SettingsPage.qml" line="149" />
+      <location filename="../qml/pages/SettingsPage.qml" line="162" />
+      <location filename="../qml/pages/SettingsPage.qml" line="176" />
       <source>%1 s</source>
       <translation type="unfinished" />
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="145" />
+      <location filename="../qml/pages/SettingsPage.qml" line="172" />
       <source>Command timeout</source>
       <translation>Таймаут команди</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="164" />
+      <location filename="../qml/pages/SettingsPage.qml" line="195" />
       <source>Save</source>
       <translation>Зберегти</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="176" />
+      <location filename="../qml/pages/SettingsPage.qml" line="207" />
       <source>Pairing &amp; Keys</source>
       <translation>Спарювання та ключі</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="180" />
+      <location filename="../qml/pages/SettingsPage.qml" line="211" />
       <source>About</source>
       <translation>Про програму</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="194" />
+      <location filename="../qml/pages/SettingsPage.qml" line="225" />
       <source>App: ElectricEel %1   |   core: %2</source>
       <translation>Застосунок: ElectricEel %1   |   ядро: %2</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="198" />
+      <location filename="../qml/pages/SettingsPage.qml" line="229" />
       <source>(too old / unknown)</source>
       <translation>(застаріле / невідомо)</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="211" />
+      <location filename="../qml/pages/SettingsPage.qml" line="242" />
       <source>The control core is too old to report a version - reinstall the app.</source>
       <translation>Керувальне ядро застаріле і не повідомляє версію — перевстановіть застосунок.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="212" />
+      <location filename="../qml/pages/SettingsPage.qml" line="243" />
       <source>Version mismatch: core %1 vs app %2 - reinstall the app.</source>
       <translation>Невідповідність: ядро %1 проти застосунку %2 — перевстановіть застосунок.</translation>
     </message>

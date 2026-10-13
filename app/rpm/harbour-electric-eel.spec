@@ -1,6 +1,6 @@
 Name:       harbour-electric-eel
 Summary:    Control your Tesla over Bluetooth
-Version:    0.3.0
+Version:    0.3.1
 Release:    1
 License:    ASL 2.0
 URL:        https://github.com/nappa85/ElectricEel
@@ -53,6 +53,8 @@ desktop-file-install --delete-original \
 %{_datadir}/icons/hicolor/*/apps/%{name}.png
 
 %changelog
+* Tue Oct 13 2026 Marco Napetti <marco.napetti@proton.me> - 0.3.1-1
+- Use Go Tesla Command via FFI
 * Sun Sep 27 2026 Marco Napetti <marco.napetti@proton.me> - 0.3.0-1
 - CPU keepalive and move responsabilities to Rust core
 * Sun Sep 27 2026 Marco Napetti <marco.napetti@proton.me> - 0.2.12-1
@@ -67,30 +69,30 @@ desktop-file-install --delete-original \
 - Stabilize phone-key GATT reconnect and VCSEC presence
 - Daily phone-key logs under Documents/ElectricEel
 - Cover connection status and lock/trunk/frunk actions
-* Thu Aug 22 2026 Marco Napetti <marco.napetti@proton.me> - 0.2.8-1
+* Sat Aug 22 2026 Marco Napetti <marco.napetti@proton.me> - 0.2.8-1
 - Restart session on wakeup
-* Thu Aug 22 2026 Marco Napetti <marco.napetti@proton.me> - 0.2.7-1
+* Sat Aug 22 2026 Marco Napetti <marco.napetti@proton.me> - 0.2.7-1
 - Enable BlueZ AutoConnect
-* Thu Aug 22 2026 Marco Napetti <marco.napetti@proton.me> - 0.2.6-1
+* Sat Aug 22 2026 Marco Napetti <marco.napetti@proton.me> - 0.2.6-1
 - Ensure child process is killed with parent
-* Thu Aug 18 2026 Marco Napetti <marco.napetti@proton.me> - 0.2.5-1
+* Tue Aug 18 2026 Marco Napetti <marco.napetti@proton.me> - 0.2.5-1
 - Phone as key
-* Thu Aug 18 2026 Marco Napetti <marco.napetti@proton.me> - 0.2.4-1
+* Tue Aug 18 2026 Marco Napetti <marco.napetti@proton.me> - 0.2.4-1
 - Fix sliders
-* Thu Aug 15 2026 Marco Napetti <marco.napetti@proton.me> - 0.2.3-1
+* Sat Aug 15 2026 Marco Napetti <marco.napetti@proton.me> - 0.2.3-1
 - Busy indicator in config pages
-* Thu Aug 14 2026 Marco Napetti <marco.napetti@proton.me> - 0.2.2-1
+* Fri Aug 14 2026 Marco Napetti <marco.napetti@proton.me> - 0.2.2-1
 - Keyless drive
 * Thu Aug 13 2026 Marco Napetti <marco.napetti@proton.me> - 0.2.1-1
 - Proximity unlock
 * Thu Aug 13 2026 Marco Napetti <marco.napetti@proton.me> - 0.2.0-1
 - Renamed the app from harbour-teslacontrol to harbour-electric-eel (ElectricEel)
 - BlueZ D-Bus BLE backend; in-process Rust core, no privileged helper service
-* Tue Aug 12 2026 Marco Napetti <marco.napetti@proton.me> - 0.1.7-1
+* Wed Aug 12 2026 Marco Napetti <marco.napetti@proton.me> - 0.1.7-1
 - Avoid config edit before config load
-* Tue Aug 12 2026 Marco Napetti <marco.napetti@proton.me> - 0.1.6-1
+* Wed Aug 12 2026 Marco Napetti <marco.napetti@proton.me> - 0.1.6-1
 - Car model
-* Tue Aug 12 2026 Marco Napetti <marco.napetti@proton.me> - 0.1.5-1
+* Wed Aug 12 2026 Marco Napetti <marco.napetti@proton.me> - 0.1.5-1
 - UI improvements
 * Tue Aug 11 2026 Marco Napetti <marco.napetti@proton.me> - 0.1.4-1
 - Version bump

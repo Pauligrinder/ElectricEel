@@ -22,52 +22,52 @@
   <context>
     <name>CategoryPage</name>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="48" />
+      <location filename="../qml/pages/CategoryPage.qml" line="50" />
       <source>%1 • %2°C inside</source>
       <translation>%1 • உள்ளே %2 °C</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="49" />
+      <location filename="../qml/pages/CategoryPage.qml" line="51" />
       <source>Climate on</source>
       <translation>காலநிலை இயக்கம்</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="49" />
+      <location filename="../qml/pages/CategoryPage.qml" line="51" />
       <source>Climate off</source>
       <translation>காலநிலை நிறுத்தம்</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="55" />
+      <location filename="../qml/pages/CategoryPage.qml" line="57" />
       <source>%1% battery%2</source>
       <translation>%1% மின்கலம்%2</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="57" />
+      <location filename="../qml/pages/CategoryPage.qml" line="59" />
       <source> • Charging</source>
       <translation> • மின்னேற்றம்</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="62" />
+      <location filename="../qml/pages/CategoryPage.qml" line="64" />
       <source>Doors locked</source>
       <translation>கதவுகள் பூட்டப்பட்டன</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="62" />
+      <location filename="../qml/pages/CategoryPage.qml" line="64" />
       <source>Doors unlocked</source>
       <translation>கதவுகள் திறக்கப்பட்டன</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="74" />
+      <location filename="../qml/pages/CategoryPage.qml" line="86" />
       <source>OK</source>
       <translation>சரி</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="74" />
+      <location filename="../qml/pages/CategoryPage.qml" line="86" />
       <source>exit code %1</source>
       <translation>வெளியேறும் குறியீடு %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="177" />
+      <location filename="../qml/pages/CategoryPage.qml" line="191" />
       <source>Running %1...</source>
       <translation>%1 இயங்குகிறது...</translation>
     </message>
@@ -418,109 +418,109 @@
   <context>
     <name>FirstPage</name>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="298" />
+      <location filename="../qml/pages/FirstPage.qml" line="287" />
       <source>The control core failed to start. Reinstall the app, then pull down to refresh.</source>
       <translation>கட்டுப்பாட்டு மையம் தொடங்கவில்லை. செயலியை மீண்டும் நிறுவி, புதுப்பிக்க கீழே இழுக்கவும்.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="300" />
+      <location filename="../qml/pages/FirstPage.qml" line="289" />
       <source>The control core is too old to report its version. Reinstall the app (%1), then pull down to refresh.</source>
       <translation>கட்டுப்பாட்டு மையம் பதிப்பு சொல்ல மிகப் பழையது. செயலியை (%1) மீண்டும் நிறுவி, புதுப்பிக்க கீழே இழுக்கவும்.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="301" />
+      <location filename="../qml/pages/FirstPage.qml" line="290" />
       <source>Version mismatch: app %1, core %2. Reinstall the app, then pull down to refresh.</source>
       <translation>பதிப்பு பொருந்தவில்லை: செயலி %1, மையம் %2. செயலியை மீண்டும் நிறுவி, புதுப்பிக்க கீழே இழுக்கவும்.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="66" />
-      <location filename="../qml/pages/FirstPage.qml" line="319" />
+      <location filename="../qml/pages/FirstPage.qml" line="65" />
+      <location filename="../qml/pages/FirstPage.qml" line="308" />
       <source>No VIN configured</source>
       <translation>VIN அமைக்கப்படவில்லை</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="58" />
+      <location filename="../qml/pages/FirstPage.qml" line="57" />
       <source>Control helper unavailable</source>
       <translation type="unfinished" />
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="62" />
+      <location filename="../qml/pages/FirstPage.qml" line="61" />
       <source>No key: generate and pair a key first</source>
       <translation type="unfinished" />
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="323" />
+      <location filename="../qml/pages/FirstPage.qml" line="312" />
       <source>Key ready</source>
       <translation>சாவி தயார்</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="323" />
+      <location filename="../qml/pages/FirstPage.qml" line="312" />
       <source>No key - tap for Settings / Pairing</source>
       <translation>சாவி இல்லை - அமைப்புகள் / இணைப்புக்குத் தட்டவும்</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="377" />
+      <location filename="../qml/pages/FirstPage.qml" line="366" />
       <source> • charging</source>
       <translation> • மின்னேறுகிறது</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="386" />
+      <location filename="../qml/pages/FirstPage.qml" line="375" />
       <source>• %1°C</source>
       <translation>• %1 °C</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="411" />
+      <location filename="../qml/pages/FirstPage.qml" line="400" />
       <source>Updating...</source>
       <translation>புதுப்பிக்கிறது...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="413" />
+      <location filename="../qml/pages/FirstPage.qml" line="402" />
       <source>Status unavailable (%1). Vehicle may be asleep - try Wake Vehicle (Attention), then Refresh Status.</source>
       <translation>நிலை கிடைக்கவில்லை (%1). வாகனம் உறங்கலாம் - வாகனத்தை எழுப்பு (கவனம்) முயன்று, பின் நிலையைப் புதுப்பி.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="415" />
+      <location filename="../qml/pages/FirstPage.qml" line="404" />
       <source>Pull down to refresh status</source>
       <translation>நிலையைப் புதுப்பிக்க கீழே இழுக்கவும்</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="417" />
+      <location filename="../qml/pages/FirstPage.qml" line="406" />
       <source>Updated just now</source>
       <translation>இப்போது புதுப்பிக்கப்பட்டது</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="418" />
+      <location filename="../qml/pages/FirstPage.qml" line="407" />
       <source>Updated %1m ago</source>
       <translation>%1 நிமிடம் முன் புதுப்பிக்கப்பட்டது</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="511" />
+      <location filename="../qml/pages/FirstPage.qml" line="500" />
       <source>Categories</source>
       <translation>வகைகள்</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="560" />
+      <location filename="../qml/pages/FirstPage.qml" line="550" />
       <source>Send Destination</source>
       <translation>இலக்கு அனுப்பு</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="564" />
+      <location filename="../qml/pages/FirstPage.qml" line="554" />
       <source>Pair Vehicle</source>
       <translation>வாகனம் இணை</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="568" />
+      <location filename="../qml/pages/FirstPage.qml" line="558" />
       <source>Settings</source>
       <translation>அமைப்புகள்</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="572" />
-      <location filename="../qml/pages/SettingsPage.qml" line="154" />
+      <location filename="../qml/pages/FirstPage.qml" line="562" />
+      <location filename="../qml/pages/SettingsPage.qml" line="185" />
       <source>Refresh</source>
       <translation>புதுப்பி</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="576" />
+      <location filename="../qml/pages/FirstPage.qml" line="566" />
       <source>Refresh Status</source>
       <translation>நிலை புதுப்பி</translation>
     </message>
@@ -528,72 +528,72 @@
   <context>
     <name>NavigationPage</name>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="48" />
+      <location filename="../qml/pages/NavigationPage.qml" line="50" />
       <source>Paste or type a destination first.</source>
       <translation>முதலில் இலக்கை ஒட்டவும் அல்லது எழுதவும்.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="52" />
+      <location filename="../qml/pages/NavigationPage.qml" line="54" />
       <source>Checking...</source>
       <translation>சரிபார்க்கிறது...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="63" />
+      <location filename="../qml/pages/NavigationPage.qml" line="65" />
       <source>Nothing to send.</source>
       <translation>அனுப்ப ஒன்றுமில்லை.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="80" />
+      <location filename="../qml/pages/NavigationPage.qml" line="98" />
       <source>Cannot use this: %1</source>
       <translation>பயன்படுத்த முடியாது: %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="84" />
+      <location filename="../qml/pages/NavigationPage.qml" line="102" />
       <source>Coordinates %1, %2 — navigation will start there.</source>
       <translation>ஆயத்தொலைகள் %1, %2 — வழிசெலுத்தல் அங்கே தொடங்கும்.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="87" />
+      <location filename="../qml/pages/NavigationPage.qml" line="105" />
       <source>Address "%1" — the car will look it up.</source>
       <translation>முகவரி “%1” — வாகனமே தேடும்.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="93" />
+      <location filename="../qml/pages/NavigationPage.qml" line="111" />
       <source>Send failed: %1</source>
       <translation>அனுப்பல் தோல்வி: %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="113" />
+      <location filename="../qml/pages/NavigationPage.qml" line="131" />
       <source>Car Navigation</source>
       <translation>வாகன வழிசெலுத்தல்</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="118" />
+      <location filename="../qml/pages/NavigationPage.qml" line="136" />
       <source>Destination</source>
       <translation>இலக்கு</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="119" />
+      <location filename="../qml/pages/NavigationPage.qml" line="137" />
       <source>Paste address, coordinates, or map link</source>
       <translation>முகவரி, ஆயத்தொலைகள் அல்லது வரைபட இணைப்பை ஒட்டவும்</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="127" />
+      <location filename="../qml/pages/NavigationPage.qml" line="145" />
       <source>Preview</source>
       <translation>முன்னோட்டம்</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="145" />
+      <location filename="../qml/pages/NavigationPage.qml" line="163" />
       <source>Send to Car</source>
       <translation>வாகனத்துக்கு அனுப்பு</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="167" />
+      <location filename="../qml/pages/NavigationPage.qml" line="185" />
       <source>Notes</source>
       <translation>குறிப்புகள்</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="176" />
+      <location filename="../qml/pages/NavigationPage.qml" line="194" />
       <source>This uses Bluetooth, like lock/unlock — the car must be in range, no internet needed on either side. Coordinates are sent exactly; addresses and links are looked up by the car itself, so unusual spellings may resolve differently than on your phone. From Android apps: copy the address or link, then paste it above.</source>
       <translation>பூட்டு/திறப்பு போல Bluetooth பயன்படுகிறது — வாகனம் எல்லைக்குள் இருக்க வேண்டும், இணையம் தேவையில்லை. ஆயத்தொலைகள் துல்லியமாக அனுப்பப்படும்; முகவரிகளையும் இணைப்புகளையும் வாகனமே தேடும், எனவே வழக்கமற்ற எழுத்து தொலைபேசியிலிருந்து வேறுபடலாம். Android செயலிகளிலிருந்து: முகவரி அல்லது இணைப்பை நகலெடுத்து மேலே ஒட்டவும்.</translation>
     </message>
@@ -626,52 +626,52 @@
       <translation type="unfinished" />
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="71" />
+      <location filename="../qml/pages/PairingPage.qml" line="73" />
       <source>Pairing &amp; Keys</source>
       <translation>இணைப்பு &amp; சாவிகள்</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="78" />
+      <location filename="../qml/pages/PairingPage.qml" line="80" />
       <source>Set the VIN in Settings first. Then generate a key, then pair it with the car over BLE - you'll need to be next to the vehicle and tap the NFC card on the center console to approve.</source>
       <translation>முதலில் அமைப்புகளில் VIN அமைக்கவும். பின் சாவி உருவாக்கி BLE மூலம் வாகனத்துடன் இணைக்கவும் – வாகனம் அருகே நின்று ஒப்புதலுக்கு NFC அட்டையை நடு பலகையில் தட்டவும்.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="90" />
+      <location filename="../qml/pages/PairingPage.qml" line="92" />
       <source>Phone key starting...</source>
       <translation>தொலைபேசி சாவி தொடங்குகிறது...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="118" />
+      <location filename="../qml/pages/PairingPage.qml" line="120" />
       <source>Generating...</source>
       <translation>உருவாக்குகிறது...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="118" />
+      <location filename="../qml/pages/PairingPage.qml" line="120" />
       <source>Generate Key</source>
       <translation>சாவி உருவாக்கு</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="144" />
+      <location filename="../qml/pages/PairingPage.qml" line="146" />
       <source>Waiting for NFC tap...</source>
       <translation>NFC தட்டலுக்குக் காத்திருக்கிறது...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="144" />
+      <location filename="../qml/pages/PairingPage.qml" line="146" />
       <source>Pair with Vehicle</source>
       <translation>வாகனம் இணை</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="150" />
+      <location filename="../qml/pages/PairingPage.qml" line="152" />
       <source>Requesting pairing over BLE - approve on the car's touchscreen / NFC card now.</source>
       <translation>BLE இணைப்பு கோரப்பட்டது – தொடுதிரை / NFC அட்டையில் இப்போது ஒப்புக்கொள்ளவும்.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="170" />
+      <location filename="../qml/pages/PairingPage.qml" line="172" />
       <source>Enrolled Keys</source>
       <translation>பதிந்த சாவிகள்</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="174" />
+      <location filename="../qml/pages/PairingPage.qml" line="176" />
       <source>List Enrolled Keys</source>
       <translation>பதிந்த சாவிகள் பட்டியல்</translation>
     </message>
@@ -684,108 +684,108 @@
       <translation>அமைப்பு ஏற்றப்படுகிறது...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="37" />
+      <location filename="../qml/pages/SettingsPage.qml" line="50" />
       <source>Key on file</source>
       <translation>சாவி உள்ளது</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="37" />
+      <location filename="../qml/pages/SettingsPage.qml" line="50" />
       <source>No key yet - use Pair Vehicle from the main menu</source>
       <translation>இன்னும் சாவி இல்லை – முதன்மை பட்டியலில் வாகனம் இணை பயன்படுத்தவும்</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="45" />
+      <location filename="../qml/pages/SettingsPage.qml" line="58" />
       <source>Saved</source>
       <translation>சேமிக்கப்பட்டது</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="45" />
+      <location filename="../qml/pages/SettingsPage.qml" line="58" />
       <source>Save failed: %1</source>
       <translation>சேமிப்பு தோல்வி: %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="60" />
+      <location filename="../qml/pages/SettingsPage.qml" line="73" />
       <source>Settings</source>
       <translation>அமைப்புகள்</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="84" />
+      <location filename="../qml/pages/SettingsPage.qml" line="97" />
       <source>Vehicle VIN</source>
       <translation>வாகன VIN</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="89" />
+      <location filename="../qml/pages/SettingsPage.qml" line="102" />
       <source>17-character VIN</source>
       <translation>17 எழுத்து VIN</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="112" />
+      <location filename="../qml/pages/SettingsPage.qml" line="127" />
       <source>Front-page car model</source>
       <translation>முதல் பக்கத்தில் கார் மாதிரி</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="113" />
+      <location filename="../qml/pages/SettingsPage.qml" line="128" />
       <source>Auto selects the model from the VIN</source>
       <translation>VIN-லிருந்து மாதிரியை தானாகத் தேர்வு</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="125" />
+      <location filename="../qml/pages/SettingsPage.qml" line="144" />
       <source>Key name</source>
       <translation>சாவி பெயர்</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="126" />
+      <location filename="../qml/pages/SettingsPage.qml" line="145" />
       <source>harbour-electric-eel</source>
       <translation>harbour-electric-eel</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="132" />
+      <location filename="../qml/pages/SettingsPage.qml" line="155" />
       <source>Connect timeout</source>
       <translation>இணைப்பு காலவரம்பு</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="139" />
-      <location filename="../qml/pages/SettingsPage.qml" line="149" />
+      <location filename="../qml/pages/SettingsPage.qml" line="162" />
+      <location filename="../qml/pages/SettingsPage.qml" line="176" />
       <source>%1 s</source>
       <translation type="unfinished" />
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="145" />
+      <location filename="../qml/pages/SettingsPage.qml" line="172" />
       <source>Command timeout</source>
       <translation>கட்டளை காலவரம்பு</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="164" />
+      <location filename="../qml/pages/SettingsPage.qml" line="195" />
       <source>Save</source>
       <translation>சேமி</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="176" />
+      <location filename="../qml/pages/SettingsPage.qml" line="207" />
       <source>Pairing &amp; Keys</source>
       <translation>இணைப்பு &amp; சாவிகள்</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="180" />
+      <location filename="../qml/pages/SettingsPage.qml" line="211" />
       <source>About</source>
       <translation>பற்றி</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="194" />
+      <location filename="../qml/pages/SettingsPage.qml" line="225" />
       <source>App: ElectricEel %1   |   core: %2</source>
       <translation>செயலி: ElectricEel %1   |   மையம்: %2</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="198" />
+      <location filename="../qml/pages/SettingsPage.qml" line="229" />
       <source>(too old / unknown)</source>
       <translation>(மிகப் பழையது / தெரியாதது)</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="211" />
+      <location filename="../qml/pages/SettingsPage.qml" line="242" />
       <source>The control core is too old to report a version - reinstall the app.</source>
       <translation>கட்டுப்பாட்டு மையம் பதிப்பு சொல்ல மிகப் பழையது – செயலியை மீண்டும் நிறுவவும்.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="212" />
+      <location filename="../qml/pages/SettingsPage.qml" line="243" />
       <source>Version mismatch: core %1 vs app %2 - reinstall the app.</source>
       <translation>பொருந்தவில்லை: மையம் %1 எதிர் செயலி %2 – செயலியை மீண்டும் நிறுவவும்.</translation>
     </message>

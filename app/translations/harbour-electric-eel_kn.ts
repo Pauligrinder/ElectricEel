@@ -22,52 +22,52 @@
   <context>
     <name>CategoryPage</name>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="48" />
+      <location filename="../qml/pages/CategoryPage.qml" line="50" />
       <source>%1 • %2°C inside</source>
       <translation>%1 • ಒಳಗೆ %2 °C</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="49" />
+      <location filename="../qml/pages/CategoryPage.qml" line="51" />
       <source>Climate on</source>
       <translation>ಹವಾಮಾನ ಆನ್</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="49" />
+      <location filename="../qml/pages/CategoryPage.qml" line="51" />
       <source>Climate off</source>
       <translation>ಹವಾಮಾನ ಆಫ್</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="55" />
+      <location filename="../qml/pages/CategoryPage.qml" line="57" />
       <source>%1% battery%2</source>
       <translation>%1% ಬ್ಯಾಟರಿ%2</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="57" />
+      <location filename="../qml/pages/CategoryPage.qml" line="59" />
       <source> • Charging</source>
       <translation> • ಚಾರ್ಜ್ ಆಗುತ್ತಿದೆ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="62" />
+      <location filename="../qml/pages/CategoryPage.qml" line="64" />
       <source>Doors locked</source>
       <translation>ಬಾಗಿಲುಗಳು ಲಾಕ್</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="62" />
+      <location filename="../qml/pages/CategoryPage.qml" line="64" />
       <source>Doors unlocked</source>
       <translation>ಬಾಗಿಲುಗಳು ಅನ್‌ಲಾಕ್</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="74" />
+      <location filename="../qml/pages/CategoryPage.qml" line="86" />
       <source>OK</source>
       <translation>ಸರಿ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="74" />
+      <location filename="../qml/pages/CategoryPage.qml" line="86" />
       <source>exit code %1</source>
       <translation>ನಿರ್ಗಮನ ಕೋಡ್ %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="177" />
+      <location filename="../qml/pages/CategoryPage.qml" line="191" />
       <source>Running %1...</source>
       <translation>%1 ಚಾಲನೆಯಲ್ಲಿದೆ...</translation>
     </message>
@@ -418,109 +418,109 @@
   <context>
     <name>FirstPage</name>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="298" />
+      <location filename="../qml/pages/FirstPage.qml" line="287" />
       <source>The control core failed to start. Reinstall the app, then pull down to refresh.</source>
       <translation>ನಿಯಂತ್ರಣ ಕೋರ್ ಪ್ರಾರಂಭವಾಗಲಿಲ್ಲ. ಅಪ್ಲಿಕೇಶನ್ ಮರುಸ್ಥಾಪಿಸಿ, ನಂತರ ರಿಫ್ರೆಶ್‌ಗಾಗಿ ಕೆಳಗೆ ಎಳೆಯಿರಿ.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="300" />
+      <location filename="../qml/pages/FirstPage.qml" line="289" />
       <source>The control core is too old to report its version. Reinstall the app (%1), then pull down to refresh.</source>
       <translation>ನಿಯಂತ್ರಣ ಕೋರ್ ಆವೃತ್ತಿ ಹೇಳಲು ತುಂಬಾ ಹಳೆಯದು. ಅಪ್ಲಿಕೇಶನ್ (%1) ಮರುಸ್ಥಾಪಿಸಿ, ನಂತರ ರಿಫ್ರೆಶ್‌ಗಾಗಿ ಕೆಳಗೆ ಎಳೆಯಿರಿ.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="301" />
+      <location filename="../qml/pages/FirstPage.qml" line="290" />
       <source>Version mismatch: app %1, core %2. Reinstall the app, then pull down to refresh.</source>
       <translation>ಆವೃತ್ತಿ ಹೊಂದಾಣಿಕೆಯಾಗುತ್ತಿಲ್ಲ: ಅಪ್ಲಿಕೇಶನ್ %1, ಕೋರ್ %2. ಅಪ್ಲಿಕೇಶನ್ ಮರುಸ್ಥಾಪಿಸಿ, ನಂತರ ರಿಫ್ರೆಶ್‌ಗಾಗಿ ಕೆಳಗೆ ಎಳೆಯಿರಿ.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="66" />
-      <location filename="../qml/pages/FirstPage.qml" line="319" />
+      <location filename="../qml/pages/FirstPage.qml" line="65" />
+      <location filename="../qml/pages/FirstPage.qml" line="308" />
       <source>No VIN configured</source>
       <translation>VIN ಸಂರಚಿಸಲಾಗಿಲ್ಲ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="58" />
+      <location filename="../qml/pages/FirstPage.qml" line="57" />
       <source>Control helper unavailable</source>
       <translation type="unfinished" />
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="62" />
+      <location filename="../qml/pages/FirstPage.qml" line="61" />
       <source>No key: generate and pair a key first</source>
       <translation type="unfinished" />
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="323" />
+      <location filename="../qml/pages/FirstPage.qml" line="312" />
       <source>Key ready</source>
       <translation>ಕೀ ಸಿದ್ಧ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="323" />
+      <location filename="../qml/pages/FirstPage.qml" line="312" />
       <source>No key - tap for Settings / Pairing</source>
       <translation>ಕೀ ಇಲ್ಲ - ಸೆಟ್ಟಿಂಗ್‌ಗಳು / ಜೋಡಣೆಗಾಗಿ ಟ್ಯಾಪ್ ಮಾಡಿ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="377" />
+      <location filename="../qml/pages/FirstPage.qml" line="366" />
       <source> • charging</source>
       <translation> • ಚಾರ್ಜ್ ಆಗುತ್ತಿದೆ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="386" />
+      <location filename="../qml/pages/FirstPage.qml" line="375" />
       <source>• %1°C</source>
       <translation>• %1 °C</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="411" />
+      <location filename="../qml/pages/FirstPage.qml" line="400" />
       <source>Updating...</source>
       <translation>ನವೀಕರಿಸಲಾಗುತ್ತಿದೆ...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="413" />
+      <location filename="../qml/pages/FirstPage.qml" line="402" />
       <source>Status unavailable (%1). Vehicle may be asleep - try Wake Vehicle (Attention), then Refresh Status.</source>
       <translation>ಸ್ಥಿತಿ ಲಭ್ಯವಿಲ್ಲ (%1). ವಾಹನ ನಿದ್ರಿಸುತ್ತಿರಬಹುದು - ವಾಹನವನ್ನು ಎಬ್ಬಿಸಿ (ಗಮನ) ಪ್ರಯತ್ನಿಸಿ, ನಂತರ ಸ್ಥಿತಿಯನ್ನು ರಿಫ್ರೆಶ್ ಮಾಡಿ.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="415" />
+      <location filename="../qml/pages/FirstPage.qml" line="404" />
       <source>Pull down to refresh status</source>
       <translation>ಸ್ಥಿತಿಯನ್ನು ರಿಫ್ರೆಶ್ ಮಾಡಲು ಕೆಳಗೆ ಎಳೆಯಿರಿ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="417" />
+      <location filename="../qml/pages/FirstPage.qml" line="406" />
       <source>Updated just now</source>
       <translation>ಈಗಷ್ಟೇ ನವೀಕರಿಸಲಾಗಿದೆ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="418" />
+      <location filename="../qml/pages/FirstPage.qml" line="407" />
       <source>Updated %1m ago</source>
       <translation>%1 ನಿ ಹಿಂದೆ ನವೀಕರಿಸಲಾಗಿದೆ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="511" />
+      <location filename="../qml/pages/FirstPage.qml" line="500" />
       <source>Categories</source>
       <translation>ವರ್ಗಗಳು</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="560" />
+      <location filename="../qml/pages/FirstPage.qml" line="550" />
       <source>Send Destination</source>
       <translation>ಗಮ್ಯಸ್ಥಾನ ಕಳುಹಿಸಿ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="564" />
+      <location filename="../qml/pages/FirstPage.qml" line="554" />
       <source>Pair Vehicle</source>
       <translation>ವಾಹನ ಜೋಡಿಸಿ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="568" />
+      <location filename="../qml/pages/FirstPage.qml" line="558" />
       <source>Settings</source>
       <translation>ಸೆಟ್ಟಿಂಗ್‌ಗಳು</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="572" />
-      <location filename="../qml/pages/SettingsPage.qml" line="154" />
+      <location filename="../qml/pages/FirstPage.qml" line="562" />
+      <location filename="../qml/pages/SettingsPage.qml" line="185" />
       <source>Refresh</source>
       <translation>ರಿಫ್ರೆಶ್</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="576" />
+      <location filename="../qml/pages/FirstPage.qml" line="566" />
       <source>Refresh Status</source>
       <translation>ಸ್ಥಿತಿ ರಿಫ್ರೆಶ್ ಮಾಡಿ</translation>
     </message>
@@ -528,72 +528,72 @@
   <context>
     <name>NavigationPage</name>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="48" />
+      <location filename="../qml/pages/NavigationPage.qml" line="50" />
       <source>Paste or type a destination first.</source>
       <translation>ಮೊದಲು ಗಮ್ಯಸ್ಥಾನ ಅಂಟಿಸಿ ಅಥವಾ ಬರೆಯಿರಿ.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="52" />
+      <location filename="../qml/pages/NavigationPage.qml" line="54" />
       <source>Checking...</source>
       <translation>ಪರಿಶೀಲಿಸಲಾಗುತ್ತಿದೆ...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="63" />
+      <location filename="../qml/pages/NavigationPage.qml" line="65" />
       <source>Nothing to send.</source>
       <translation>ಕಳುಹಿಸಲು ಏನೂ ಇಲ್ಲ.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="80" />
+      <location filename="../qml/pages/NavigationPage.qml" line="98" />
       <source>Cannot use this: %1</source>
       <translation>ಇದನ್ನು ಬಳಸಲಾಗದು: %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="84" />
+      <location filename="../qml/pages/NavigationPage.qml" line="102" />
       <source>Coordinates %1, %2 — navigation will start there.</source>
       <translation>ನಿರ್ದೇಶಾಂಕಗಳು %1, %2 — ಸಂಚಾರ ಅಲ್ಲಿಂದ ಪ್ರಾರಂಭವಾಗುತ್ತದೆ.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="87" />
+      <location filename="../qml/pages/NavigationPage.qml" line="105" />
       <source>Address "%1" — the car will look it up.</source>
       <translation>ವಿಳಾಸ “%1” — ಕಾರು ಸ್ವತಃ ಹುಡುಕುತ್ತದೆ.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="93" />
+      <location filename="../qml/pages/NavigationPage.qml" line="111" />
       <source>Send failed: %1</source>
       <translation>ಕಳುಹಿಸುವಿಕೆ ವಿಫಲ: %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="113" />
+      <location filename="../qml/pages/NavigationPage.qml" line="131" />
       <source>Car Navigation</source>
       <translation>ಕಾರು ಸಂಚಾರ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="118" />
+      <location filename="../qml/pages/NavigationPage.qml" line="136" />
       <source>Destination</source>
       <translation>ಗಮ್ಯಸ್ಥಾನ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="119" />
+      <location filename="../qml/pages/NavigationPage.qml" line="137" />
       <source>Paste address, coordinates, or map link</source>
       <translation>ವಿಳಾಸ, ನಿರ್ದೇಶಾಂಕಗಳು ಅಥವಾ ನಕ್ಷೆ ಲಿಂಕ್ ಅಂಟಿಸಿ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="127" />
+      <location filename="../qml/pages/NavigationPage.qml" line="145" />
       <source>Preview</source>
       <translation>ಮುನ್ನೋಟ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="145" />
+      <location filename="../qml/pages/NavigationPage.qml" line="163" />
       <source>Send to Car</source>
       <translation>ಕಾರಿಗೆ ಕಳುಹಿಸಿ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="167" />
+      <location filename="../qml/pages/NavigationPage.qml" line="185" />
       <source>Notes</source>
       <translation>ಟಿಪ್ಪಣಿಗಳು</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="176" />
+      <location filename="../qml/pages/NavigationPage.qml" line="194" />
       <source>This uses Bluetooth, like lock/unlock — the car must be in range, no internet needed on either side. Coordinates are sent exactly; addresses and links are looked up by the car itself, so unusual spellings may resolve differently than on your phone. From Android apps: copy the address or link, then paste it above.</source>
       <translation>ಲಾಕ್/ಅನ್‌ಲಾಕ್‌ನಂತೆ ಬ್ಲೂಟೂತ್ ಬಳಸುತ್ತದೆ — ಕಾರು ವ್ಯಾಪ್ತಿಯಲ್ಲಿರಬೇಕು, ಇಂಟರ್ನೆಟ್ ಅಗತ್ಯವಿಲ್ಲ. ನಿರ್ದೇಶಾಂಕಗಳನ್ನು ನಿಖರವಾಗಿ ಕಳುಹಿಸಲಾಗುತ್ತದೆ; ವಿಳಾಸಗಳು ಮತ್ತು ಲಿಂಕ್‌ಗಳನ್ನು ಕಾರು ಸ್ವತಃ ಹುಡುಕುತ್ತದೆ, ಆದ್ದರಿಂದ ಅಸಾಮಾನ್ಯ ಕಾಗುಣಿತ ಫೋನ್‌ಗಿಂತ ಭಿನ್ನವಾಗಿ ಅರ್ಥವಾಗಬಹುದು. Android ಅಪ್ಲಿಕೇಶನ್‌ಗಳಿಂದ: ವಿಳಾಸ ಅಥವಾ ಲಿಂಕ್ ನಕಲಿಸಿ ಮೇಲೆ ಅಂಟಿಸಿ.</translation>
     </message>
@@ -626,52 +626,52 @@
       <translation type="unfinished" />
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="71" />
+      <location filename="../qml/pages/PairingPage.qml" line="73" />
       <source>Pairing &amp; Keys</source>
       <translation>ಜೋಡಣೆ &amp; ಕೀಗಳು</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="78" />
+      <location filename="../qml/pages/PairingPage.qml" line="80" />
       <source>Set the VIN in Settings first. Then generate a key, then pair it with the car over BLE - you'll need to be next to the vehicle and tap the NFC card on the center console to approve.</source>
       <translation>ಮೊದಲು ಸೆಟ್ಟಿಂಗ್‌ಗಳಲ್ಲಿ VIN ಹೊಂದಿಸಿ. ನಂತರ ಕೀ ರಚಿಸಿ BLE ಮೂಲಕ ಕಾರಿನೊಂದಿಗೆ ಜೋಡಿಸಿ – ವಾಹನದ ಪಕ್ಕದಲ್ಲಿ ನಿಂತು ಅನುಮೋದನೆಗಾಗಿ NFC ಕಾರ್ಡ್ ಅನ್ನು ಸೆಂಟರ್ ಕನ್ಸೋಲ್ ಮೇಲೆ ಟ್ಯಾಪ್ ಮಾಡಿ.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="90" />
+      <location filename="../qml/pages/PairingPage.qml" line="92" />
       <source>Phone key starting...</source>
       <translation>ಫೋನ್ ಕೀ ಪ್ರಾರಂಭವಾಗುತ್ತಿದೆ...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="118" />
+      <location filename="../qml/pages/PairingPage.qml" line="120" />
       <source>Generating...</source>
       <translation>ರಚಿಸಲಾಗುತ್ತಿದೆ...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="118" />
+      <location filename="../qml/pages/PairingPage.qml" line="120" />
       <source>Generate Key</source>
       <translation>ಕೀ ರಚಿಸಿ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="144" />
+      <location filename="../qml/pages/PairingPage.qml" line="146" />
       <source>Waiting for NFC tap...</source>
       <translation>NFC ಟ್ಯಾಪ್‌ಗಾಗಿ ಕಾಯಲಾಗುತ್ತಿದೆ...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="144" />
+      <location filename="../qml/pages/PairingPage.qml" line="146" />
       <source>Pair with Vehicle</source>
       <translation>ವಾಹನ ಜೋಡಿಸಿ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="150" />
+      <location filename="../qml/pages/PairingPage.qml" line="152" />
       <source>Requesting pairing over BLE - approve on the car's touchscreen / NFC card now.</source>
       <translation>BLE ಜೋಡಣೆ ವಿನಂತಿಸಲಾಗಿದೆ – ಟಚ್‌ಸ್ಕ್ರೀನ್ / NFC ಕಾರ್ಡ್‌ನಲ್ಲಿ ಈಗಲೇ ಅನುಮೋದಿಸಿ.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="170" />
+      <location filename="../qml/pages/PairingPage.qml" line="172" />
       <source>Enrolled Keys</source>
       <translation>ನೋಂದಾಯಿತ ಕೀಗಳು</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="174" />
+      <location filename="../qml/pages/PairingPage.qml" line="176" />
       <source>List Enrolled Keys</source>
       <translation>ನೋಂದಾಯಿತ ಕೀಗಳ ಪಟ್ಟಿ</translation>
     </message>
@@ -684,108 +684,108 @@
       <translation>ಸಂರಚನೆ ಲೋಡ್ ಆಗುತ್ತಿದೆ...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="37" />
+      <location filename="../qml/pages/SettingsPage.qml" line="50" />
       <source>Key on file</source>
       <translation>ಕೀ ಇದೆ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="37" />
+      <location filename="../qml/pages/SettingsPage.qml" line="50" />
       <source>No key yet - use Pair Vehicle from the main menu</source>
       <translation>ಇನ್ನೂ ಕೀ ಇಲ್ಲ – ಮುಖ್ಯ ಮೆನುವಿನಲ್ಲಿ ವಾಹನ ಜೋಡಿಸಿ ಬಳಸಿ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="45" />
+      <location filename="../qml/pages/SettingsPage.qml" line="58" />
       <source>Saved</source>
       <translation>ಉಳಿಸಲಾಗಿದೆ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="45" />
+      <location filename="../qml/pages/SettingsPage.qml" line="58" />
       <source>Save failed: %1</source>
       <translation>ಉಳಿಸುವಿಕೆ ವಿಫಲ: %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="60" />
+      <location filename="../qml/pages/SettingsPage.qml" line="73" />
       <source>Settings</source>
       <translation>ಸೆಟ್ಟಿಂಗ್‌ಗಳು</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="84" />
+      <location filename="../qml/pages/SettingsPage.qml" line="97" />
       <source>Vehicle VIN</source>
       <translation>ವಾಹನ VIN</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="89" />
+      <location filename="../qml/pages/SettingsPage.qml" line="102" />
       <source>17-character VIN</source>
       <translation>17-ಅಕ್ಷರ VIN</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="112" />
+      <location filename="../qml/pages/SettingsPage.qml" line="127" />
       <source>Front-page car model</source>
       <translation>ಮೊದಲ ಪುಟದಲ್ಲಿ ಕಾರು ಮಾದರಿ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="113" />
+      <location filename="../qml/pages/SettingsPage.qml" line="128" />
       <source>Auto selects the model from the VIN</source>
       <translation>VIN ನಿಂದ ಮಾದರಿಯನ್ನು ಆಟೋ ಆಯ್ಕೆಮಾಡುತ್ತದೆ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="125" />
+      <location filename="../qml/pages/SettingsPage.qml" line="144" />
       <source>Key name</source>
       <translation>ಕೀ ಹೆಸರು</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="126" />
+      <location filename="../qml/pages/SettingsPage.qml" line="145" />
       <source>harbour-electric-eel</source>
       <translation>harbour-electric-eel</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="132" />
+      <location filename="../qml/pages/SettingsPage.qml" line="155" />
       <source>Connect timeout</source>
       <translation>ಸಂಪರ್ಕ ಸಮಯಮಿತಿ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="139" />
-      <location filename="../qml/pages/SettingsPage.qml" line="149" />
+      <location filename="../qml/pages/SettingsPage.qml" line="162" />
+      <location filename="../qml/pages/SettingsPage.qml" line="176" />
       <source>%1 s</source>
       <translation type="unfinished" />
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="145" />
+      <location filename="../qml/pages/SettingsPage.qml" line="172" />
       <source>Command timeout</source>
       <translation>ಆದೇಶ ಸಮಯಮಿತಿ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="164" />
+      <location filename="../qml/pages/SettingsPage.qml" line="195" />
       <source>Save</source>
       <translation>ಉಳಿಸಿ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="176" />
+      <location filename="../qml/pages/SettingsPage.qml" line="207" />
       <source>Pairing &amp; Keys</source>
       <translation>ಜೋಡಣೆ &amp; ಕೀಗಳು</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="180" />
+      <location filename="../qml/pages/SettingsPage.qml" line="211" />
       <source>About</source>
       <translation>ಬಗ್ಗೆ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="194" />
+      <location filename="../qml/pages/SettingsPage.qml" line="225" />
       <source>App: ElectricEel %1   |   core: %2</source>
       <translation>ಅಪ್ಲಿಕೇಶನ್: ElectricEel %1   |   ಕೋರ್: %2</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="198" />
+      <location filename="../qml/pages/SettingsPage.qml" line="229" />
       <source>(too old / unknown)</source>
       <translation>(ತುಂಬಾ ಹಳೆಯದು / ತಿಳಿದಿಲ್ಲ)</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="211" />
+      <location filename="../qml/pages/SettingsPage.qml" line="242" />
       <source>The control core is too old to report a version - reinstall the app.</source>
       <translation>ನಿಯಂತ್ರಣ ಕೋರ್ ಆವೃತ್ತಿ ಹೇಳಲು ತುಂಬಾ ಹಳೆಯದು – ಅಪ್ಲಿಕೇಶನ್ ಮರುಸ್ಥಾಪಿಸಿ.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="212" />
+      <location filename="../qml/pages/SettingsPage.qml" line="243" />
       <source>Version mismatch: core %1 vs app %2 - reinstall the app.</source>
       <translation>ಹೊಂದಾಣಿಕೆಯಾಗುತ್ತಿಲ್ಲ: ಕೋರ್ %1 ವಿರುದ್ಧ ಅಪ್ಲಿಕೇಶನ್ %2 – ಅಪ್ಲಿಕೇಶನ್ ಮರುಸ್ಥಾಪಿಸಿ.</translation>
     </message>
