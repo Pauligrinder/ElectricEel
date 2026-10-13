@@ -21,12 +21,17 @@ void note(const QString &message)
     qWarning().noquote() << "automagic:" << message;
 }
 
-QVariantMap copyTransform(const char *in, const char *out)
+// optional: automagic-daemon aborts the whole trigger when a required copy
+// misses its input. PhoneKeyEvent is ssss, but a missing/odd trailing arg
+// must not prevent hotspot flows that only need the arg0 filter.
+QVariantMap copyTransform(const char *in, const char *out, bool optional = true)
 {
     QVariantMap copy;
     copy.insert(QStringLiteral("type"), QStringLiteral("copy"));
     copy.insert(QStringLiteral("in"), QLatin1String(in));
     copy.insert(QStringLiteral("out"), QLatin1String(out));
+    if (optional)
+        copy.insert(QStringLiteral("optional"), true);
     return copy;
 }
 

@@ -62,7 +62,8 @@ notifications, which should not all launch your app. To restrict a flow to
 one car, add another filter with Key `arg1` and Value your VIN.
 
 Under **Transformations**, add these four transformations, each of Type
-`copy`:
+`copy` (mark them **Optional** so a missing trailing arg cannot abort the
+trigger before your flow runs):
 
 | Input Variable | Output Variable |
 | --- | --- |
