@@ -57,8 +57,10 @@ Page {
         onConfigSaved: {
             page.statusText = ok ? qsTr("Saved") : qsTr("Save failed: %1").arg(errorMessage)
         }
-        onAutomagicSetupFinished: {
-            page.statusText = message
+        onAutomagicExportFinished: {
+            page.statusText = ok
+                ? qsTr("Exported to %1. In Automagic, use States → Import to select this folder, then Reload Daemon.").arg(path)
+                : qsTr("Automagic export failed: %1").arg(errorMessage)
         }
     }
 
@@ -202,13 +204,17 @@ Page {
                 wrapMode: Text.Wrap
                 color: Theme.secondaryColor
                 font.pixelSize: Theme.fontSizeExtraSmall
-                text: qsTr("ElectricEel does not turn the hotspot on or launch apps itself. The button below adds harbour-automagic triggers for PhoneKeyEvent and two flows: hotspot on for presence_inside, and hotspot off 3 minutes after presence_far unless presence_inside arrives first. A second presence_far during that wait does not restart the timer. Extra triggers (presence_near, presence_auth_ok, and every event) are added so you can attach your own flows, such as launching an app.")
+                text: qsTr("Export hotspot flows to Documents, then import them in Automagic. Automagic turns the hotspot on for presence_inside and off for presence_away_confirmed. ElectricEel emits the latter 3 minutes after presence_far unless presence_inside arrives first; repeated presence_far events do not restart the timer. ElectricEel must stay running.")
             }
 
             Button {
                 anchors.horizontalCenter: parent.horizontalCenter
-                text: qsTr("Add Automagic flows")
-                onClicked: teslaClient.installAutomagicFlows()
+                text: qsTr("Export Automagic flows")
+                enabled: !teslaClient.automagicExportBusy
+                onClicked: {
+                    page.statusText = qsTr("Exporting Automagic flows...")
+                    teslaClient.exportAutomagicFlows()
+                }
             }
 
             Label {
@@ -218,7 +224,7 @@ Page {
                 wrapMode: Text.Wrap
                 color: Theme.secondaryColor
                 font.pixelSize: Theme.fontSizeExtraSmall
-                text: qsTr("Manual trigger: protocol DBUS, Act as Trigger, Address session, Destination org.electriceel.harbour-electric-eel, Path /org/electriceel/PhoneKey, Interface org.electriceel.PhoneKey1, Signal PhoneKeyEvent. Filter arg0 to presence_inside, presence_far, presence_near, or presence_auth_ok. ElectricEel must stay running.")
+                text: qsTr("If you used Add Automagic flows in an earlier version, disable its old hotspot flows before importing this preset. Automagic lets you resolve matching IDs during import. Extra triggers are included for your own flows, such as launching an app.")
             }
 
             Button {

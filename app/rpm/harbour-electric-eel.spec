@@ -1,18 +1,16 @@
 Name:       harbour-electric-eel
 Summary:    Control your Tesla over Bluetooth
-Version:    0.3.2
+Version:    0.3.3
 Release:    1
 License:    ASL 2.0
 URL:        https://github.com/nappa85/ElectricEel
 Source0:    %{name}-%{version}.tar.bz2
 Requires:   sailfishsilica-qt5
 Requires:   libkeepalive
-Requires:   qt5-qtnetwork
 BuildRequires:  pkgconfig(sailfishapp) >= 1.0.2
 BuildRequires:  pkgconfig(Qt5Core)
 BuildRequires:  pkgconfig(Qt5Qml)
 BuildRequires:  pkgconfig(Qt5Quick)
-BuildRequires:  pkgconfig(Qt5Network)
 BuildRequires:  desktop-file-utils
 
 # Private library must not advertise a system-wide RPM capability.
@@ -53,9 +51,12 @@ desktop-file-install --delete-original \
 %{_datadir}/%{name}
 %{_datadir}/applications/%{name}.desktop
 %{_datadir}/icons/hicolor/*/apps/%{name}.png
-%{_sysconfdir}/sailjail/permissions/ElectricEelAutomagic.permission
 
 %changelog
+* Tue Oct 13 2026 Marco Napetti <marco.napetti@proton.me> - 0.3.3-1
+- Export Automagic presets through Rust using the Documents permission
+- Move delayed-away policy and typed runtime notifications into Rust
+- Validate Harbour packaging in CI and before release publication
 * Tue Oct 13 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.3.2-1
 - Settings button writes Automagic triggers and hotspot flows for PhoneKeyEvent
 - Hotspot off waits 3 minutes unless presence_inside arrives first

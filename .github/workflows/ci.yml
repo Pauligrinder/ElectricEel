@@ -1,17 +1,16 @@
 name: CI
 
 # Runs the real quality gates on every push and pull request, independent of
-# the release packaging workflow (release.yml only builds/publishes the RPM and
+# the release packaging workflow (release.yml builds/checks/publishes the RPM and
 # never exercised the test suites - see the old KNOWN gap where "CI green" did
 # not mean "tests pass"). Gates mirror the local dev commands:
 #   Rust: cargo fmt --check, cargo clippy -- -D warnings, cargo test --all-features
 #   Go  : enforce gofmt, go vet ./..., go test -race ./...
 #   QML : qmllint syntax over app/qml
 #   i18n: tools/build-qm.sh --check (catalogs in sync)
+#   RPM : mb2 build, mb2 check --suites harbour (Sailfish SDK, aarch64)
 #
-# Cross-compilation for the staticlib / app RPM (aarch64) is deliberately not
-# part of this job: that's the release workflow's concern, and testing the
-# host build catches logic regressions far faster than the ~30min RPM build.
+# The slower SDK packaging gate runs independently of the fast host checks.
 
 on:
   push:
@@ -115,3 +114,46 @@ jobs:
         # app/translations/*.ts/*.qm differ from a fresh extraction — so UI
         # string changes can never ship without updated catalogs.
         run: bash tools/build-qm.sh --check
+
+  harbour:
+    name: RPM build and Harbour validation (aarch64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space for the Sailfish SDK image
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/powershell
+          sudo apt-get clean
+          df -h
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.5'
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-gnu
+
+      - name: Pull Sailfish Platform SDK
+        run: docker pull coderus/sailfishos-platform-sdk-aarch64
+
+      - name: Stage the in-app core bundle (staticlib + Go protocol library)
+        run: ./helper/make-app-bundle.sh
+
+      - name: Build RPM and run Harbour validation
+        run: |
+          set -euxo pipefail
+          docker create --name electric-eel-build coderus/sailfishos-platform-sdk-aarch64 sleep infinity
+          trap 'docker rm -f electric-eel-build >/dev/null 2>&1 || true' EXIT
+          docker start electric-eel-build
+
+          docker cp app electric-eel-build:/home/mersdk/app
+          docker exec -u root electric-eel-build chown -R mersdk:mersdk /home/mersdk/app
+          docker exec -w /home/mersdk/app electric-eel-build \
+            mb2 --target SailfishOS-5.2.0.15-aarch64 build
+          docker exec -w /home/mersdk/app electric-eel-build \
+            mb2 --target SailfishOS-5.2.0.15-aarch64 check --suites harbour

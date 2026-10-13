@@ -2,14 +2,13 @@ TARGET = harbour-electric-eel
 
 CONFIG += sailfishapp
 CONFIG += c++11
-QT += network
 
 # Single source of the app version, surfaced on the Settings page and
 # compared against the core's GetVersion. The release workflow stamps
 # this (and helper/Cargo.toml) from the same git tag, so a matched pair
 # reports equal versions. Keep in sync with helper/Cargo.toml when bumping
 # outside a release.
-VERSION = 0.3.2
+VERSION = 0.3.3
 DEFINES += APP_VERSION=\\\"$$VERSION\\\"
 
 # In-process Rust control core (docs/architecture.md phase 4): the cbindgen
@@ -20,13 +19,11 @@ LIBS += $$PWD/thirdparty/libelectriceelcore.a -lpthread -ldl -lm
 
 SOURCES += \
     src/harbour-electric-eel.cpp \
-    src/teslaclient.cpp \
-    src/automagicsetup.cpp
+    src/teslaclient.cpp
 
 HEADERS += \
     src/commandarguments.h \
-    src/teslaclient.h \
-    src/automagicsetup.h
+    src/teslaclient.h
 
 DISTFILES += \
     rpm/harbour-electric-eel.spec \
@@ -115,7 +112,4 @@ TRANSLATIONS += \
 transqm.files = translations/*.qm
 transqm.path = /usr/share/$${TARGET}/translations
 
-sailjailperm.files = sailjail/ElectricEelAutomagic.permission
-sailjailperm.path = /etc/sailjail/permissions
-
-INSTALLS += imgdir protocol_lib icon86 icon108 icon128 icon172 transqm sailjailperm
+INSTALLS += imgdir protocol_lib icon86 icon108 icon128 icon172 transqm

@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "data": [
+    {
+      "id": "eel_flow_hotspot_on", "name": "ElectricEel hotspot on", "enabled": true,
+      "triggers": ["eel_inside"],
+      "steps": [{"id": "eel_step_hotspot_on", "type": "action", "action": "eel_hotspot_on", "goto_alt": "end"}]
+    },
+    {
+      "id": "eel_flow_hotspot_off", "name": "ElectricEel hotspot off", "enabled": true,
+      "triggers": ["eel_away_confirmed"],
+      "steps": [{"id": "eel_step_hotspot_off", "type": "action", "action": "eel_hotspot_off", "goto_alt": "end"}]
+    }
+  ]
+}

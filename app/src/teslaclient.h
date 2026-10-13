@@ -20,6 +20,7 @@ class TeslaClient : public QObject
     Q_PROPERTY(QString phoneKeyStatus READ phoneKeyStatus NOTIFY phoneKeyStatusChanged)
     Q_PROPERTY(bool phoneKeyActive READ phoneKeyActive NOTIFY phoneKeyActiveChanged)
     Q_PROPERTY(QString phoneKeyLink READ phoneKeyLink NOTIFY phoneKeyLinkChanged)
+    Q_PROPERTY(bool automagicExportBusy READ automagicExportBusy NOTIFY automagicExportBusyChanged)
 
 public:
     explicit TeslaClient(Runtime *runtime, QObject *parent = nullptr);
@@ -31,6 +32,7 @@ public:
     QString phoneKeyStatus() const;
     bool phoneKeyActive() const { return m_phoneKeyActive; }
     QString phoneKeyLink() const { return m_phoneKeyLink; }
+    bool automagicExportBusy() const { return m_automagicExportBusy; }
 
 public slots:
     // requestId is caller-chosen and echoed back on commandFinished/
@@ -45,7 +47,7 @@ public slots:
                    int connectTimeoutSec, int commandTimeoutSec);
     void refreshConfig();
     void logPowerState(const QString &state);
-    void installAutomagicFlows();
+    void exportAutomagicFlows();
 
 signals:
     void commandFinished(const QString &requestId, bool ok, const QString &stdOut,
@@ -67,7 +69,8 @@ signals:
     void statusRefreshRequested();
     void phoneKeyEvent(const QString &kind, const QString &vin,
                        const QString &time, const QString &errorMessage);
-    void automagicSetupFinished(bool ok, const QString &message);
+    void automagicExportBusyChanged();
+    void automagicExportFinished(bool ok, const QString &path, const QString &errorMessage);
     void destinationPreviewed(const QString &requestId, bool ok, const QString &kind,
                               const QString &value1, const QString &value2,
                               const QString &errorMessage);
@@ -87,6 +90,7 @@ private:
     QString m_phoneKeyStatus;
     bool m_phoneKeyActive = false;
     QString m_phoneKeyLink = QStringLiteral("stopped");
+    bool m_automagicExportBusy = false;
 };
 
 #endif // TESLACLIENT_H

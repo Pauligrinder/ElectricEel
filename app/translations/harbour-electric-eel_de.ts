@@ -515,7 +515,7 @@
     </message>
     <message>
       <location filename="../qml/pages/FirstPage.qml" line="562" />
-      <location filename="../qml/pages/SettingsPage.qml" line="185" />
+      <location filename="../qml/pages/SettingsPage.qml" line="190" />
       <source>Refresh</source>
       <translation>Aktualisieren</translation>
     </message>
@@ -704,88 +704,123 @@
       <translation>Speichern fehlgeschlagen: %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="73" />
+      <location filename="../qml/pages/SettingsPage.qml" line="62" />
+      <source>Exported to %1. In Automagic, use States → Import to select this folder, then Reload Daemon.</source>
+      <translation type="unfinished" />
+    </message>
+    <message>
+      <location filename="../qml/pages/SettingsPage.qml" line="63" />
+      <source>Automagic export failed: %1</source>
+      <translation type="unfinished" />
+    </message>
+    <message>
+      <location filename="../qml/pages/SettingsPage.qml" line="78" />
       <source>Settings</source>
       <translation>Einstellungen</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="97" />
+      <location filename="../qml/pages/SettingsPage.qml" line="102" />
       <source>Vehicle VIN</source>
       <translation>Fahrzeug-VIN</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="102" />
+      <location filename="../qml/pages/SettingsPage.qml" line="107" />
       <source>17-character VIN</source>
       <translation>17-stellige VIN</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="127" />
+      <location filename="../qml/pages/SettingsPage.qml" line="132" />
       <source>Front-page car model</source>
       <translation>Fahrzeugmodell auf der Startseite</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="128" />
+      <location filename="../qml/pages/SettingsPage.qml" line="133" />
       <source>Auto selects the model from the VIN</source>
       <translation>Auto wählt das Modell anhand der VIN</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="144" />
+      <location filename="../qml/pages/SettingsPage.qml" line="149" />
       <source>Key name</source>
       <translation>Schlüsselname</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="145" />
+      <location filename="../qml/pages/SettingsPage.qml" line="150" />
       <source>harbour-electric-eel</source>
       <translation>harbour-electric-eel</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="155" />
+      <location filename="../qml/pages/SettingsPage.qml" line="160" />
       <source>Connect timeout</source>
       <translation>Verbindungs-Timeout</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="162" />
-      <location filename="../qml/pages/SettingsPage.qml" line="176" />
+      <location filename="../qml/pages/SettingsPage.qml" line="167" />
+      <location filename="../qml/pages/SettingsPage.qml" line="181" />
       <source>%1 s</source>
       <translation type="unfinished" />
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="172" />
+      <location filename="../qml/pages/SettingsPage.qml" line="177" />
       <source>Command timeout</source>
       <translation>Befehls-Timeout</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="195" />
+      <location filename="../qml/pages/SettingsPage.qml" line="198" />
+      <source>Automagic</source>
+      <translation type="unfinished" />
+    </message>
+    <message>
+      <location filename="../qml/pages/SettingsPage.qml" line="207" />
+      <source>Export hotspot flows to Documents, then import them in Automagic. Automagic turns the hotspot on for presence_inside and off for presence_away_confirmed. ElectricEel emits the latter 3 minutes after presence_far unless presence_inside arrives first; repeated presence_far events do not restart the timer. ElectricEel must stay running.</source>
+      <translation type="unfinished" />
+    </message>
+    <message>
+      <location filename="../qml/pages/SettingsPage.qml" line="212" />
+      <source>Export Automagic flows</source>
+      <translation type="unfinished" />
+    </message>
+    <message>
+      <location filename="../qml/pages/SettingsPage.qml" line="215" />
+      <source>Exporting Automagic flows...</source>
+      <translation type="unfinished" />
+    </message>
+    <message>
+      <location filename="../qml/pages/SettingsPage.qml" line="227" />
+      <source>If you used Add Automagic flows in an earlier version, disable its old hotspot flows before importing this preset. Automagic lets you resolve matching IDs during import. Extra triggers are included for your own flows, such as launching an app.</source>
+      <translation type="unfinished" />
+    </message>
+    <message>
+      <location filename="../qml/pages/SettingsPage.qml" line="232" />
       <source>Save</source>
       <translation>Speichern</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="207" />
+      <location filename="../qml/pages/SettingsPage.qml" line="244" />
       <source>Pairing &amp; Keys</source>
       <translation>Koppeln &amp; Schlüssel</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="211" />
+      <location filename="../qml/pages/SettingsPage.qml" line="248" />
       <source>About</source>
       <translation>Über</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="225" />
+      <location filename="../qml/pages/SettingsPage.qml" line="262" />
       <source>App: ElectricEel %1   |   core: %2</source>
       <translation>App: ElectricEel %1   |   core: %2</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="229" />
+      <location filename="../qml/pages/SettingsPage.qml" line="266" />
       <source>(too old / unknown)</source>
       <translation>(zu alt / unbekannt)</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="242" />
+      <location filename="../qml/pages/SettingsPage.qml" line="279" />
       <source>The control core is too old to report a version - reinstall the app.</source>
       <translation>Der Steuerungskern ist zu alt, um eine Version zu melden – installiere die App neu.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="243" />
+      <location filename="../qml/pages/SettingsPage.qml" line="280" />
       <source>Version mismatch: core %1 vs app %2 - reinstall the app.</source>
       <translation>Versionskonflikt: Kern %1 vs. App %2 – installiere die App neu.</translation>
     </message>

@@ -157,11 +157,30 @@ Phone-key events are also published on the session bus through
 notification. See [phone-key-events.md](phone-key-events.md) for the signal
 contract and integration examples.
 
+The runtime serializes a single three-minute departure deadline per VIN/session.
+It leaves `presence_far` immediate and emits `presence_away_confirmed` if no
+`presence_inside` cancels the wait. Stops, restarts, identity changes and app
+exit discard the deadline. Automagic hotspot flows only perform their respective
+actions; no shared-state tokens or concurrent flow timers are required.
+
+Settings exports an embedded Automagic import preset to a fresh Documents
+folder through a bounded Rust background task. Qt supplies the platform's
+Documents path and displays completion; filesystem work runs independently of
+both control and BLE processing. Automagic handles importing and daemon reload.
+The app needs neither cross-app configuration access nor a custom permission.
+Runtime completion channels carry the serializable `Notification` enum, with
+typed link states and internal session-generation metadata. JSON serialization
+happens only when delivering a notification through the Qt C ABI; internal
+dispatch does not use string tags or `serde_json::Value` lookups.
+
 ## Source layout
 
 ```
 helper/src/{app,runtime,cpukeepalive,lib,core,ffi,config,commands,share,session_client}.rs
 helper/src/{tesla_ble,protocol_client,protocol_commands,phone_key,keys,keylog}.rs
+helper/src/automagic.rs           Documents export of the embedded import preset
+helper/src/notification.rs        typed runtime-to-Qt notification contract
+docs/automagic-hotspot/           canonical hotspot sources/actions/flows
 helper/session/abi/              public C ABI and C smoke test
 helper/session/cmd/teslable/     Go c-shared entrypoint
 helper/session/library/          protocol operations, observations, auth responder

@@ -9,6 +9,42 @@ on Sailfish OS, with its required `automagic-daemon` package. Open Automagic
 once and confirm it connects to the daemon. Keep ElectricEel running with
 phone-key mode enabled; background/cover and screen-off are supported.
 
+## Hotspot setup: export from Settings
+
+1. In ElectricEel, open Settings → **Export Automagic flows**.
+2. The result shows a new `Documents/ElectricEel-Automagic-…` folder.
+   In Automagic's **States** tab, pull down → **Import**, select that folder,
+   and tap **Import**.
+3. Resolve any matching IDs in Automagic, then use **Reload Daemon**.
+4. Confirm the **ElectricEel hotspot on/off** flows are enabled. The on flow
+   listens for `presence_inside`; the off flow listens for
+   `presence_away_confirmed`. Both call ConnMan's `Tethering` property through
+   Automagic's privileged D-Bus action. Configure your hotspot name/password
+   in Sailfish Settings first; the preset does not contain either.
+
+The same four JSON files are available in [automagic-hotspot](automagic-hotspot/)
+for manual import. They are the canonical preset embedded in the Rust core.
+Each export creates a fresh folder and preserves previous exports, including
+your edits. You can delete export folders after import. ElectricEel never edits
+Automagic's private configuration, reads its shared secret, or reloads its
+daemon. Export uses the existing **Documents** permission; no custom Sailjail
+permission or QtNetwork dependency is needed.
+
+### Migrating the old “Add Automagic flows” installer
+
+Disable the old **ElectricEel hotspot on/off** flows and reload Automagic
+before importing the new preset. The preset retains their `eel_flow_hotspot_on`
+and `eel_flow_hotspot_off` IDs: choose to overwrite those entries in the import
+conflict dialog to replace the old token/wait steps with one action each. Keep
+any personal customizations separately before replacing entries. Sources and
+actions retain their existing IDs too; unrelated entries are not part of the
+import. Do not retain a second enabled copy of the old shutdown flow.
+
+An old flow already sleeping can still wake after a reload. For migration,
+allow its three-minute wait to finish, or restart Automagic's daemon before
+enabling the replacement flows. The old `eel_hotspot_away` state is no longer
+used and can be removed in Automagic.
+
 ## Quick setup: import the logging example
 
 The [automagic-example](automagic-example/) folder contains an importable
@@ -129,11 +165,21 @@ can also suppress rapid repeats.
 - **Missed events:** this is a live feed with no replay. Automagic's daemon
   must be listening before the event occurs.
 
-The `presence_far` event itself is immediate. The hotspot flow installed
-from Settings waits 3 minutes and turns the hotspot off only if
-`presence_inside` has not arrived. Another `presence_far` during that wait
-does not restart it. Other automations that need their own delay should
-implement that timing in Automagic.
+The `presence_far` event itself is immediate. Rust's application runtime emits
+the additional `presence_away_confirmed` event 3 minutes after the first
+`presence_far` in the current session, unless `presence_inside` arrives first.
+Another `presence_far` during the wait does not restart it. Connecting or
+authenticating alone does not cancel it: returning inside still requires the
+45-second settling heuristic. An inside event already queued when the deadline
+expires is processed before the delayed event.
+
+Stopping/restarting presence, changing the VIN or session generation, and
+exiting ElectricEel discard a pending deadline. It is not persisted or replayed
+on app restart. Automagic cannot finish this timer while ElectricEel is closed.
+The timer is owned by the Rust control loop, not by a QML timer or concurrent
+Automagic flow. Automagic still owns all hotspot and app-launch actions; it can
+process an already emitted event after a later presence change, so this is not
+an atomic guarantee about the external hotspot's state.
 
 ## Reference versions
 
@@ -142,9 +188,9 @@ The setup labels and JSON format were checked against harbour-automagic
 and automagic-daemon
 [`b210f8c`](https://github.com/sailfishos-chum/automagic-daemon/tree/b210f8cc42ddef0e10f5d587e2b796d4a00533e5).
 
-Settings → **Add Automagic flows** writes triggers for this build's
+Settings → **Export Automagic flows** exports triggers for this build's
 `org.electriceel.PhoneKey1.PhoneKeyEvent` signal (`presence_inside`,
-`presence_far`, `presence_near`, `presence_auth_ok`, and an unfiltered
-presence source) plus ConnMan hotspot flows: on for `presence_inside`, and
-off 3 minutes after `presence_far` unless `presence_inside` arrives first.
+`presence_far`, `presence_away_confirmed`, `presence_near`, `presence_auth_ok`,
+and an unfiltered presence source) plus ConnMan hotspot flows: on for
+`presence_inside`, off for `presence_away_confirmed`.
 The importable example above is a separate logging flow and is left in place.

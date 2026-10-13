@@ -7,11 +7,11 @@ use std::sync::{mpsc, Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde::Deserialize;
 
 use crate::core::Core;
 use crate::cpukeepalive::CpuKeepAlive;
+use crate::notification::{Notification, PhoneKeyLink};
 
 pub type UiCallback = unsafe extern "C" fn(*mut c_void, *const c_char);
 
@@ -34,12 +34,12 @@ struct Notifications {
 }
 
 enum Completion {
-    Notification(Value),
+    Notification(Notification),
     RefreshAt(Instant),
 }
 
 impl Notifications {
-    fn send(&self, value: &Value) {
+    fn send(&self, value: &Notification) {
         if let Some(relay) = &self.relay {
             // One serial executor produces completions; the control loop
             // consumes this bounded channel independently of BLE admission.
@@ -59,7 +59,10 @@ impl Notifications {
         }
         drop(state);
         if let Some((callback, context)) = observer {
-            let Ok(data) = CString::new(value.to_string()) else {
+            let Some(data) = serde_json::to_string(value)
+                .ok()
+                .and_then(|json| CString::new(json).ok())
+            else {
                 self.finish_delivery();
                 return;
             };
@@ -116,6 +119,9 @@ pub(crate) enum Request {
         command_timeout_sec: i32,
     },
     GetConfig,
+    ExportAutomagic {
+        documents_dir: String,
+    },
     PreviewDestination {
         request_id: String,
         text: String,
@@ -242,7 +248,7 @@ impl Runtime {
             // directly. The next state change publishes phone-key state.
             if self.requests.try_send(Request::Snapshot).is_err() {
                 self.notifications
-                    .send(&json!({"type":"initialized", "ok":true}));
+                    .send(&Notification::Initialized { ok: true });
             }
         }
     }
@@ -267,28 +273,74 @@ impl Drop for Runtime {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-enum PhoneKeyLink {
-    Unpaired,
-    BluetoothOff,
-    Scanning,
-    Connected,
-    Authorized,
-    Stopped,
-    Error,
-}
-
 struct PhoneState {
     active: bool,
     status: String,
     link: PhoneKeyLink,
     generation: u64,
+    away: crate::phone_key::AwayDeadline,
 }
 
 impl PhoneState {
     fn publish(&self, sink: &Notifications) {
-        sink.send(&json!({"type":"phone_key_state", "active":self.active, "link":self.link, "status":self.status, "generation":self.generation}));
+        sink.send(&Notification::PhoneKeyState {
+            active: self.active,
+            link: self.link,
+            status: self.status.clone(),
+            generation: self.generation,
+        });
+    }
+
+    fn publish_due_away(&mut self, core: &Core, sink: &Notifications, now: Instant) {
+        if let Some(vin) = self
+            .away
+            .take_due(now, &core.get_config().0, core.session_generation())
+        {
+            crate::keylog::log("presence", &format!("presence_away_confirmed vin={vin}"));
+            sink.send(&Notification::PhoneKeyEvent {
+                kind: "presence_away_confirmed".into(),
+                vin,
+                time: crate::keylog::utc_stamp(),
+                error: String::new(),
+                generation: core.session_generation(),
+            });
+        }
+    }
+
+    fn accept_completion(&mut self, core: &Core, event: &Notification) -> bool {
+        if let Notification::PhoneKeyEvent {
+            kind,
+            vin,
+            generation,
+            ..
+        } = event
+        {
+            if *generation < core.session_generation() {
+                return false;
+            }
+            self.away.observe(kind, vin, *generation, Instant::now());
+        }
+        if let Notification::PhoneKeyState {
+            active,
+            link,
+            status,
+            generation,
+        } = event
+        {
+            if *generation < core.session_generation()
+                || *generation < self.generation
+                || (*generation != 0
+                    && *generation == self.generation
+                    && *link == PhoneKeyLink::Scanning)
+            {
+                return false;
+            }
+            self.generation = *generation;
+            self.active = *active;
+            self.status.clone_from(status);
+            self.link = *link;
+        }
+        true
     }
 
     fn start(&mut self, core: &Core, sink: &Notifications) {
@@ -329,6 +381,8 @@ impl PhoneState {
             if event.kind == "presence_stopped" {
                 stopped.fetch_max(event.generation, Ordering::SeqCst);
             }
+            self.away
+                .observe(&event.kind, &event.vin, event.generation, Instant::now());
             match event.kind.as_str() {
                 "presence_stopped" => self.active = false,
                 "presence_restarted" | "presence_near" => self.active = true,
@@ -367,10 +421,13 @@ impl PhoneState {
             } else {
                 event.time
             };
-            sink.send(
-                &json!({"type":"phone_key_event", "kind":event.kind, "vin":event.vin,
-                "time":time, "error":event.error}),
-            );
+            sink.send(&Notification::PhoneKeyEvent {
+                kind: event.kind,
+                vin: event.vin,
+                time,
+                error: event.error,
+                generation: event.generation,
+            });
             self.publish(sink);
         }
     }
@@ -384,6 +441,45 @@ fn with_error(status: &str, error: &str) -> String {
     }
 }
 
+enum Wake {
+    Request(Result<Request, async_channel::RecvError>),
+    Completion(Result<Completion, async_channel::RecvError>),
+    Timer,
+    Presence,
+    Export(Notification),
+}
+
+async fn wait_wake(
+    core: &Core,
+    receiver: &async_channel::Receiver<Request>,
+    completions: &async_channel::Receiver<Completion>,
+    export: &mut Option<async_global_executor::Task<Notification>>,
+    deadline: Instant,
+) -> Wake {
+    futures_lite::future::race(
+        futures_lite::future::race(async { Wake::Request(receiver.recv().await) }, async {
+            match export.as_mut() {
+                Some(task) => Wake::Export(task.await),
+                None => std::future::pending().await,
+            }
+        }),
+        futures_lite::future::race(
+            async { Wake::Completion(completions.recv().await) },
+            futures_lite::future::race(
+                async {
+                    async_io::Timer::at(deadline).await;
+                    Wake::Timer
+                },
+                async {
+                    core.wait_phone_key_event().await;
+                    Wake::Presence
+                },
+            ),
+        ),
+    )
+    .await
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn run(
     core: &Core,
@@ -394,52 +490,39 @@ async fn run(
     resume: &AtomicBool,
     stopped: &AtomicU64,
 ) {
-    enum Wake {
-        Request(Result<Request, async_channel::RecvError>),
-        Completion(Result<Completion, async_channel::RecvError>),
-        Timer,
-        Presence,
-    }
     let mut phone = PhoneState {
         active: false,
         status: "Phone key inactive".into(),
         link: PhoneKeyLink::Stopped,
         generation: 0,
+        away: crate::phone_key::AwayDeadline::default(),
     };
     let mut poll_at = Instant::now();
     let mut refresh_at = None;
     let mut suspended = false;
+    let mut export: Option<async_global_executor::Task<Notification>> = None;
     loop {
         if shutdown.load(Ordering::SeqCst) {
             break;
         }
+        // Drain already queued presence events before expiring a deadline, so
+        // an inside event at the boundary wins over delayed-away publication.
+        phone.poll(core, sink, stopped);
         let now = Instant::now();
         if now >= poll_at {
-            phone.poll(core, sink, stopped);
             poll_at = Instant::now() + Duration::from_secs(1);
         }
+        phone.publish_due_away(core, sink, now);
         if refresh_at.is_some_and(|deadline| now >= deadline) {
             refresh_at = None;
-            sink.send(&json!({"type":"status_refresh_requested"}));
+            sink.send(&Notification::StatusRefreshRequested);
         }
         let deadline = refresh_at.map_or(poll_at, |refresh| poll_at.min(refresh));
-        let wake = futures_lite::future::race(
-            async { Wake::Request(receiver.recv().await) },
-            futures_lite::future::race(
-                async { Wake::Completion(completions.recv().await) },
-                futures_lite::future::race(
-                    async {
-                        async_io::Timer::at(deadline).await;
-                        Wake::Timer
-                    },
-                    async {
-                        core.wait_phone_key_event().await;
-                        Wake::Presence
-                    },
-                ),
-            ),
-        )
-        .await;
+        let deadline = phone
+            .away
+            .deadline()
+            .map_or(deadline, |away| deadline.min(away));
+        let wake = wait_wake(core, &receiver, &completions, &mut export, deadline).await;
         if shutdown.load(Ordering::SeqCst) {
             break;
         }
@@ -447,24 +530,41 @@ async fn run(
             Wake::Request(Ok(Request::Shutdown) | Err(_)) | Wake::Completion(Err(_)) => break,
             Wake::Timer => (),
             Wake::Presence => phone.poll(core, sink, stopped),
+            Wake::Export(event) => {
+                export = None;
+                sink.send(&event);
+            }
+            Wake::Request(Ok(Request::ExportAutomagic { documents_dir })) => {
+                if export.is_some() {
+                    sink.send(&Notification::AutomagicExportFinished {
+                        ok: false,
+                        path: String::new(),
+                        error: "An Automagic export is already in progress".into(),
+                    });
+                    continue;
+                }
+                // Filesystem I/O must not stall either the serial control loop
+                // or BLE maintenance. There is at most one export task.
+                export = Some(async_global_executor::spawn_blocking(move || {
+                    match crate::automagic::export(std::path::Path::new(&documents_dir)) {
+                        Ok(path) => Notification::AutomagicExportFinished {
+                            ok: true,
+                            path: path.to_string_lossy().into_owned(),
+                            error: String::new(),
+                        },
+                        Err(error) => Notification::AutomagicExportFinished {
+                            ok: false,
+                            path: String::new(),
+                            error: error.to_string(),
+                        },
+                    }
+                }));
+            }
             Wake::Completion(Ok(Completion::RefreshAt(deadline))) => refresh_at = Some(deadline),
             Wake::Completion(Ok(Completion::Notification(event))) => {
-                if event["type"] == "phone_key_state" {
-                    let generation = event["generation"].as_u64().unwrap_or(0);
-                    let scanning = event["link"] == "scanning";
-                    if generation < core.session_generation()
-                        || generation < phone.generation
-                        || (generation != 0 && generation == phone.generation && scanning)
-                    {
-                        continue;
-                    }
-                    phone.generation = generation;
-                    phone.active = event["active"].as_bool().unwrap_or(false);
-                    phone.status = event["status"].as_str().unwrap_or_default().into();
-                    phone.link = serde_json::from_value(event["link"].clone())
-                        .unwrap_or(PhoneKeyLink::Error);
+                if phone.accept_completion(core, &event) {
+                    sink.send(&event);
                 }
-                sink.send(&event);
             }
             Wake::Request(Ok(Request::ApplicationState { state })) => {
                 crate::keylog::log("ui", &format!("applicationState={state}"));
@@ -477,7 +577,7 @@ async fn run(
             }
             Wake::Request(Ok(Request::LogUi { message })) => crate::keylog::log("ui", &message),
             Wake::Request(Ok(Request::Snapshot)) => {
-                sink.send(&json!({"type":"initialized", "ok":true}));
+                sink.send(&Notification::Initialized { ok: true });
                 phone.publish(sink);
             }
             Wake::Request(Ok(request)) => {
@@ -506,6 +606,7 @@ fn run_ble(
         status: "Phone key inactive".into(),
         link: PhoneKeyLink::Stopped,
         generation: 0,
+        away: crate::phone_key::AwayDeadline::default(),
     };
     if !shutdown.load(Ordering::SeqCst) {
         phone.start(core, &sink);
@@ -520,9 +621,22 @@ fn run_ble(
         }
         if let Some(result) = core.maintain_phone_key(stopped.swap(0, Ordering::SeqCst)) {
             phone.generation = core.session_generation();
-            sink.send(&json!({"type":"phone_key_event", "kind":if result.is_ok() { "presence_restarted" } else { "presence_stopped" },
-                "vin":core.get_config().0, "time":crate::keylog::utc_stamp(),
-                "error":result.as_ref().err().map(ToString::to_string).unwrap_or_default()}));
+            sink.send(&Notification::PhoneKeyEvent {
+                kind: if result.is_ok() {
+                    "presence_restarted"
+                } else {
+                    "presence_stopped"
+                }
+                .into(),
+                generation: phone.generation,
+                vin: core.get_config().0,
+                time: crate::keylog::utc_stamp(),
+                error: result
+                    .as_ref()
+                    .err()
+                    .map(ToString::to_string)
+                    .unwrap_or_default(),
+            });
             phone.started(result, &sink);
         }
         match receiver.recv_timeout(Duration::from_millis(100)) {
@@ -555,48 +669,103 @@ fn run_ble(
 #[allow(clippy::too_many_lines, clippy::needless_pass_by_value)]
 fn dispatch(core: &Core, request: Request, sink: &Notifications, phone: &mut PhoneState) {
     match request {
-        Request::Run { request_id, cmd, args, .. } => match core.run(&cmd, &args) {
-            Ok((ok, stdout, stderr, exit_code)) => sink.send(&json!({"type":"command_finished",
-                "request_id":request_id, "ok":ok, "stdout":stdout, "stderr":stderr, "exit_code":exit_code})),
-            Err(e) => sink.send(&json!({"type":"command_error", "request_id":request_id, "error":e.to_string()})),
+        Request::Run {
+            request_id,
+            cmd,
+            args,
+            ..
+        } => match core.run(&cmd, &args) {
+            Ok((ok, stdout, stderr, exit_code)) => sink.send(&Notification::CommandFinished {
+                request_id,
+                ok,
+                stdout,
+                stderr,
+                exit_code,
+            }),
+            Err(e) => sink.send(&Notification::CommandError {
+                request_id,
+                error: e.to_string(),
+            }),
         },
         Request::GenerateKey { force } => {
             let (ok, pem, error) = match core.generate_key(force) {
                 Ok(pem) => (true, pem, String::new()),
                 Err(e) => (false, String::new(), e.to_string()),
             };
-            sink.send(&json!({"type":"key_generated", "ok":ok, "pem":pem, "error":error}));
+            sink.send(&Notification::KeyGenerated { ok, pem, error });
             phone.start(core, sink);
         }
         Request::Pair => {
-            let (ok, output, error) = core.pair().unwrap_or_else(|e| (false, String::new(), e.to_string()));
-            sink.send(&json!({"type":"paired", "ok":ok, "output":output, "error":error}));
+            let (ok, output, error) = core
+                .pair()
+                .unwrap_or_else(|e| (false, String::new(), e.to_string()));
+            sink.send(&Notification::Paired { ok, output, error });
             phone.start(core, sink);
         }
-        Request::SetConfig { vin, model, key_name, connect_timeout_sec, command_timeout_sec } => {
-            let result = core.set_config(&vin, &model, &key_name, connect_timeout_sec, command_timeout_sec);
+        Request::SetConfig {
+            vin,
+            model,
+            key_name,
+            connect_timeout_sec,
+            command_timeout_sec,
+        } => {
+            let result = core.set_config(
+                &vin,
+                &model,
+                &key_name,
+                connect_timeout_sec,
+                command_timeout_sec,
+            );
             let ok = result.is_ok();
             let error = result.err().map_or_else(String::new, |e| e.to_string());
-            sink.send(&json!({"type":"config_saved", "ok":ok, "error":error}));
-            if ok { phone.start(core, sink); }
+            sink.send(&Notification::ConfigSaved { ok, error });
+            if ok {
+                phone.start(core, sink);
+            }
         }
         Request::GetConfig => {
-            let (vin, model, key_name, connect_timeout_sec, command_timeout_sec, has_key, pem) = core.get_config();
-            sink.send(&json!({"type":"config_loaded", "vin":vin, "model":model, "key_name":key_name,
-                "connect_timeout_sec":connect_timeout_sec, "command_timeout_sec":command_timeout_sec,
-                "has_key":has_key, "pem":pem}));
+            let (vin, model, key_name, connect_timeout_sec, command_timeout_sec, has_key, pem) =
+                core.get_config();
+            sink.send(&Notification::ConfigLoaded {
+                vin,
+                model,
+                key_name,
+                connect_timeout_sec,
+                command_timeout_sec,
+                has_key,
+                pem,
+            });
         }
         Request::PreviewDestination { request_id, text } => {
             let (ok, kind, value1, value2, error) = match Core::preview_destination(&text) {
                 Ok((kind, value1, value2)) => (true, kind, value1, value2, String::new()),
-                Err(e) => (false, String::new(), String::new(), String::new(), e.to_string()),
+                Err(e) => (
+                    false,
+                    String::new(),
+                    String::new(),
+                    String::new(),
+                    e.to_string(),
+                ),
             };
-            sink.send(&json!({"type":"destination_previewed", "request_id":request_id, "ok":ok,
-                "kind":kind, "value1":value1, "value2":value2, "error":error}));
+            sink.send(&Notification::DestinationPreviewed {
+                request_id,
+                ok,
+                kind,
+                value1,
+                value2,
+                error,
+            });
         }
         Request::ShareDestination { request_id, text } => {
-            let (ok, output, error) = core.share_destination(&text).unwrap_or_else(|e| (false, String::new(), e.to_string()));
-            sink.send(&json!({"type":"share_finished", "request_id":request_id, "ok":ok, "output":output, "error":error}));
+            let (ok, output, error) = core
+                .share_destination(&text)
+                .unwrap_or_else(|e| (false, String::new(), e.to_string()));
+            sink.send(&Notification::ShareFinished {
+                request_id,
+                ok,
+                output,
+                error,
+            });
         }
         _ => crate::keylog::log("runtime", "unexpected control request in dispatch"),
     }
@@ -605,6 +774,7 @@ fn dispatch(core: &Core, request: Request, sink: &Notifications, phone: &mut Pho
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::{json, Value};
     use std::ffi::CStr;
 
     unsafe extern "C" fn notification(context: *mut c_void, data: *const c_char) {
@@ -671,6 +841,17 @@ mod tests {
         receive(&receiver, "initialized", Duration::from_millis(100));
         let snapshot = receive(&receiver, "phone_key_state", Duration::from_millis(100));
         assert_eq!(snapshot["link"], "connected");
+        assert!(runtime
+            .submit(&json!({"op":"export_automagic", "documents_dir":dir.path()}).to_string()));
+        let exported = receive(
+            &receiver,
+            "automagic_export_finished",
+            Duration::from_secs(2),
+        );
+        assert_eq!(exported["ok"], true);
+        assert!(std::path::Path::new(exported["path"].as_str().unwrap())
+            .join("flows.json")
+            .exists());
         for _ in 0..64 {
             assert!(runtime.submit(r#"{"op":"run","request_id":"queued","cmd":"lock","args":[]}"#));
         }
@@ -730,6 +911,7 @@ mod tests {
             status: String::new(),
             link: PhoneKeyLink::Stopped,
             generation: 0,
+            away: crate::phone_key::AwayDeadline::default(),
         };
         phone.poll(&core, &sink, &AtomicU64::new(0));
         for (_, _, link, active) in events {
@@ -737,6 +919,51 @@ mod tests {
             assert_eq!(state["link"], link);
             assert_eq!(state["active"], active);
         }
+        sink.observe(None);
+        drop(core);
+        peer.join().unwrap();
+    }
+
+    #[test]
+    fn delayed_away_publication_preserves_raw_events_and_uses_standard_event_shape() {
+        let dir = tempfile::tempdir().unwrap();
+        let (session, _, peer) = crate::session_client::tests::accept_mock(dir.path(),
+            vec![r#"{"type":"hello","v":1}"#.into(),
+                r#"{"type":"event","kind":"presence_far"}"#.into()],
+            vec![r#"{"type":"response","id":"{ID}","ok":true,"stdout":"","stderr":"","exit_code":0}"#.into()]);
+        session
+            .run("ping", &[], "", "/key", 1, 1, Duration::from_secs(2))
+            .unwrap();
+        let state = dir.path().to_string_lossy().into_owned();
+        let core = Core::new(state.clone(), state, Some(session)).unwrap();
+        let (sender, receiver) = mpsc::channel();
+        let sink = Notifications::default();
+        let mut sender = Box::new(sender);
+        sink.observe(Some(Observer {
+            callback: notification,
+            context: std::ptr::addr_of_mut!(*sender) as usize,
+        }));
+        let mut phone = PhoneState {
+            active: true,
+            status: String::new(),
+            link: PhoneKeyLink::Scanning,
+            generation: 0,
+            away: crate::phone_key::AwayDeadline::default(),
+        };
+        phone.poll(&core, &sink, &AtomicU64::new(0));
+        assert_eq!(
+            receive(&receiver, "phone_key_event", Duration::from_secs(1))["kind"],
+            "presence_far"
+        );
+        receive(&receiver, "phone_key_state", Duration::from_secs(1));
+        phone.publish_due_away(&core, &sink, phone.away.deadline().unwrap());
+        let event = receive(&receiver, "phone_key_event", Duration::from_secs(1));
+        assert_eq!(event["kind"], "presence_away_confirmed");
+        assert_eq!(event["vin"], "");
+        assert_eq!(event["error"], "");
+        assert!(event["time"].as_str().unwrap().ends_with('Z'));
+        phone.publish_due_away(&core, &sink, Instant::now() + Duration::from_secs(360));
+        assert!(receiver.try_recv().is_err());
         sink.observe(None);
         drop(core);
         peer.join().unwrap();
@@ -796,7 +1023,7 @@ mod tests {
         }));
         let delivery = thread::spawn({
             let sink = Arc::clone(&sink);
-            move || sink.send(&json!({"type":"test"}))
+            move || sink.send(&Notification::Initialized { ok: true })
         });
         entry.recv_timeout(Duration::from_secs(1)).unwrap();
         let (done, detached) = mpsc::channel();
@@ -816,7 +1043,7 @@ mod tests {
         delivery.join().unwrap();
         detach.join().unwrap();
         drop(context);
-        sink.send(&json!({"type":"after-detach"}));
+        sink.send(&Notification::Initialized { ok: true });
     }
 
     #[test]

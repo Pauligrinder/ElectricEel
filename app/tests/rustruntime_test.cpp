@@ -5,6 +5,10 @@
 #include <QThread>
 #include <QtTest>
 #include <QSemaphore>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QStandardPaths>
 #include <dlfcn.h>
 #include "tesla_ble.h"
 
@@ -116,6 +120,33 @@ private slots:
         QCOMPARE(client.phoneKeyLink(), QStringLiteral("error"));
         QCOMPARE(client.phoneKeyStatus(), QStringLiteral("Phone key connected"));
     }
+
+    void automagicExportCompletesOnGuiThreadAndDoubleClickIsSingleFlight() {
+        const QString documents = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+        QVERIFY(documents.startsWith(directory.path() + QLatin1Char('/')));
+        TeslaClient client(runtime);
+        QSignalSpy exports(&client, &TeslaClient::automagicExportFinished);
+        bool guiThread = false;
+        connect(&client, &TeslaClient::automagicExportFinished, this, [&] {
+            guiThread = QThread::currentThread() == qApp->thread();
+        });
+        client.exportAutomagicFlows();
+        QVERIFY(client.automagicExportBusy());
+        client.exportAutomagicFlows();
+        QCOMPARE(exports.count(), 0); // Completion is queued, never synchronous.
+        QTRY_COMPARE(exports.count(), 1);
+        QVERIFY(exports.first().at(0).toBool());
+        QVERIFY(exports.first().at(2).toString().isEmpty());
+        QVERIFY(!client.automagicExportBusy());
+        QVERIFY(guiThread);
+        const QString path = exports.first().at(1).toString();
+        QCOMPARE(QFileInfo(path).absolutePath(), documents);
+        for (const QString &file : {QString("data_sources.json"), QString("actions.json"),
+                                   QString("flows.json"), QString("value_maps.json")}) {
+            QVERIFY(QFile::exists(path + QLatin1Char('/') + file));
+        }
+        QCOMPARE(QDir(documents).entryList(QDir::Dirs | QDir::NoDotAndDotDot).size(), 1);
+    }
 };
 
 extern "C" const char *electric_eel_ui_prepare(int argc, char **argv)
@@ -126,6 +157,8 @@ extern "C" const char *electric_eel_ui_prepare(int argc, char **argv)
     application = new QGuiApplication(qtArgc, argv);
     if (!directory.isValid()) return nullptr;
     stateDirectory = directory.path().toUtf8();
+    qputenv("HOME", stateDirectory); // Documents exports stay inside the test fixture.
+    qputenv("XDG_CONFIG_HOME", stateDirectory);
     qputenv("ELECTRIC_EEL_LOG_DIR", stateDirectory);
     return stateDirectory.constData();
 }

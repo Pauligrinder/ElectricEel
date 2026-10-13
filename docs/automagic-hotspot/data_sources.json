@@ -1,0 +1,82 @@
+{
+  "version": 1,
+  "data": [
+    {
+      "id": "eel_inside", "name": "ElectricEel inside car", "type": "dbus",
+      "enabled": true, "trigger": true, "address": "session",
+      "destination": "org.electriceel.harbour-electric-eel",
+      "path": "/org/electriceel/PhoneKey", "interface": "org.electriceel.PhoneKey1", "signal": "PhoneKeyEvent",
+      "filters": {"arg0": "presence_inside"},
+      "transformations": [
+        {"type": "copy", "in": "arg0", "out": "kind", "optional": true},
+        {"type": "copy", "in": "arg1", "out": "vin", "optional": true},
+        {"type": "copy", "in": "arg2", "out": "event_time", "optional": true},
+        {"type": "copy", "in": "arg3", "out": "error", "optional": true}
+      ]
+    },
+    {
+      "id": "eel_far", "name": "ElectricEel walked away", "type": "dbus",
+      "enabled": true, "trigger": true, "address": "session",
+      "destination": "org.electriceel.harbour-electric-eel",
+      "path": "/org/electriceel/PhoneKey", "interface": "org.electriceel.PhoneKey1", "signal": "PhoneKeyEvent",
+      "filters": {"arg0": "presence_far"},
+      "transformations": [
+        {"type": "copy", "in": "arg0", "out": "kind", "optional": true},
+        {"type": "copy", "in": "arg1", "out": "vin", "optional": true},
+        {"type": "copy", "in": "arg2", "out": "event_time", "optional": true},
+        {"type": "copy", "in": "arg3", "out": "error", "optional": true}
+      ]
+    },
+    {
+      "id": "eel_away_confirmed", "name": "ElectricEel away for 3 minutes", "type": "dbus",
+      "enabled": true, "trigger": true, "address": "session",
+      "destination": "org.electriceel.harbour-electric-eel",
+      "path": "/org/electriceel/PhoneKey", "interface": "org.electriceel.PhoneKey1", "signal": "PhoneKeyEvent",
+      "filters": {"arg0": "presence_away_confirmed"},
+      "transformations": [
+        {"type": "copy", "in": "arg0", "out": "kind", "optional": true},
+        {"type": "copy", "in": "arg1", "out": "vin", "optional": true},
+        {"type": "copy", "in": "arg2", "out": "event_time", "optional": true},
+        {"type": "copy", "in": "arg3", "out": "error", "optional": true}
+      ]
+    },
+    {
+      "id": "eel_near", "name": "ElectricEel connected", "type": "dbus",
+      "enabled": true, "trigger": true, "address": "session",
+      "destination": "org.electriceel.harbour-electric-eel",
+      "path": "/org/electriceel/PhoneKey", "interface": "org.electriceel.PhoneKey1", "signal": "PhoneKeyEvent",
+      "filters": {"arg0": "presence_near"},
+      "transformations": [
+        {"type": "copy", "in": "arg0", "out": "kind", "optional": true},
+        {"type": "copy", "in": "arg1", "out": "vin", "optional": true},
+        {"type": "copy", "in": "arg2", "out": "event_time", "optional": true},
+        {"type": "copy", "in": "arg3", "out": "error", "optional": true}
+      ]
+    },
+    {
+      "id": "eel_auth_ok", "name": "ElectricEel authorized", "type": "dbus",
+      "enabled": true, "trigger": true, "address": "session",
+      "destination": "org.electriceel.harbour-electric-eel",
+      "path": "/org/electriceel/PhoneKey", "interface": "org.electriceel.PhoneKey1", "signal": "PhoneKeyEvent",
+      "filters": {"arg0": "presence_auth_ok"},
+      "transformations": [
+        {"type": "copy", "in": "arg0", "out": "kind", "optional": true},
+        {"type": "copy", "in": "arg1", "out": "vin", "optional": true},
+        {"type": "copy", "in": "arg2", "out": "event_time", "optional": true},
+        {"type": "copy", "in": "arg3", "out": "error", "optional": true}
+      ]
+    },
+    {
+      "id": "eel_presence", "name": "ElectricEel presence", "type": "dbus",
+      "enabled": true, "trigger": true, "address": "session",
+      "destination": "org.electriceel.harbour-electric-eel",
+      "path": "/org/electriceel/PhoneKey", "interface": "org.electriceel.PhoneKey1", "signal": "PhoneKeyEvent",
+      "transformations": [
+        {"type": "copy", "in": "arg0", "out": "kind", "optional": true},
+        {"type": "copy", "in": "arg1", "out": "vin", "optional": true},
+        {"type": "copy", "in": "arg2", "out": "event_time", "optional": true},
+        {"type": "copy", "in": "arg3", "out": "error", "optional": true}
+      ]
+    }
+  ]
+}

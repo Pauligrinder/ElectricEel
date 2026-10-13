@@ -25,4 +25,16 @@ int main(int argc, char **argv)
     client.refreshConfig();
     assert(loaded == 0);
     assert(failures == 1);
+
+    int exports = 0;
+    QObject::connect(&client, &TeslaClient::automagicExportFinished,
+                     [&](bool ok, const QString &path, const QString &message) {
+        assert(!ok);
+        assert(path.isEmpty());
+        assert(!message.isEmpty());
+        assert(!client.automagicExportBusy());
+        ++exports;
+    });
+    client.exportAutomagicFlows();
+    assert(exports == 1); // Rejected admission must stop the UI busy state.
 }

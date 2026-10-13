@@ -70,6 +70,7 @@ Go-to-Rust observation, mapped by Rust to the public event); diagnostic wording 
 | `presence_auth_failed` | An authentication response failed. |
 | `presence_disconnected` | The phone-key session was lost; scanning continues. |
 | `presence_far` | Departure was declared by the presence loop. |
+| `presence_away_confirmed` | The app runtime's three-minute departure deadline expired without a subsequent `presence_inside`. |
 | `presence_error` | Scanning or connection encountered an error. |
 | `presence_stopped` | Presence mode stopped. |
 | `presence_restarted` | The control core restarted presence mode. |
@@ -80,6 +81,15 @@ particular phone or its owner is physically inside. It does not indicate gear
 selection or that driving has begun. Unknown, absent, failed, or stale status
 does not trigger it. Reconnection resets the settling period and permits a
 new event.
+
+`presence_far` remains immediate. In the application runtime,
+`presence_away_confirmed` is emitted once, 180 seconds after the first far event
+processed for the current VIN/session. Repeated far events do not extend the
+deadline. Inside events cancel it, including those already queued at expiry;
+near/authentication events alone do not. Stopping/restarting presence, changing
+the VIN/session generation, or exiting the app discards it. There is no timer
+restore on restart and no replay. The optional standalone daemon does not
+produce this runtime-derived event. Its timestamp is the time of emission.
 
 Consumers can start an integration on `presence_inside` and reset it on
 `presence_disconnected` / `presence_far`. These are live notifications without

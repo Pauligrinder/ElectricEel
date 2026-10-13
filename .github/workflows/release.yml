@@ -105,7 +105,7 @@ jobs:
           sed -i "s/^Version:.*/Version:       ${{ steps.version.outputs.version }}/" app/rpm/harbour-electric-eel.spec
           grep '^Version:' app/rpm/harbour-electric-eel.spec
 
-      - name: Build the app RPM in the Sailfish SDK container
+      - name: Build and Harbour-check the app RPM in the Sailfish SDK container
         run: |
           set -euxo pipefail
           docker create --name electric-eel-build coderus/sailfishos-platform-sdk-aarch64 sleep infinity
@@ -117,6 +117,8 @@ jobs:
           docker exec -u root electric-eel-build chown -R mersdk:mersdk /home/mersdk/app
           docker exec -w /home/mersdk/app electric-eel-build \
             mb2 --target SailfishOS-5.2.0.15-aarch64 build
+          docker exec -w /home/mersdk/app electric-eel-build \
+            mb2 --target SailfishOS-5.2.0.15-aarch64 check --suites harbour
           mkdir -p app/RPMS
           docker cp electric-eel-build:/home/mersdk/app/RPMS/. app/RPMS/
 

@@ -32,7 +32,11 @@ pub mod share;
 pub mod tesla_ble;
 
 #[cfg(feature = "runtime")]
+mod automagic;
+#[cfg(feature = "runtime")]
 mod cpukeepalive;
+#[cfg(feature = "runtime")]
+mod notification;
 #[cfg(feature = "runtime")]
 pub mod runtime;
 

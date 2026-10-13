@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "data": [
+    {
+      "id": "eel_hotspot_on", "name": "ElectricEel hotspot on",
+      "type": "dbus_method", "enabled": true, "address": "system",
+      "destination": "net.connman", "path": "/net/connman/technology/wifi",
+      "interface": "net.connman.Technology", "method": "SetProperty", "timeout": "5s",
+      "args": [{"type": "s", "value": "Tethering"}, {"type": "v:b", "value": true}]
+    },
+    {
+      "id": "eel_hotspot_off", "name": "ElectricEel hotspot off",
+      "type": "dbus_method", "enabled": true, "address": "system",
+      "destination": "net.connman", "path": "/net/connman/technology/wifi",
+      "interface": "net.connman.Technology", "method": "SetProperty", "timeout": "5s",
+      "args": [{"type": "s", "value": "Tethering"}, {"type": "v:b", "value": false}]
+    }
+  ]
+}

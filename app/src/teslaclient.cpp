@@ -1,5 +1,4 @@
 #include "teslaclient.h"
-#include "automagicsetup.h"
 #include "commandarguments.h"
 
 #include <QDebug>
@@ -8,6 +7,7 @@
 #include <QJsonDocument>
 #include <QLocale>
 #include <QStringList>
+#include <QStandardPaths>
 
 extern "C" {
 #include "electriceelcore.h"
@@ -86,6 +86,10 @@ void TeslaClient::deliverNotification(const QByteArray &json)
         emit paired(ok, event.value("output").toString(), error);
     } else if (type == "config_saved") {
         emit configSaved(ok, error);
+    } else if (type == "automagic_export_finished") {
+        m_automagicExportBusy = false;
+        emit automagicExportBusyChanged();
+        emit automagicExportFinished(ok, event.value("path").toString(), error);
     } else if (type == "config_loaded") {
         emit configLoaded(event.value("vin").toString(), event.value("model").toString(),
                           event.value("key_name").toString(), event.value("connect_timeout_sec").toInt(),
@@ -120,6 +124,11 @@ void TeslaClient::submit(const QJsonObject &request)
     else if (op == "share_destination") emit shareFinished(id, false, QString(), error);
     else if (op == "run") emit commandError(id, error);
     else if (op == "get_config") emit configLoadError(error);
+    else if (op == "export_automagic") {
+        m_automagicExportBusy = false;
+        emit automagicExportBusyChanged();
+        emit automagicExportFinished(false, QString(), error);
+    }
     else if (op == "log_ui" || op == "application_state") { qWarning() << error << op; }
     else qWarning() << error << op;
 }
@@ -180,10 +189,12 @@ void TeslaClient::onApplicationStateChanged(Qt::ApplicationState state)
     submit({{"op", "application_state"}, {"state", name}});
 }
 
-void TeslaClient::installAutomagicFlows()
+void TeslaClient::exportAutomagicFlows()
 {
-    AutomagicSetup setup;
-    QString message;
-    const bool ok = setup.install(&message);
-    emit automagicSetupFinished(ok, message);
+    if (m_automagicExportBusy)
+        return;
+    m_automagicExportBusy = true;
+    emit automagicExportBusyChanged();
+    submit({{"op", "export_automagic"},
+            {"documents_dir", QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)}});
 }
