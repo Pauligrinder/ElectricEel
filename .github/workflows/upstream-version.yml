@@ -1,0 +1,43 @@
+name: Upstream vehicle-command freshness
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  schedule:
+    - cron: '17 8 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  upstream-version:
+    name: Latest upstream vehicle-command release
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: helper/session
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.5'
+          cache: false
+      - name: Compare the pinned version with upstream
+        shell: bash
+        run: |
+          set -euo pipefail
+          module=github.com/teslamotors/vehicle-command
+          # Read the require entry, not the locally patched replacement.
+          pinned=$(go mod edit -json | jq -er --arg module "$module" \
+            '.Require[] | select(.Path == $module) | .Version')
+          # An explicit @latest query bypasses the local replace directive.
+          # Go selects the latest stable module release, not upstream main.
+          latest=$(go list -m -f '{{.Version}}' "$module@latest")
+          printf 'Pinned upstream version: %s\nLatest upstream version: %s\n' "$pinned" "$latest"
+          if [ "$pinned" != "$latest" ]; then
+            printf '::error file=helper/session/go.mod::vehicle-command is pinned to %s; upstream latest is %s. Update the pin and rebase the local patches in helper/session/thirdparty/vehicle-command.\n' "$pinned" "$latest"
+            exit 1
+          fi
