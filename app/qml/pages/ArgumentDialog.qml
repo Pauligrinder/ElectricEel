@@ -24,9 +24,23 @@ Dialog {
         }
         for (var i = 0; i < commandDef.args.length; i++) {
             var a = commandDef.args[i]
-            if (!a.optional && (!a.__value || a.__value.length === 0)) {
+            var value = a.__value === undefined ? "" : String(a.__value).trim()
+            if (!a.optional && value.length === 0) {
                 formValid = false
                 return
+            }
+            if (value.length > 0 && (a.type === "int" || a.type === "float")) {
+                var numeric = value
+                if (a.sendSuffix && numeric.slice(-a.sendSuffix.length) === a.sendSuffix)
+                    numeric = numeric.slice(0, -a.sendSuffix.length)
+                var pattern = a.type === "int" ? /^[+-]?\d+$/ : /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/
+                var number = Number(numeric)
+                if (!pattern.test(numeric) || !isFinite(number)
+                        || (a.min !== undefined && number < a.min)
+                        || (a.max !== undefined && number > a.max)) {
+                    formValid = false
+                    return
+                }
             }
         }
         // Cross-field rule: schedule-remove TYPE=id requires a numeric ID.
@@ -39,7 +53,7 @@ Dialog {
                 for (var k = 0; k < commandDef.args.length; k++) {
                     if (commandDef.args[k].name === "ID"
                             && (!commandDef.args[k].__value
-                                || commandDef.args[k].__value.length === 0)) {
+                                || String(commandDef.args[k].__value).trim().length === 0)) {
                         formValid = false
                         return
                     }
@@ -231,7 +245,7 @@ Dialog {
         var out = []
         for (var i = 0; i < commandDef.args.length; i++) {
             var a = commandDef.args[i]
-            var v = a.__value !== undefined ? a.__value : ""
+            var v = a.__value !== undefined ? String(a.__value).trim() : ""
             out.push(v)
         }
         while (out.length > 0 && commandDef.args[out.length - 1].optional

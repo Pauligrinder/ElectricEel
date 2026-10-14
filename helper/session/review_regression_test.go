@@ -70,6 +70,22 @@ func TestReviewOptionalScheduleSlotsKeepTheirMeaning(t *testing.T) {
 	}
 }
 
+func TestScheduleOptionsRejectTyposBeforeVehicleCall(t *testing.T) {
+	for _, command := range []string{"charging-schedule-add", "precondition-schedule-add"} {
+		for _, option := range []string{"ENABLED", "REPEAT"} {
+			args := map[string]string{"DAYS": "all", "TIME": "06:00", "LATITUDE": "48.8", "LONGITUDE": "2.2"}
+			if command == "charging-schedule-add" {
+				args["TIME"] = "06:00-07:00"
+			}
+			args[option] = "typo"
+			err := commands[command].handler(context.Background(), nil, nil, args)
+			if err == nil || !strings.Contains(err.Error(), option) {
+				t.Fatalf("%s %s: expected validation error, got %v", command, option, err)
+			}
+		}
+	}
+}
+
 func TestReviewPairingWaitsForVehicleConfirmation(t *testing.T) {
 	attempts := 0
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)

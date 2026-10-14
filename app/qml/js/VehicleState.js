@@ -105,7 +105,7 @@ function carImageSource(model, vin) {
 // real VIN mis-guesses here, the manual model picker in Settings is the
 // source of truth, not this function.
 function guessModel(vin) {
-    vin = (vin || "").toUpperCase()
+    vin = (vin || "").trim().toUpperCase()
     if (vin.length < 4)
         return ""
     var table = [

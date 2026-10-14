@@ -61,7 +61,7 @@ func (s *session) dispatchNavigate(req request) response {
 			return response{ID: req.ID, OK: false, Stderr: "navigate: address needs text\n", ExitCode: 2}
 		}
 		text = strings.TrimSpace(req.Args[1])
-		if text == "" || len([]rune(text)) > maxNavigateTextLen || strings.ContainsFunc(req.Args[1], unicode.IsControl) {
+		if text == "" || len([]rune(text)) > maxNavigateTextLen || strings.ContainsFunc(text, unicode.IsControl) {
 			return response{ID: req.ID, OK: false, Stderr: "navigate: invalid address text\n", ExitCode: 2}
 		}
 	default:

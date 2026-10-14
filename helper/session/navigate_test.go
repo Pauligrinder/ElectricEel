@@ -18,6 +18,7 @@ func TestDispatchNavigateRejectsBadArgs(t *testing.T) {
 		{"gps", "48.8", "2.2", "extra"},
 		{"address"},
 		{"address", "   "},
+		{"address", "Eiffel\nTower"},
 		{"address", "ok", "extra"},
 	} {
 		resp := s.dispatchNavigate(request{ID: "n", Cmd: "navigate", Args: args})
@@ -47,10 +48,14 @@ func TestDispatchNavigateReportsConnectFailure(t *testing.T) {
 	for _, args := range [][]string{
 		{"gps", "48.8584", "2.2945"},
 		{"address", "Eiffel Tower"},
+		{"address", "\n\t Eiffel Tower \r\n"},
 	} {
 		resp := s.dispatchNavigate(request{ID: "n1", Cmd: "navigate", Args: args})
 		if resp.OK {
 			t.Fatalf("expected ok=false with no key/vehicle, args %q", args)
+		}
+		if resp.ExitCode == 2 {
+			t.Fatalf("valid trimmed address rejected as usage error: %+v", resp)
 		}
 		if resp.ID != "n1" {
 			t.Errorf("response ID = %q, want %q", resp.ID, "n1")

@@ -9,6 +9,7 @@ Page {
     property string categoryTitle
     property string vin: ""
     property bool configReady: false
+    property string configError: ""
     // Last dashboard reading from FirstPage, passed through at push time -
     // shown as a subheader below. Not re-fetched here: it's a snapshot, not
     // a live binding, so it can go stale while this page is open (matches
@@ -56,7 +57,8 @@ Page {
                 return ""
             return qsTr("%1% battery%2")
                 .arg(vehicleStatus.batteryLevel)
-                .arg(vehicleStatus.chargingState === "Charging" ? qsTr(" • Charging") : "")
+                // Charging, Starting and Calibrating match the charging toggle.
+                .arg(Catalog.nearlyCharging(vehicleStatus) ? qsTr(" • Charging") : "")
         }
         if (categoryId === "security") {
             if (vehicleStatus.locked === null)
@@ -77,6 +79,11 @@ Page {
             }
             page.vin = vin
             page.configReady = true
+            page.configError = ""
+        }
+        onConfigLoadError: {
+            page.configReady = false
+            page.configError = message
         }
         onCommandFinished: {
             if (requestId !== page.pendingCmd)
@@ -153,6 +160,21 @@ Page {
             width: listView.width
 
             PageHeader { title: categoryTitle }
+
+            Label {
+                width: parent.width - Theme.horizontalPageMargin * 2
+                anchors.horizontalCenter: parent.horizontalCenter
+                visible: page.configError.length > 0
+                wrapMode: Text.Wrap
+                text: page.configError
+                color: Theme.highlightColor
+            }
+            Button {
+                anchors.horizontalCenter: parent.horizontalCenter
+                visible: page.configError.length > 0
+                text: qsTr("Retry")
+                onClicked: teslaClient.refreshConfig()
+            }
 
             Label {
                 width: parent.width - Theme.horizontalPageMargin * 2

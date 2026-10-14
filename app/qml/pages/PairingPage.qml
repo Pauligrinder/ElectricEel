@@ -17,6 +17,7 @@ Page {
     // Gates the Generate Key button: clicking it before the load finished
     // would run with no knowledge of an already-enrolled key.
     property bool configReady: false
+    property string configError: ""
     // Per-page list-keys id so two PairingPages never consume each other's
     // replies.
     property string pendingListKeysId: ""
@@ -39,6 +40,7 @@ Page {
         onCommandFinished: {
             if (requestId !== page.pendingListKeysId)
                 return
+            page.pendingListKeysId = ""
             page.keysListOutput = ok
                 ? (stdOut.length > 0 ? stdOut : qsTr("No keys listed"))
                 : stdErr
@@ -46,9 +48,15 @@ Page {
         onCommandError: {
             if (requestId !== page.pendingListKeysId)
                 return
+            page.pendingListKeysId = ""
             page.keysListOutput = message
         }
         onConfigLoaded: {
+            if (page.vin !== vin) {
+                page.pendingListKeysId = ""
+                page.keysListOutput = ""
+            }
+            page.configError = ""
             page.configReady = true
             page.vin = vin
             page.hasVin = vin.length > 0
@@ -56,6 +64,10 @@ Page {
                 page.publicKeyPem = publicKeyPem
             else
                 page.publicKeyPem = ""
+        }
+        onConfigLoadError: {
+            page.configReady = false
+            page.configError = message
         }
     }
 
@@ -71,6 +83,21 @@ Page {
             spacing: Theme.paddingLarge
 
             PageHeader { title: qsTr("Pairing & Keys") }
+
+            Label {
+                width: parent.width - Theme.horizontalPageMargin * 2
+                anchors.horizontalCenter: parent.horizontalCenter
+                visible: page.configError.length > 0
+                wrapMode: Text.Wrap
+                text: page.configError
+                color: Theme.highlightColor
+            }
+            Button {
+                anchors.horizontalCenter: parent.horizontalCenter
+                visible: page.configError.length > 0
+                text: qsTr("Retry")
+                onClicked: teslaClient.refreshConfig()
+            }
 
             Label {
                 anchors.left: parent.left
@@ -111,7 +138,7 @@ Page {
                 // Spins until the first GetConfig reply lands (configReady
                 // gates the Generate Key button) so the disabled button reads
                 // as "still loading" rather than "broken".
-                running: !page.configReady
+                running: !page.configReady && page.configError.length === 0
                 visible: running
             }
 
@@ -123,7 +150,7 @@ Page {
                 // exists. Also disabled while pairing - generating during the
                 // in-flight add-key-request would invalidate the session
                 // mid-pairing.
-                enabled: page.configReady && !page.generating && !page.pairing
+                enabled: page.configReady && !page.generating && !page.pairing && page.pendingListKeysId.length === 0
                 onClicked: {
                     page.generating = true
                     teslaClient.generateKey(false)
@@ -146,7 +173,7 @@ Page {
                 text: page.pairing ? qsTr("Waiting for NFC tap...") : qsTr("Pair with Vehicle")
                 // VIN gate: pairing without a VIN can never succeed (the
                 // session needs it for the BLE handshake).
-                enabled: !page.pairing && page.publicKeyPem.length > 0 && page.hasVin
+                enabled: page.configReady && !page.generating && !page.pairing && page.pendingListKeysId.length === 0 && page.publicKeyPem.length > 0 && page.hasVin
                 onClicked: {
                     page.pairing = true
                     page.pairStatus = qsTr("Requesting pairing over BLE - approve on the car's touchscreen / NFC card now.")
@@ -174,10 +201,20 @@ Page {
             Button {
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: qsTr("List Enrolled Keys")
+                enabled: page.configReady && page.hasVin && !page.generating && !page.pairing && page.pendingListKeysId.length === 0
                 onClicked: {
+                    if (page.pendingListKeysId.length > 0)
+                        return
+                    page.keysListOutput = ""
                     page.pendingListKeysId = "list-keys#" + Date.now() + "-" + Math.floor(Math.random() * 1000000)
                     teslaClient.runCommand(page.pendingListKeysId, "list-keys", [])
                 }
+            }
+
+            BusyIndicator {
+                anchors.horizontalCenter: parent.horizontalCenter
+                running: page.pendingListKeysId.length > 0
+                visible: running
             }
 
             Label {

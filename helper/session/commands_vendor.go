@@ -1120,6 +1120,9 @@ var commands = map[string]*Command{
 			}
 
 			if enabledStr, ok := args["ENABLED"]; ok {
+				if !strings.EqualFold(strings.TrimSpace(enabledStr), "true") && !strings.EqualFold(strings.TrimSpace(enabledStr), "false") {
+					return errors.New("ENABLED must be true or false")
+				}
 				schedule.Enabled = strings.EqualFold(strings.TrimSpace(enabledStr), "true")
 			}
 
@@ -1162,7 +1165,10 @@ var commands = map[string]*Command{
 				return err
 			}
 
-			if repeatPolicy, ok := args["REPEAT"]; ok && strings.EqualFold(strings.TrimSpace(repeatPolicy), "once") {
+			if repeatPolicy, ok := args["REPEAT"]; ok {
+				if !strings.EqualFold(strings.TrimSpace(repeatPolicy), "once") {
+					return errors.New("REPEAT must be once or omitted for weekly")
+				}
 				schedule.OneTime = true
 			}
 
@@ -1231,6 +1237,9 @@ var commands = map[string]*Command{
 			}
 
 			if enabledStr, ok := args["ENABLED"]; ok {
+				if !strings.EqualFold(strings.TrimSpace(enabledStr), "true") && !strings.EqualFold(strings.TrimSpace(enabledStr), "false") {
+					return errors.New("ENABLED must be true or false")
+				}
 				schedule.Enabled = strings.EqualFold(strings.TrimSpace(enabledStr), "true")
 			}
 
@@ -1266,7 +1275,10 @@ var commands = map[string]*Command{
 				return err
 			}
 
-			if repeatPolicy, ok := args["REPEAT"]; ok && strings.EqualFold(strings.TrimSpace(repeatPolicy), "once") {
+			if repeatPolicy, ok := args["REPEAT"]; ok {
+				if !strings.EqualFold(strings.TrimSpace(repeatPolicy), "once") {
+					return errors.New("REPEAT must be once or omitted for weekly")
+				}
 				schedule.OneTime = true
 			}
 

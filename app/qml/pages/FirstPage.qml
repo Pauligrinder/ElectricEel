@@ -363,7 +363,8 @@ Page {
                             color: Theme.primaryColor
                             text: page.vehicleStatus.batteryLevel === null ? "--" :
                                   (page.vehicleStatus.batteryLevel + "%" +
-                                   (page.vehicleStatus.chargingState === "Charging" ? qsTr(" • charging") : ""))
+                                   // Charging, Starting and Calibrating match the charging toggle.
+                                   (Catalog.nearlyCharging(page.vehicleStatus) ? qsTr(" • charging") : ""))
                         }
 
                         Label {

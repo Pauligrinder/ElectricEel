@@ -730,6 +730,12 @@ pub unsafe extern "C" fn core_preview_destination(
                 // SAFETY: caller-owned slot.
                 unsafe { *error_message = into_cstring(e.to_string()) };
             }
+            for slot in [kind, value1, value2] {
+                if !slot.is_null() {
+                    // SAFETY: caller-owned slot.
+                    unsafe { *slot = into_cstring(String::new()) };
+                }
+            }
         }
     }
     CoreError::Ok
@@ -771,6 +777,10 @@ pub unsafe extern "C" fn core_share_destination(
             CoreError::Ok
         }
         Err(e) => {
+            if !stdout_out.is_null() {
+                // SAFETY: caller-owned slot.
+                unsafe { *stdout_out = into_cstring(String::new()) };
+            }
             if !ok.is_null() {
                 // SAFETY: caller-owned slot.
                 unsafe { *ok = false };
@@ -790,13 +800,12 @@ mod tests {
     use std::os::raw::c_char;
     use std::ptr;
 
-    fn tmp_core() -> (*mut Core, std::path::PathBuf) {
-        let dir = std::env::temp_dir().join(format!("electric-eel-ffitest-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let bin_dir = dir.join("bin");
+    fn tmp_core() -> (*mut Core, tempfile::TempDir) {
+        let dir = tempfile::tempdir().unwrap();
+        let bin_dir = dir.path().join("bin");
         std::fs::create_dir_all(&bin_dir).unwrap();
         let bin_dir = CString::new(bin_dir.to_string_lossy().as_bytes()).unwrap();
-        let state_dir = CString::new(dir.to_string_lossy().as_bytes()).unwrap();
+        let state_dir = CString::new(dir.path().to_string_lossy().as_bytes()).unwrap();
         // SAFETY: owned, NUL-terminated strings; err slot valid.
         let core = unsafe {
             core_new(
@@ -808,6 +817,62 @@ mod tests {
             )
         };
         (core, dir)
+    }
+
+    #[test]
+    fn preview_failure_initializes_all_output_slots() {
+        let text = CString::new("   ").unwrap();
+        let mut ok = true;
+        let mut kind = ptr::null_mut();
+        let mut value1 = ptr::null_mut();
+        let mut value2 = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        // SAFETY: valid input and writable slots; preview needs no core.
+        unsafe {
+            assert_eq!(
+                core_preview_destination(
+                    ptr::null_mut(),
+                    text.as_ptr(),
+                    &mut ok,
+                    &mut kind,
+                    &mut value1,
+                    &mut value2,
+                    &mut err
+                ),
+                CoreError::Ok
+            );
+            assert!(!ok);
+            for slot in [kind, value1, value2] {
+                assert!(!slot.is_null());
+                assert_eq!(CStr::from_ptr(slot).to_bytes(), b"");
+                core_string_free(slot);
+            }
+            assert!(!CStr::from_ptr(err).to_bytes().is_empty());
+            core_string_free(err);
+        }
+    }
+
+    #[test]
+    fn share_failure_initializes_stdout() {
+        let (core, _dir) = tmp_core();
+        let text = CString::new("Eiffel Tower").unwrap();
+        let mut ok = true;
+        let mut stdout = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        // SAFETY: valid core/input/slots; no configured session means failure.
+        unsafe {
+            assert_eq!(
+                core_share_destination(core, text.as_ptr(), &mut ok, &mut stdout, &mut err),
+                CoreError::Ok
+            );
+            assert!(!ok);
+            assert!(!stdout.is_null());
+            assert_eq!(CStr::from_ptr(stdout).to_bytes(), b"");
+            assert!(!CStr::from_ptr(err).to_bytes().is_empty());
+            core_string_free(stdout);
+            core_string_free(err);
+            core_free(core);
+        }
     }
 
     #[test]

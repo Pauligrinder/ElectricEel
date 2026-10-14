@@ -19,6 +19,7 @@ Page {
     property var teslaClient
     property string vin: ""
     property bool configReady: false
+    property string configError: ""
     // Prefilled by the Share handler (harbour-electric-eel.qml) or left
     // empty for manual paste/typing.
     property string initialText: ""
@@ -39,6 +40,9 @@ Page {
         destField.text = text
         page.pendingPreviewId = ""
         page.previewing = false
+        page.pendingSendId = ""
+        page.sending = false
+        page.resultText = ""
         page.preview()
     }
 
@@ -75,6 +79,7 @@ Page {
     Connections {
         target: teslaClient
         onConfigLoaded: {
+            page.configError = ""
             if (page.vin !== vin) {
                 page.pendingPreviewId = ""
                 page.pendingSendId = ""
@@ -90,10 +95,15 @@ Page {
                     page.preview()
             }
         }
+        onConfigLoadError: {
+            page.configReady = false
+            page.configError = message
+        }
         onDestinationPreviewed: {
             if (requestId !== page.pendingPreviewId)
                 return
             page.previewing = false
+            page.pendingPreviewId = ""
             if (!ok) {
                 page.previewText = qsTr("Cannot use this: %1").arg(errorMessage)
                 return
@@ -108,7 +118,8 @@ Page {
             if (requestId !== page.pendingSendId)
                 return
             page.sending = false
-            page.resultText = ok ? output : qsTr("Send failed: %1").arg(errorMessage)
+            page.pendingSendId = ""
+            page.resultText = ok ? (output.length ? output : qsTr("OK")) : qsTr("Send failed: %1").arg(errorMessage)
         }
     }
 
@@ -129,6 +140,21 @@ Page {
             spacing: Theme.paddingLarge
 
             PageHeader { title: qsTr("Car Navigation") }
+
+            Label {
+                width: parent.width - Theme.horizontalPageMargin * 2
+                anchors.horizontalCenter: parent.horizontalCenter
+                visible: page.configError.length > 0
+                wrapMode: Text.Wrap
+                text: page.configError
+                color: Theme.highlightColor
+            }
+            Button {
+                anchors.horizontalCenter: parent.horizontalCenter
+                visible: page.configError.length > 0
+                text: qsTr("Retry")
+                onClicked: teslaClient.refreshConfig()
+            }
 
             TextArea {
                 id: destField

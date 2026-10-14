@@ -42,7 +42,50 @@ pub(crate) fn export(documents: &Path) -> io::Result<PathBuf> {
     let name = staging.path().file_name().unwrap().to_string_lossy();
     let destination = documents.join(name.trim_start_matches('.'));
     fs::rename(staging.path(), &destination)?;
+    prune_exports(documents, &destination);
     Ok(destination)
+}
+
+// Only prune untouched generated bundles. Edited exports belong to the user.
+fn prune_exports(documents: &Path, current: &Path) {
+    let Ok(entries) = fs::read_dir(documents) else {
+        return;
+    };
+    let mut exports: Vec<_> = entries
+        .filter_map(Result::ok)
+        .filter_map(|entry| {
+            let path = entry.path();
+            if !entry.file_type().ok()?.is_dir()
+                || !entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with("ElectricEel-Automagic-")
+            {
+                return None;
+            }
+            let files: Vec<_> = fs::read_dir(&path).ok()?.collect();
+            if files.len() != FILES.len()
+                || !FILES.iter().all(|(name, content)| {
+                    let file = path.join(name);
+                    fs::symlink_metadata(&file).is_ok_and(|m| m.file_type().is_file())
+                        && fs::read(&file).is_ok_and(|bytes| bytes == content.as_bytes())
+                })
+            {
+                return None;
+            }
+            Some((entry.metadata().ok()?.modified().ok()?, path))
+        })
+        .collect();
+    exports.sort();
+    let mut excess = exports.len().saturating_sub(5);
+    for (_, path) in exports {
+        if excess == 0 {
+            break;
+        }
+        if path != current && fs::remove_dir_all(path).is_ok() {
+            excess -= 1;
+        }
+    }
 }
 
 #[cfg(test)]
@@ -67,6 +110,29 @@ mod tests {
             "user edited this export"
         );
         assert_eq!(fs::read_dir(documents.path()).unwrap().count(), 2);
+    }
+
+    #[test]
+    fn caps_untouched_exports_but_preserves_edits_and_extra_files() {
+        let documents = tempfile::tempdir().unwrap();
+        let edited = export(documents.path()).unwrap();
+        fs::write(edited.join("flows.json"), "user edits").unwrap();
+        let extra = export(documents.path()).unwrap();
+        fs::write(extra.join("notes.txt"), "user notes").unwrap();
+        let mut latest = PathBuf::new();
+        for _ in 0..8 {
+            latest = export(documents.path()).unwrap();
+        }
+        assert!(latest.exists());
+        assert_eq!(fs::read_dir(documents.path()).unwrap().count(), 7);
+        assert_eq!(
+            fs::read_to_string(edited.join("flows.json")).unwrap(),
+            "user edits"
+        );
+        assert_eq!(
+            fs::read_to_string(extra.join("notes.txt")).unwrap(),
+            "user notes"
+        );
     }
 
     #[test]

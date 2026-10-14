@@ -13,6 +13,7 @@ CoverBackground {
     property bool commandBusy: false
     property int requestSeq: 0
     property string pendingCmd: ""
+    property string configError: ""
 
     readonly property bool isPaired: cover.hasKey && cover.vin.length > 0
 
@@ -23,7 +24,7 @@ CoverBackground {
     readonly property bool isConnected: connectionKind === "connected"
     // A command can establish its own link while presence is scanning.
     // Use the dashboard's key/VIN prerequisites, not the connection icon.
-    readonly property bool canCommand: !!teslaClient && teslaClient.helperAvailable && isPaired
+    readonly property bool canCommand: !!teslaClient && teslaClient.helperAvailable && isPaired && configError.length === 0
 
     function runCoverCommand(cmd) {
         if (!cover.canCommand || cover.commandBusy)
@@ -42,6 +43,7 @@ CoverBackground {
     Connections {
         target: teslaClient
         onConfigLoaded: {
+            cover.configError = ""
             if (cover.vin !== vin) {
                 cover.pendingCmd = ""
                 cover.commandBusy = false
@@ -50,6 +52,7 @@ CoverBackground {
             cover.model = model
             cover.hasKey = hasKey
         }
+        onConfigLoadError: cover.configError = message
         onCommandFinished: {
             if (requestId === cover.pendingCmd) {
                 cover.commandBusy = false
@@ -88,6 +91,20 @@ CoverBackground {
         anchors.margins: Theme.paddingMedium
         spacing: Theme.paddingSmall
         z: 1
+
+        Label {
+            id: configErrorLabel
+            width: parent.width
+            visible: cover.configError.length > 0
+            height: visible ? implicitHeight : 0
+            wrapMode: Text.Wrap
+            font.pixelSize: Theme.fontSizeExtraSmall
+            text: cover.configError + "\n" + qsTr("Retry")
+            MouseArea {
+                anchors.fill: parent
+                onClicked: teslaClient.refreshConfig()
+            }
+        }
 
         // Status badge: filled glyphs on a dark disc so they read against
         // the Tesla watermark. Not an IconButton / MouseArea.
@@ -129,8 +146,8 @@ CoverBackground {
 
         Item {
             width: parent.width
-            height: Math.max(0, parent.height - statusSlot.height - actionRow.height
-                    - parent.spacing * (actionRow.visible ? 2 : 1))
+            height: Math.max(0, parent.height - statusSlot.height - actionRow.height - configErrorLabel.height
+                    - parent.spacing * ((actionRow.visible ? 2 : 1) + (configErrorLabel.visible ? 1 : 0)))
 
             Image {
                 id: carImage
