@@ -833,11 +833,11 @@ mod tests {
                 core_preview_destination(
                     ptr::null_mut(),
                     text.as_ptr(),
-                    &mut ok,
-                    &mut kind,
-                    &mut value1,
-                    &mut value2,
-                    &mut err
+                    ptr::addr_of_mut!(ok),
+                    ptr::addr_of_mut!(kind),
+                    ptr::addr_of_mut!(value1),
+                    ptr::addr_of_mut!(value2),
+                    ptr::addr_of_mut!(err)
                 ),
                 CoreError::Ok
             );
@@ -847,7 +847,7 @@ mod tests {
                 assert_eq!(CStr::from_ptr(slot).to_bytes(), b"");
                 core_string_free(slot);
             }
-            assert!(!CStr::from_ptr(err).to_bytes().is_empty());
+            assert_ne!(CStr::from_ptr(err).to_bytes(), b"");
             core_string_free(err);
         }
     }
@@ -862,13 +862,19 @@ mod tests {
         // SAFETY: valid core/input/slots; no configured session means failure.
         unsafe {
             assert_eq!(
-                core_share_destination(core, text.as_ptr(), &mut ok, &mut stdout, &mut err),
+                core_share_destination(
+                    core,
+                    text.as_ptr(),
+                    ptr::addr_of_mut!(ok),
+                    ptr::addr_of_mut!(stdout),
+                    ptr::addr_of_mut!(err)
+                ),
                 CoreError::Ok
             );
             assert!(!ok);
             assert!(!stdout.is_null());
             assert_eq!(CStr::from_ptr(stdout).to_bytes(), b"");
-            assert!(!CStr::from_ptr(err).to_bytes().is_empty());
+            assert_ne!(CStr::from_ptr(err).to_bytes(), b"");
             core_string_free(stdout);
             core_string_free(err);
             core_free(core);

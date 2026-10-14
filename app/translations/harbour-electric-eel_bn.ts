@@ -3,18 +3,18 @@
   <context>
     <name>ArgumentDialog</name>
     <message>
-      <location filename="../qml/pages/ArgumentDialog.qml" line="67" />
+      <location filename="../qml/pages/ArgumentDialog.qml" line="81" />
       <source>Run</source>
       <translation>চালান</translation>
     </message>
     <message>
-      <location filename="../qml/pages/ArgumentDialog.qml" line="135" />
-      <location filename="../qml/pages/ArgumentDialog.qml" line="216" />
+      <location filename="../qml/pages/ArgumentDialog.qml" line="149" />
+      <location filename="../qml/pages/ArgumentDialog.qml" line="230" />
       <source> (optional)</source>
       <translation> (ঐচ্ছিক)</translation>
     </message>
     <message>
-      <location filename="../qml/pages/ArgumentDialog.qml" line="139" />
+      <location filename="../qml/pages/ArgumentDialog.qml" line="153" />
       <source>(not set)</source>
       <translation>(সেট করা হয়নি)</translation>
     </message>
@@ -22,52 +22,57 @@
   <context>
     <name>CategoryPage</name>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="50" />
+      <location filename="../qml/pages/CategoryPage.qml" line="51" />
       <source>%1 • %2°C inside</source>
       <translation>%1 • ভেতরে %2 °C</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="51" />
+      <location filename="../qml/pages/CategoryPage.qml" line="52" />
       <source>Climate on</source>
       <translation>জলবায়ু চালু</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="51" />
+      <location filename="../qml/pages/CategoryPage.qml" line="52" />
       <source>Climate off</source>
       <translation>জলবায়ু বন্ধ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="57" />
+      <location filename="../qml/pages/CategoryPage.qml" line="58" />
       <source>%1% battery%2</source>
       <translation>%1% ব্যাটারি%2</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="59" />
+      <location filename="../qml/pages/CategoryPage.qml" line="61" />
       <source> • Charging</source>
       <translation> • চার্জ হচ্ছে</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="64" />
+      <location filename="../qml/pages/CategoryPage.qml" line="66" />
       <source>Doors locked</source>
       <translation>দরজা বন্ধ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="64" />
+      <location filename="../qml/pages/CategoryPage.qml" line="66" />
       <source>Doors unlocked</source>
       <translation>দরজা খোলা</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="86" />
+      <location filename="../qml/pages/CategoryPage.qml" line="93" />
       <source>OK</source>
       <translation>OK</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="86" />
+      <location filename="../qml/pages/CategoryPage.qml" line="93" />
       <source>exit code %1</source>
       <translation>এক্সিট কোড %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="191" />
+      <location filename="../qml/pages/CategoryPage.qml" line="175" />
+      <source>Retry</source>
+      <translation type="unfinished" />
+    </message>
+    <message>
+      <location filename="../qml/pages/CategoryPage.qml" line="213" />
       <source>Running %1...</source>
       <translation>%1 চলছে...</translation>
     </message>
@@ -416,6 +421,14 @@
     </message>
   </context>
   <context>
+    <name>CoverPage</name>
+    <message>
+      <location filename="../qml/cover/CoverPage.qml" line="102" />
+      <source>Retry</source>
+      <translation type="unfinished" />
+    </message>
+  </context>
+  <context>
     <name>FirstPage</name>
     <message>
       <location filename="../qml/pages/FirstPage.qml" line="287" />
@@ -459,68 +472,68 @@
       <translation>চাবি নেই - সেটিংস / পেয়ারিংয়ের জন্য ট্যাপ করুন</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="366" />
+      <location filename="../qml/pages/FirstPage.qml" line="367" />
       <source> • charging</source>
       <translation> • চার্জ হচ্ছে</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="375" />
+      <location filename="../qml/pages/FirstPage.qml" line="376" />
       <source>• %1°C</source>
       <translation>• %1 °C</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="400" />
+      <location filename="../qml/pages/FirstPage.qml" line="401" />
       <source>Updating...</source>
       <translation>আপডেট হচ্ছে...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="402" />
+      <location filename="../qml/pages/FirstPage.qml" line="403" />
       <source>Status unavailable (%1). Vehicle may be asleep - try Wake Vehicle (Attention), then Refresh Status.</source>
       <translation>অবস্থা পাওয়া যায়নি (%1)। গাড়ি ঘুমিয়ে থাকতে পারে - গাড়ি জাগান (মনোযোগ) চেষ্টা করুন, তারপর অবস্থা রিফ্রেশ করুন।</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="404" />
+      <location filename="../qml/pages/FirstPage.qml" line="405" />
       <source>Pull down to refresh status</source>
       <translation>অবস্থা রিফ্রেশ করতে নিচে টানুন</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="406" />
+      <location filename="../qml/pages/FirstPage.qml" line="407" />
       <source>Updated just now</source>
       <translation>এইমাত্র আপডেট হয়েছে</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="407" />
+      <location filename="../qml/pages/FirstPage.qml" line="408" />
       <source>Updated %1m ago</source>
       <translation>%1 মি আগে আপডেট হয়েছে</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="500" />
+      <location filename="../qml/pages/FirstPage.qml" line="501" />
       <source>Categories</source>
       <translation>বিভাগ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="550" />
+      <location filename="../qml/pages/FirstPage.qml" line="551" />
       <source>Send Destination</source>
       <translation>গন্তব্য পাঠান</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="554" />
+      <location filename="../qml/pages/FirstPage.qml" line="555" />
       <source>Pair Vehicle</source>
       <translation>গাড়ি পেয়ার করুন</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="558" />
+      <location filename="../qml/pages/FirstPage.qml" line="559" />
       <source>Settings</source>
       <translation>সেটিংস</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="562" />
+      <location filename="../qml/pages/FirstPage.qml" line="563" />
       <location filename="../qml/pages/SettingsPage.qml" line="190" />
       <source>Refresh</source>
       <translation>রিফ্রেশ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="566" />
+      <location filename="../qml/pages/FirstPage.qml" line="567" />
       <source>Refresh Status</source>
       <translation>অবস্থা রিফ্রেশ করুন</translation>
     </message>
@@ -528,72 +541,82 @@
   <context>
     <name>NavigationPage</name>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="50" />
+      <location filename="../qml/pages/NavigationPage.qml" line="54" />
       <source>Paste or type a destination first.</source>
       <translation>আগে গন্তব্য পেস্ট করুন বা লিখুন।</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="54" />
+      <location filename="../qml/pages/NavigationPage.qml" line="58" />
       <source>Checking...</source>
       <translation>পরীক্ষা চলছে...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="65" />
+      <location filename="../qml/pages/NavigationPage.qml" line="69" />
       <source>Nothing to send.</source>
       <translation>পাঠানোর কিছু নেই।</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="98" />
+      <location filename="../qml/pages/NavigationPage.qml" line="108" />
       <source>Cannot use this: %1</source>
       <translation>ব্যবহার করা যাবে না: %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="102" />
+      <location filename="../qml/pages/NavigationPage.qml" line="112" />
       <source>Coordinates %1, %2 — navigation will start there.</source>
       <translation>স্থানাঙ্ক %1, %2 — নেভিগেশন সেখানেই শুরু হবে।</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="105" />
+      <location filename="../qml/pages/NavigationPage.qml" line="115" />
       <source>Address "%1" — the car will look it up.</source>
       <translation>ঠিকানা “%1” — গাড়ি নিজেই খুঁজবে।</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="111" />
+      <location filename="../qml/pages/NavigationPage.qml" line="122" />
       <source>Send failed: %1</source>
       <translation>পাঠানো ব্যর্থ: %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="131" />
+      <location filename="../qml/pages/NavigationPage.qml" line="122" />
+      <source>OK</source>
+      <translation type="unfinished" />
+    </message>
+    <message>
+      <location filename="../qml/pages/NavigationPage.qml" line="142" />
       <source>Car Navigation</source>
       <translation>গাড়ি নেভিগেশন</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="136" />
+      <location filename="../qml/pages/NavigationPage.qml" line="155" />
+      <source>Retry</source>
+      <translation type="unfinished" />
+    </message>
+    <message>
+      <location filename="../qml/pages/NavigationPage.qml" line="162" />
       <source>Destination</source>
       <translation>গন্তব্য</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="137" />
+      <location filename="../qml/pages/NavigationPage.qml" line="163" />
       <source>Paste address, coordinates, or map link</source>
       <translation>ঠিকানা, স্থানাঙ্ক বা ম্যাপ লিঙ্ক পেস্ট করুন</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="145" />
+      <location filename="../qml/pages/NavigationPage.qml" line="171" />
       <source>Preview</source>
       <translation>প্রাকদর্শন</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="163" />
+      <location filename="../qml/pages/NavigationPage.qml" line="189" />
       <source>Send to Car</source>
       <translation>গাড়িতে পাঠান</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="185" />
+      <location filename="../qml/pages/NavigationPage.qml" line="211" />
       <source>Notes</source>
       <translation>নোট</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="194" />
+      <location filename="../qml/pages/NavigationPage.qml" line="220" />
       <source>This uses Bluetooth, like lock/unlock — the car must be in range, no internet needed on either side. Coordinates are sent exactly; addresses and links are looked up by the car itself, so unusual spellings may resolve differently than on your phone. From Android apps: copy the address or link, then paste it above.</source>
       <translation>লক/আনলকের মতো Bluetooth ব্যবহার হয় — গাড়ি রেঞ্জে থাকতে হবে, ইন্টারনেট দরকার নেই। স্থানাঙ্ক নির্ভুল পাঠানো হয়; ঠিকানা ও লিঙ্ক গাড়ি নিজেই খোঁজে, তাই অস্বাভাবিক বানান ফোনের চেয়ে আলাদা বোঝা যেতে পারে। Android অ্যাপ থেকে: ঠিকানা বা লিঙ্ক কপি করে উপরে পেস্ট করুন।</translation>
     </message>
@@ -601,77 +624,82 @@
   <context>
     <name>PairingPage</name>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="30" />
+      <location filename="../qml/pages/PairingPage.qml" line="31" />
       <source>Key generated. Tap "Pair with Vehicle", then tap your NFC card on the center console when prompted on the car's screen.</source>
       <translation>চাবি তৈরি। “গাড়ি পেয়ার করুন” ট্যাপ করুন, তারপর গাড়ির স্ক্রিন বললে NFC কার্ড সেন্টার কনসোলে ট্যাপ করুন।</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="32" />
+      <location filename="../qml/pages/PairingPage.qml" line="33" />
       <source>Key generation failed: %1</source>
       <translation>চাবি তৈরি ব্যর্থ: %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="37" />
+      <location filename="../qml/pages/PairingPage.qml" line="38" />
       <source>Paired.</source>
       <translation>পেয়ার হয়েছে।</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="37" />
+      <location filename="../qml/pages/PairingPage.qml" line="38" />
       <source>Pairing failed: %1</source>
       <translation>পেয়ারিং ব্যর্থ: %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="43" />
+      <location filename="../qml/pages/PairingPage.qml" line="45" />
       <source>No keys listed</source>
       <translation type="unfinished" />
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="73" />
+      <location filename="../qml/pages/PairingPage.qml" line="85" />
       <source>Pairing &amp; Keys</source>
       <translation>পেয়ারিং ও চাবি</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="80" />
+      <location filename="../qml/pages/PairingPage.qml" line="98" />
+      <source>Retry</source>
+      <translation type="unfinished" />
+    </message>
+    <message>
+      <location filename="../qml/pages/PairingPage.qml" line="107" />
       <source>Set the VIN in Settings first. Then generate a key, then pair it with the car over BLE - you'll need to be next to the vehicle and tap the NFC card on the center console to approve.</source>
       <translation>আগে সেটিংসে VIN দিন। তারপর চাবি বানান এবং BLE দিয়ে গাড়ির সাথে পেয়ার করুন – গাড়ির পাশে দাঁড়ান এবং অনুমোদনের জন্য NFC কার্ড সেন্টার কনসোলে ট্যাপ করুন।</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="92" />
+      <location filename="../qml/pages/PairingPage.qml" line="119" />
       <source>Phone key starting...</source>
       <translation>ফোন চাবি চালু হচ্ছে...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="120" />
+      <location filename="../qml/pages/PairingPage.qml" line="147" />
       <source>Generating...</source>
       <translation>তৈরি হচ্ছে...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="120" />
+      <location filename="../qml/pages/PairingPage.qml" line="147" />
       <source>Generate Key</source>
       <translation>চাবি তৈরি করুন</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="146" />
+      <location filename="../qml/pages/PairingPage.qml" line="173" />
       <source>Waiting for NFC tap...</source>
       <translation>NFC ট্যাপের অপেক্ষা...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="146" />
+      <location filename="../qml/pages/PairingPage.qml" line="173" />
       <source>Pair with Vehicle</source>
       <translation>গাড়ি পেয়ার করুন</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="152" />
+      <location filename="../qml/pages/PairingPage.qml" line="179" />
       <source>Requesting pairing over BLE - approve on the car's touchscreen / NFC card now.</source>
       <translation>BLE পেয়ারিং অনুরোধিত – টাচস্ক্রিন / NFC কার্ডে এখনই অনুমোদন দিন।</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="172" />
+      <location filename="../qml/pages/PairingPage.qml" line="199" />
       <source>Enrolled Keys</source>
       <translation>নিবন্ধিত চাবি</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="176" />
+      <location filename="../qml/pages/PairingPage.qml" line="203" />
       <source>List Enrolled Keys</source>
       <translation>নিবন্ধিত চাবি তালিকাভুক্ত করুন</translation>
     </message>

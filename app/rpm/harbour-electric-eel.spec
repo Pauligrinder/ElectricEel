@@ -1,6 +1,6 @@
 Name:       harbour-electric-eel
 Summary:    Control your Tesla over Bluetooth
-Version:    0.3.3
+Version:    0.3.4
 Release:    1
 License:    ASL 2.0
 URL:        https://github.com/nappa85/ElectricEel
@@ -53,6 +53,10 @@ desktop-file-install --delete-original \
 %{_datadir}/icons/hicolor/*/apps/%{name}.png
 
 %changelog
+* Wed Oct 14 2026 Marco Napetti <marco.napetti@proton.me> - 0.3.4-1
+- Fix charging indicators, navigation share races and pairing request handling
+- Report configuration load failures and validate command arguments
+- Clear failed FFI outputs and cap untouched Automagic exports
 * Tue Oct 13 2026 Marco Napetti <marco.napetti@proton.me> - 0.3.3-1
 - Export Automagic presets through Rust using the Documents permission
 - Move delayed-away policy and typed runtime notifications into Rust
