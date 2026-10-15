@@ -1,6 +1,6 @@
 Name:       harbour-electric-eel
 Summary:    Control your Tesla over Bluetooth
-Version:    0.3.4
+Version:    0.3.5
 Release:    1
 License:    ASL 2.0
 URL:        https://github.com/nappa85/ElectricEel
@@ -53,6 +53,10 @@ desktop-file-install --delete-original \
 %{_datadir}/icons/hicolor/*/apps/%{name}.png
 
 %changelog
+* Thu Oct 15 2026 Marco Napetti <marco.napetti@proton.me> - 0.3.5-1
+- Fix dashboard freshness, pairing key validation and command parsing regressions
+- Improve session concurrency and RX backpressure handling
+- Complete translations in all 39 languages
 * Wed Oct 14 2026 Marco Napetti <marco.napetti@proton.me> - 0.3.4-1
 - Fix charging indicators, navigation share races and pairing request handling
 - Report configuration load failures and validate command arguments

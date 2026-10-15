@@ -32,7 +32,8 @@ TeslaClient::~TeslaClient()
 
 QString TeslaClient::newRequestId(const QString &prefix, const QString &vin) const
 {
-    return prefix + QStringLiteral("#") + QUuid::createUuid().toString(QUuid::WithoutBraces)
+    // Sailfish's Qt predates QUuid::WithoutBraces; trim the canonical braces.
+    return prefix + QStringLiteral("#") + QUuid::createUuid().toString().mid(1, 36)
         + QStringLiteral(":") + vin;
 }
 
