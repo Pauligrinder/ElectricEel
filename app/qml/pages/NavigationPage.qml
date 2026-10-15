@@ -17,9 +17,7 @@ Page {
     id: page
     objectName: "navigationPage"
     property var teslaClient
-    property string vin: ""
-    property bool configReady: false
-    property string configError: ""
+    readonly property string vin: teslaClient ? teslaClient.vin : ""
     // Prefilled by the Share handler (harbour-electric-eel.qml) or left
     // empty for manual paste/typing.
     property string initialText: ""
@@ -73,29 +71,18 @@ Page {
         teslaClient.shareDestination(page.pendingSendId, text)
     }
 
+    // Pending replies belong to the previous car (their IDs carry its VIN).
+    onVinChanged: {
+        page.pendingPreviewId = ""
+        page.pendingSendId = ""
+        page.previewing = false
+        page.sending = false
+        page.previewText = ""
+        page.resultText = ""
+    }
+
     Connections {
         target: teslaClient
-        onConfigLoaded: {
-            page.configError = ""
-            if (page.vin !== vin) {
-                page.pendingPreviewId = ""
-                page.pendingSendId = ""
-                page.previewing = false
-                page.sending = false
-                page.previewText = ""
-                page.resultText = ""
-            }
-            page.vin = vin
-            if (!page.configReady) {
-                page.configReady = true
-                if (page.initialText.length > 0)
-                    page.preview()
-            }
-        }
-        onConfigLoadError: {
-            page.configReady = false
-            page.configError = message
-        }
         onDestinationPreviewed: {
             if (requestId !== page.pendingPreviewId)
                 return
@@ -120,10 +107,11 @@ Page {
         }
     }
 
+    // Preview is local parsing and needs no configuration.
     Component.onCompleted: {
-        teslaClient.refreshConfig()
         if (page.initialText.length > 0) {
             destField.text = page.initialText
+            page.preview()
         }
     }
 
@@ -138,20 +126,7 @@ Page {
 
             PageHeader { title: qsTr("Car Navigation") }
 
-            Label {
-                width: parent.width - Theme.horizontalPageMargin * 2
-                anchors.horizontalCenter: parent.horizontalCenter
-                visible: page.configError.length > 0
-                wrapMode: Text.Wrap
-                text: page.configError
-                color: Theme.highlightColor
-            }
-            Button {
-                anchors.horizontalCenter: parent.horizontalCenter
-                visible: page.configError.length > 0
-                text: qsTr("Retry")
-                onClicked: teslaClient.refreshConfig()
-            }
+            ConfigErrorBanner { client: teslaClient }
 
             TextArea {
                 id: destField
@@ -166,7 +141,7 @@ Page {
             Button {
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: qsTr("Preview")
-                enabled: page.configReady && !page.sending && !page.previewing
+                enabled: !page.sending && !page.previewing
                 onClicked: page.preview()
             }
 
@@ -184,7 +159,7 @@ Page {
             Button {
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: qsTr("Send to Car")
-                enabled: page.configReady && !page.sending
+                enabled: teslaClient.configReady && !page.sending
                 onClicked: page.send()
             }
 

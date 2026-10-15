@@ -8,9 +8,8 @@ Page {
     property var teslaClient
 
     property string statusText: qsTr("Loading current configuration...")
-    // Set while onConfigLoaded is repopulating the form so vinField's
-    // onTextChanged doesn't auto-guess the model and clobber the model value
-    // that was actually saved for this VIN (see modelField's comment).
+    // Set while onConfigLoaded is repopulating the form so programmatic
+    // field updates are not mistaken for user edits.
     property bool loadingConfig: false
     // False until the first GetConfig reply actually lands. refreshConfig()
     // (below) is async - every field starts at its blank/default value, so
@@ -25,7 +24,6 @@ Page {
     property string savedModel: ""
     property bool vinDirty: false
     property bool modelDirty: false
-    property bool guessingModel: false
     property bool keyNameDirty: false
     property bool connectTimeoutDirty: false
     property bool commandTimeoutDirty: false
@@ -64,6 +62,19 @@ Page {
         }
         onConfigSaved: {
             page.statusText = ok ? qsTr("Saved") : qsTr("Save failed: %1").arg(errorMessage)
+            if (!ok)
+                return
+            // The saved values are now the configuration: let the reload show
+            // what Rust normalized (trimmed VIN/key name) and follow later
+            // changes again.
+            page.vinDirty = false
+            page.modelDirty = false
+            page.keyNameDirty = false
+            page.connectTimeoutDirty = false
+            page.commandTimeoutDirty = false
+            page.coverLeftDirty = false
+            page.coverRightDirty = false
+            teslaClient.refreshConfig()
         }
         onAutomagicExportFinished: {
             page.statusText = ok
@@ -114,19 +125,13 @@ Page {
                 // docs/limitations.md's Settings load/save race entry.
                 placeholderText: qsTr("17-character VIN")
                 EnterKey.iconSource: "image://theme/icon-m-enter-next"
-                // The VIN parser preselects the matching model in the list
-                // below as soon as a recognizable prefix appears. A manual
-                // selection made before the VIN was pasted is overwritten,
-                // but that's the point of "Auto" preselect - and the user
-                // can always re-pick after. Suppressed while config loads so
-                // a saved explicit/model value survives repopulation.
+                // Typing a VIN does not move the model picker: "Auto" already
+                // derives the silhouette from the VIN, and preselecting a
+                // guess would persist it as an explicit override on Save.
                 onTextChanged: {
                     if (page.loadingConfig || (!activeFocus && !page.configReady))
                         return
                     page.vinDirty = true
-                    page.guessingModel = true
-                    modelField.currentIndex = VState.modelIndex(VState.guessModel(text))
-                    page.guessingModel = false
                 }
             }
 
@@ -141,7 +146,7 @@ Page {
                 label: qsTr("Front-page car model")
                 description: qsTr("Auto selects the model from the VIN")
                 onCurrentIndexChanged: {
-                    if (!page.loadingConfig && !page.guessingModel && page.configReady)
+                    if (!page.loadingConfig && page.configReady)
                         page.modelDirty = true
                 }
                 menu: ContextMenu {
@@ -281,7 +286,7 @@ Page {
                 // page.configReady) - otherwise this fires against the
                 // fields' blank/default values, not what's really saved.
                 enabled: page.configReady
-                onClicked: teslaClient.setConfig(vinField.text, modelField.currentIndex < 0 ? page.savedModel : VState.MODELS[modelField.currentIndex].id,
+                onClicked: teslaClient.setConfig(vinField.text, page.modelDirty && modelField.currentIndex >= 0 ? VState.MODELS[modelField.currentIndex].id : page.savedModel,
                                                   keyNameField.text,
                                                   connectTimeoutSlider.value, commandTimeoutSlider.value,
                                                   CoverActions.ACTIONS[coverLeftField.currentIndex].id,
@@ -296,11 +301,6 @@ Page {
 
             SectionHeader { text: qsTr("About") }
 
-            // Versions of the app and its in-process control core. They're
-            // stamped from the same release tag and compiled together, so a
-            // difference (or an empty core version, i.e. one too old to have
-            // GetVersion) means something's wrong with the install - exactly
-            // the state that used to surface as a silent "No VIN configured".
             Label {
                 anchors.left: parent.left
                 anchors.right: parent.right
@@ -309,26 +309,10 @@ Page {
                 font.pixelSize: Theme.fontSizeExtraSmall
                 color: Theme.secondaryColor
                 text: qsTr("App: ElectricEel %1   |   core: %2")
-                    .arg(teslaClient.appVersion)
-                    .arg(teslaClient.helperVersion.length > 0
-                         ? teslaClient.helperVersion
-                         : qsTr("(too old / unknown)"))
+                    .arg(teslaClient.appVersion).arg(teslaClient.helperVersion)
             }
 
-            Label {
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.margins: Theme.horizontalPageMargin
-                wrapMode: Text.Wrap
-                font.pixelSize: Theme.fontSizeExtraSmall
-                color: Theme.highlightColor
-                visible: teslaClient.helperVersion.length === 0
-                        || teslaClient.helperVersion !== teslaClient.appVersion
-                text: teslaClient.helperVersion.length === 0
-                    ? qsTr("The control core is too old to report a version - reinstall the app.")
-                    : qsTr("Version mismatch: core %1 vs app %2 - reinstall the app.")
-                        .arg(teslaClient.helperVersion).arg(teslaClient.appVersion)
-            }
+            VersionWarning { client: teslaClient }
         }
     }
 }

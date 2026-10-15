@@ -1,8 +1,9 @@
-//! Rust-owned phone-key controller and operation orchestration.
+//! Rust-owned phone-key controller and operation orchestration on top of the
+//! in-process Go protocol library (`tesla_ble`).
 use crate::{
-    phone_key::Proximity,
-    session_client::{RunOutcome, SessionError, SessionEvent},
-    tesla_ble::{self, Domain, Operation, Session, Status},
+    commands::Command,
+    phone_key::{PresenceEvent, Proximity},
+    tesla_ble::{self, Domain, ObservationKind, Operation, Session, Status, Value},
 };
 use p256::elliptic_curve::sec1::ToEncodedPoint;
 use serde::Deserialize;
@@ -16,6 +17,38 @@ use std::{
     thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
+
+/// A phone-key lifecycle/state event for the runtime.
+#[derive(Clone, Debug)]
+pub(crate) struct SessionEvent {
+    pub kind: PresenceEvent,
+    pub vin: String,
+    pub time: String,
+    pub error: String,
+    /// The event was caused by the Bluetooth adapter being powered off.
+    pub bluetooth_off: bool,
+    pub generation: u64,
+}
+
+/// Result of one vehicle command.
+#[derive(Debug)]
+pub(crate) struct RunOutcome {
+    pub ok: bool,
+    pub stdout: String,
+    pub stderr: String,
+    pub exit_code: i32,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum SessionError {
+    #[error("{0}")]
+    Library(String),
+    /// The Bluetooth adapter is powered off (`EE_BLUETOOTH_OFF`).
+    #[error("{0}")]
+    BluetoothOff(String),
+    #[error("operation cancelled")]
+    Cancelled,
+}
 
 #[derive(Deserialize)]
 struct BodyControllerState {
@@ -39,11 +72,24 @@ fn user_present(payload: &[u8]) -> bool {
         .is_ok_and(|state| state.user_presence == UserPresence::Present)
 }
 
+/// Idle foreground links are closed after this long without a command.
+const IDLE_DISCONNECT: Duration = Duration::from_secs(90);
+/// Upper bound on a maintenance sleep; every relevant change also wakes it.
+const MAINTENANCE_SAFETY_WAKE: Duration = Duration::from_secs(60);
+
 fn seconds(value: i32) -> Duration {
     Duration::from_secs(u64::try_from(value.max(1)).unwrap_or(1))
 }
 fn failure(error: impl std::fmt::Display) -> SessionError {
     SessionError::Library(error.to_string())
+}
+/// A non-`Ok` completion as an error, keeping the Bluetooth-off cause typed.
+fn rejected(result: tesla_ble::Outcome) -> SessionError {
+    if result.status == Status::BluetoothOff {
+        SessionError::BluetoothOff(result.error)
+    } else {
+        SessionError::Library(result.error)
+    }
 }
 fn outcome(result: tesla_ble::Outcome) -> RunOutcome {
     RunOutcome {
@@ -58,14 +104,27 @@ fn execute(
     operation: Operation,
     timeout: Duration,
 ) -> Result<tesla_ble::Outcome, SessionError> {
-    async_global_executor::block_on(session.execute(operation, timeout)).map_err(failure)
+    futures_lite::future::block_on(session.execute(operation, timeout)).map_err(failure)
 }
+/// The public key an add-key request enrolls (its first, byte-string value).
+fn enrollment_key(request: &Operation) -> Option<Vec<u8>> {
+    match request {
+        Operation::Command { values, .. } => match values.first() {
+            Some(Value::Bytes(key)) => Some(key.clone()),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+type Slot = Option<(String, String, Arc<Session>)>;
 
 struct Inner {
     path: PathBuf,
-    state: PathBuf,
     library: Mutex<Option<Arc<tesla_ble::Library>>>,
-    session: Mutex<Option<(String, String, Arc<Session>)>>,
+    /// Only ever held briefly: blocking teardown happens after the session
+    /// was taken out, so `cancel` (GUI thread) never waits for Go.
+    session: Mutex<Slot>,
     operation: async_lock::Mutex<()>,
     generation: AtomicU64,
     mode: AtomicBool,
@@ -77,6 +136,22 @@ struct Inner {
     terminal: Mutex<Option<SessionEvent>>,
     ready: async_channel::Sender<()>,
     wait: async_channel::Receiver<()>,
+    /// Wakes the maintenance thread to recompute its deadline.
+    maintenance_wake: async_channel::Sender<()>,
+    maintenance_wait: async_channel::Receiver<()>,
+}
+
+impl Inner {
+    fn wake_maintenance(&self) {
+        let _ = self.maintenance_wake.try_send(());
+    }
+    fn current(&self) -> Option<Arc<Session>> {
+        self.session
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_ref()
+            .map(|(_, _, session)| Arc::clone(session))
+    }
 }
 
 pub(crate) struct ProtocolClient {
@@ -86,12 +161,12 @@ pub(crate) struct ProtocolClient {
 }
 
 impl ProtocolClient {
-    pub fn new(path: PathBuf, state: PathBuf) -> Self {
+    pub fn new(path: PathBuf) -> Self {
         let (ready, wait) = async_channel::bounded(1);
+        let (maintenance_wake, maintenance_wait) = async_channel::bounded(1);
         Self {
             inner: Arc::new(Inner {
                 path,
-                state,
                 library: Mutex::new(None),
                 session: Mutex::new(None),
                 operation: async_lock::Mutex::new(()),
@@ -105,6 +180,8 @@ impl ProtocolClient {
                 terminal: Mutex::new(None),
                 ready,
                 wait,
+                maintenance_wake,
+                maintenance_wait,
             }),
             controller: Mutex::new(None),
             maintenance: Mutex::new(None),
@@ -114,43 +191,22 @@ impl ProtocolClient {
         if self.inner.cancelled.load(Ordering::SeqCst) {
             return Err(SessionError::Cancelled);
         }
-        let mut slot = self
-            .inner
-            .session
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some((old_vin, old_key, session)) = &*slot {
-            if old_vin == vin && old_key == key && !session.stopped() && !session.faulted() {
-                return Ok(Arc::clone(session));
+        // Decide under the slot lock, but stop/join/drop the old session only
+        // after releasing it: destroy blocks until Go's teardown completes.
+        let old = {
+            let mut slot = self
+                .inner
+                .session
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if let Some((old_vin, old_key, session)) = &*slot {
+                if old_vin == vin && old_key == key && !session.stopped() && !session.faulted() {
+                    return Ok(Arc::clone(session));
+                }
+                session.stop();
             }
-            session.stop();
-        }
-        drop(slot.take());
-        let mut library = self
-            .inner
-            .library
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if library.is_none() {
-            // SAFETY: app-owned fixed library path, never supplied through UI.
-            *library =
-                Some(unsafe { tesla_ble::Library::load(&self.inner.path) }.map_err(failure)?);
-        }
-        let signing = crate::keys::load(Path::new(key)).map_err(failure)?;
-        let scalar = zeroize::Zeroizing::new(<[u8; 32]>::from(signing.to_bytes()));
-        let session = Arc::new(
-            Session::new(
-                Arc::clone(library.as_ref().ok_or_else(|| failure("missing library"))?),
-                vin,
-                "",
-                &scalar,
-            )
-            .map_err(failure)?,
-        );
-        *slot = Some((vin.into(), key.into(), Arc::clone(&session)));
-        self.inner.connected.store(false, Ordering::SeqCst);
-        let inner = Arc::clone(&self.inner);
-        let session_for_worker = Arc::clone(&session);
+            slot.take()
+        };
         let mut worker = self
             .maintenance
             .lock()
@@ -158,6 +214,32 @@ impl ProtocolClient {
         if let Some(old) = worker.take() {
             let _ = old.join();
         }
+        drop(old);
+        let library = {
+            let mut library = self
+                .inner
+                .library
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if library.is_none() {
+                // SAFETY: app-owned fixed library path, never supplied through UI.
+                *library =
+                    Some(unsafe { tesla_ble::Library::load(&self.inner.path) }.map_err(failure)?);
+            }
+            Arc::clone(library.as_ref().ok_or_else(|| failure("missing library"))?)
+        };
+        let signing = crate::keys::load(Path::new(key)).map_err(failure)?;
+        let scalar = zeroize::Zeroizing::new(<[u8; 32]>::from(signing.to_bytes()));
+        let session = Arc::new(Session::new(library, vin, "", &scalar).map_err(failure)?);
+        *self
+            .inner
+            .session
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) =
+            Some((vin.into(), key.into(), Arc::clone(&session)));
+        self.inner.connected.store(false, Ordering::SeqCst);
+        let inner = Arc::clone(&self.inner);
+        let session_for_worker = Arc::clone(&session);
         *worker = Some(thread::spawn(move || {
             maintenance(&inner, &session_for_worker);
         }));
@@ -177,6 +259,7 @@ impl ProtocolClient {
     pub fn is_presence_active(&self) -> bool {
         self.inner.mode.load(Ordering::SeqCst) && self.is_alive()
     }
+    /// Permanent shutdown. Non-blocking: safe on the GUI thread.
     pub fn cancel(&self) {
         self.inner.cancelled.store(true, Ordering::SeqCst);
         self.inner.mode.store(false, Ordering::SeqCst);
@@ -186,9 +269,11 @@ impl ProtocolClient {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
         {
+            // Stop is non-blocking; the slot lock is never held across teardown.
             session.stop();
         }
         let _ = self.inner.ready.try_send(());
+        self.inner.wake_maintenance();
     }
     pub fn invalidate(&self) {
         self.inner.mode.store(false, Ordering::SeqCst);
@@ -210,11 +295,14 @@ impl ProtocolClient {
             let _ = worker.join();
         }
         let _operation = self.inner.operation.lock_blocking();
-        self.inner
+        let old = self
+            .inner
             .session
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .take();
+        // Destroy (blocking) runs here, with the slot lock already released.
+        drop(old);
         self.inner.generation.fetch_add(1, Ordering::SeqCst);
         self.inner.connected.store(false, Ordering::SeqCst);
         self.clear_events();
@@ -234,36 +322,26 @@ impl ProtocolClient {
             let _ = worker.join();
         }
     }
-    pub fn keygen(&self, force: bool, key: &str) -> Result<RunOutcome, SessionError> {
-        let public = self.inner.state.join("public_key.pem");
-        let pem = crate::keys::generate(Path::new(key), &public, force).map_err(failure)?;
-        Ok(RunOutcome {
-            ok: true,
-            stdout: pem,
-            stderr: String::new(),
-            exit_code: 0,
-        })
-    }
     pub fn start_presence(
         &self,
         vin: &str,
         key: &str,
         connect: i32,
         command: i32,
-    ) -> Result<RunOutcome, SessionError> {
+    ) -> Result<(), SessionError> {
         if self.is_presence_active() {
-            return Ok(success());
+            return Ok(());
         }
         self.join_controller();
         let session = self.ensure(vin, key)?;
         let _operation = self.inner.operation.lock_blocking();
         let result = execute(&session, Operation::WatchStart, seconds(connect))?;
         if result.status != Status::Ok {
-            return Ok(outcome(result));
+            return Err(rejected(result));
         }
         let result = execute(&session, Operation::PassiveEntry(true), seconds(command))?;
         if result.status != Status::Ok {
-            return Ok(outcome(result));
+            return Err(rejected(result));
         }
         self.inner.mode.store(true, Ordering::SeqCst);
         let inner = Arc::clone(&self.inner);
@@ -282,36 +360,26 @@ impl ProtocolClient {
                 seconds(command),
             );
         }));
-        Ok(success())
+        Ok(())
     }
     pub fn stop_presence(&self) -> Result<(), SessionError> {
         self.inner.mode.store(false, Ordering::SeqCst);
-        if let Some((_, _, session)) = &*self
-            .inner
-            .session
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-        {
+        self.inner.wake_maintenance();
+        let session = self.inner.current();
+        if let Some(session) = &session {
             session.cancel_operations();
         }
         self.join_controller();
         let _operation = self.inner.operation.lock_blocking();
-        if let Some((_, _, session)) = &*self
-            .inner
-            .session
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-        {
-            if !session.stopped() {
-                for operation in [
-                    Operation::PassiveEntry(false),
-                    Operation::WatchStop,
-                    Operation::Disconnect,
-                ] {
-                    let result = execute(session, operation, Duration::from_secs(5))?;
-                    if result.status != Status::Ok {
-                        return Err(failure(result.error));
-                    }
+        if let Some(session) = session.filter(|session| !session.stopped()) {
+            for operation in [
+                Operation::PassiveEntry(false),
+                Operation::WatchStop,
+                Operation::Disconnect,
+            ] {
+                let result = execute(&session, operation, Duration::from_secs(5))?;
+                if result.status != Status::Ok {
+                    return Err(failure(result.error));
                 }
             }
         }
@@ -323,52 +391,67 @@ impl ProtocolClient {
             .unwrap_or_else(std::sync::PoisonError::into_inner) = Proximity::default();
         Ok(())
     }
-    #[allow(clippy::too_many_arguments)]
+    /// Executes one parsed command. `cmd` selects the link's domain; an
+    /// `add-key-request` additionally waits for NFC approval of that key.
     pub fn run(
         &self,
-        cmd: &str,
-        args: &[String],
+        cmd: Command,
+        operation: Operation,
         vin: &str,
         key: &str,
         connect: i32,
         command: i32,
-        _timeout: Duration,
     ) -> Result<RunOutcome, SessionError> {
-        if cmd == "pair" {
-            return self.enroll(args, vin, key, connect, command, true);
-        }
-        if cmd == "add-key-request" {
+        if cmd == Command::AddKeyRequest {
+            let public = enrollment_key(&operation)
+                .ok_or_else(|| failure("add-key-request requires a public key"))?;
             let restart = self.is_presence_active();
-            let result = self.enroll(args, vin, key, connect, command, false);
+            let result = self.enroll(operation, &public, vin, key, connect, command);
             if restart && !self.inner.cancelled.load(Ordering::SeqCst) {
                 match self.start_presence(vin, key, connect, command) {
-                    Ok(outcome) if outcome.ok => emit(
+                    Ok(()) => emit(
                         &self.inner,
                         vin,
                         self.generation(),
-                        "presence_restarted",
+                        PresenceEvent::Restarted,
                         "",
                         Status::Ok,
                     ),
-                    outcome => {
-                        let error = match outcome {
-                            Ok(outcome) => outcome.stderr,
-                            Err(error) => error.to_string(),
-                        };
-                        emit(
-                            &self.inner,
-                            vin,
-                            self.generation(),
-                            "presence_stopped",
-                            &error,
-                            Status::Failed,
-                        );
-                    }
+                    Err(error) => emit(
+                        &self.inner,
+                        vin,
+                        self.generation(),
+                        PresenceEvent::Stopped,
+                        &error.to_string(),
+                        if matches!(error, SessionError::BluetoothOff(_)) {
+                            Status::BluetoothOff
+                        } else {
+                            Status::Failed
+                        },
+                    ),
                 }
             }
             return result;
         }
-        let operation = crate::protocol_commands::parse(cmd, args).map_err(failure)?;
+        self.execute_in(
+            crate::protocol_commands::domain(cmd),
+            operation,
+            vin,
+            key,
+            connect,
+            command,
+        )
+    }
+    /// Executes one operation on a link authenticated for `domain`.
+    pub fn execute_in(
+        &self,
+        domain: Domain,
+        operation: Operation,
+        vin: &str,
+        key: &str,
+        connect: i32,
+        command: i32,
+    ) -> Result<RunOutcome, SessionError> {
         let _operation = self.inner.operation.lock_blocking();
         let session = self.ensure(vin, key)?;
         if self.inner.mode.load(Ordering::SeqCst)
@@ -384,32 +467,6 @@ impl ProtocolClient {
                 "vehicle not nearby; wait for phone key to connect and retry",
             ));
         }
-        let domain = if cmd == "add-key-request" || cmd == "session-info" {
-            Domain::Unauthenticated
-        } else if [
-            "lock",
-            "unlock",
-            "drive",
-            "wake",
-            "body-controller-state",
-            "add-key",
-            "remove-key",
-            "list-keys",
-            "trunk-open",
-            "trunk-move",
-            "trunk-close",
-            "frunk-open",
-            "tonneau-open",
-            "tonneau-close",
-            "tonneau-stop",
-            "autosecure-modelx",
-        ]
-        .contains(&cmd)
-        {
-            Domain::Vcsec
-        } else {
-            Domain::Infotainment
-        };
         let result = execute(&session, Operation::Connect(domain), seconds(connect))?;
         if result.status != Status::Ok {
             self.inner.connected.store(false, Ordering::SeqCst);
@@ -432,31 +489,48 @@ impl ProtocolClient {
             .last_command
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(Instant::now());
+        self.inner.wake_maintenance();
         Ok(outcome(result))
     }
-    fn enroll(
+    /// Enrolls this phone's own key as an owner phone key. The public file must
+    /// belong to `key`, so an interrupted key rotation can never enroll a stale
+    /// public half.
+    pub fn pair(
         &self,
-        args: &[String],
+        public_key: &Path,
         vin: &str,
         key: &str,
         connect: i32,
         command: i32,
-        own_key: bool,
     ) -> Result<RunOutcome, SessionError> {
-        if args.len() != 3 {
-            return Err(failure("pair requires key, role and form factor"));
-        }
-        let public = crate::keys::public_bytes(Path::new(&args[0])).map_err(failure)?;
-        if own_key
-            && public
-                != crate::keys::load(Path::new(key))
-                    .map_err(failure)?
-                    .public_key()
-                    .to_encoded_point(false)
-                    .as_bytes()
+        let public = crate::keys::public_bytes(public_key).map_err(failure)?;
+        if public
+            != crate::keys::load(Path::new(key))
+                .map_err(failure)?
+                .public_key()
+                .to_encoded_point(false)
+                .as_bytes()
         {
             return Err(failure("pairing public key does not match private key"));
         }
+        let args = [
+            public_key.to_string_lossy().into_owned(),
+            "owner".into(),
+            "android_device".into(),
+        ];
+        let request =
+            crate::protocol_commands::parse(Command::AddKeyRequest, &args).map_err(failure)?;
+        self.enroll(request, &public, vin, key, connect, command)
+    }
+    fn enroll(
+        &self,
+        request: Operation,
+        public: &[u8],
+        vin: &str,
+        key: &str,
+        connect: i32,
+        command: i32,
+    ) -> Result<RunOutcome, SessionError> {
         self.stop_presence()?;
         let _operation = self.inner.operation.lock_blocking();
         let session = self.ensure(vin, key)?;
@@ -473,7 +547,6 @@ impl ProtocolClient {
         if result.status != Status::Ok {
             return Ok(outcome(result));
         }
-        let request = crate::protocol_commands::parse("add-key-request", args).map_err(failure)?;
         let sent = execute(&session, request, seconds(command))?;
         if sent.status != Status::Ok {
             return Ok(outcome(sent));
@@ -485,7 +558,7 @@ impl ProtocolClient {
             }
             let result = execute(
                 &session,
-                Operation::EnrollmentStatus(public.clone()),
+                Operation::EnrollmentStatus(public.to_vec()),
                 Duration::from_secs(3).min(deadline.saturating_duration_since(Instant::now())),
             )?;
             if result.status == Status::Ok {
@@ -553,28 +626,23 @@ impl Drop for ProtocolClient {
         self.invalidate();
     }
 }
-fn success() -> RunOutcome {
-    RunOutcome {
-        ok: true,
-        stdout: String::new(),
-        stderr: String::new(),
-        exit_code: 0,
-    }
-}
-fn emit(inner: &Inner, vin: &str, generation: u64, kind: &str, error: &str, status: Status) {
+fn emit(
+    inner: &Inner,
+    vin: &str,
+    generation: u64,
+    kind: PresenceEvent,
+    error: &str,
+    status: Status,
+) {
     let event = SessionEvent {
-        kind: kind.into(),
+        kind,
         vin: vin.into(),
         time: crate::keylog::utc_stamp(),
         error: error.into(),
-        error_code: if status == Status::BluetoothOff {
-            "bluetooth-off".into()
-        } else {
-            String::new()
-        },
+        bluetooth_off: status == Status::BluetoothOff,
         generation,
     };
-    if kind == "presence_stopped" {
+    if kind == PresenceEvent::Stopped {
         *inner
             .terminal
             .lock()
@@ -622,7 +690,7 @@ fn controller(
                 inner,
                 vin,
                 generation,
-                "presence_stopped",
+                PresenceEvent::Stopped,
                 "protocol session faulted",
                 Status::InternalBug,
             );
@@ -630,12 +698,12 @@ fn controller(
         }
         while let Some(event) = session.poll_observation() {
             match event.kind {
-                1 => inner
+                ObservationKind::Advertisement => inner
                     .proximity
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner)
                     .advertisement(Instant::now(), event.target, event.rssi),
-                2 => {
+                ObservationKind::Disconnected => {
                     inner.connected.store(false, Ordering::SeqCst);
                     connected_at = None;
                     status_at = None;
@@ -644,26 +712,33 @@ fn controller(
                         inner,
                         vin,
                         generation,
-                        "presence_disconnected",
+                        PresenceEvent::Disconnected,
                         &event.error,
                         event.status,
                     );
                 }
-                3 => emit(inner, vin, generation, "presence_auth_ok", "", event.status),
-                4 => emit(
+                ObservationKind::Authenticated => emit(
                     inner,
                     vin,
                     generation,
-                    "presence_auth_failed",
+                    PresenceEvent::AuthOk,
+                    "",
+                    event.status,
+                ),
+                ObservationKind::AuthFailed => emit(
+                    inner,
+                    vin,
+                    generation,
+                    PresenceEvent::AuthFailed,
                     &event.error,
                     event.status,
                 ),
-                5 => {
+                ObservationKind::WatchFailed => {
                     emit(
                         inner,
                         vin,
                         generation,
-                        "presence_error",
+                        PresenceEvent::Error,
                         &event.error,
                         event.status,
                     );
@@ -672,14 +747,15 @@ fn controller(
                         inner,
                         vin,
                         generation,
-                        "presence_stopped",
+                        PresenceEvent::Stopped,
                         &event.error,
                         event.status,
                     );
                     inner.mode.store(false, Ordering::SeqCst);
                     return;
                 }
-                _ => (),
+                // Log observations are routed to diagnostics by the callback.
+                ObservationKind::Log => (),
             }
         }
         let connected = inner.connected.load(Ordering::SeqCst);
@@ -698,7 +774,7 @@ fn controller(
         if let Some(_operation) = inner.operation.try_lock() {
             if depart {
                 let _ = execute(session, Operation::Disconnect, command);
-                emit(inner, vin, generation, "presence_far", "", Status::Ok);
+                emit(inner, vin, generation, PresenceEvent::Far, "", Status::Ok);
             }
             if !connected && can_connect {
                 match execute(
@@ -719,7 +795,7 @@ fn controller(
                         connected_at = Some(Instant::now());
                         status_at = None;
                         inside = false;
-                        emit(inner, vin, generation, "presence_near", "", Status::Ok);
+                        emit(inner, vin, generation, PresenceEvent::Near, "", Status::Ok);
                     }
                     result => {
                         inner
@@ -731,7 +807,7 @@ fn controller(
                             Ok(result) => (result.status, result.error),
                             Err(error) => (Status::Failed, error.to_string()),
                         };
-                        emit(inner, vin, generation, "presence_error", &error, status);
+                        emit(inner, vin, generation, PresenceEvent::Error, &error, status);
                     }
                 }
             }
@@ -765,7 +841,7 @@ fn controller(
                                     inner,
                                     vin,
                                     generation,
-                                    "presence_disconnected",
+                                    PresenceEvent::Disconnected,
                                     &result.error,
                                     result.status,
                                 );
@@ -783,13 +859,30 @@ fn controller(
                 })
         {
             inside = true;
-            emit(inner, vin, generation, "presence_inside", "", Status::Ok);
+            emit(
+                inner,
+                vin,
+                generation,
+                PresenceEvent::Inside,
+                "",
+                Status::Ok,
+            );
         }
         thread::sleep(Duration::from_millis(100));
     }
     inner.mode.store(false, Ordering::SeqCst);
 }
 
+enum MaintenanceWake {
+    Diagnostic(String),
+    Other,
+}
+
+/// Per-session housekeeping: writes Go diagnostics to the daily log, discards
+/// raw observations while presence is off (only the controller consumes them,
+/// and an unread backlog would otherwise overflow and fault the session) and
+/// closes idle foreground links. Sleeps until a diagnostic, an observation
+/// (presence off), an explicit wake or the idle deadline.
 fn maintenance(inner: &Arc<Inner>, session: &Arc<Session>) {
     let mut lost = 0;
     while !inner.cancelled.load(Ordering::SeqCst) && !session.stopped() {
@@ -807,13 +900,18 @@ fn maintenance(inner: &Arc<Inner>, session: &Arc<Session>) {
             );
             lost = current;
         }
-        if !inner.mode.load(Ordering::SeqCst)
-            && inner
-                .last_command
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .is_some_and(|at| at.elapsed() >= Duration::from_secs(90))
-        {
+        let presence = inner.mode.load(Ordering::SeqCst);
+        if !presence {
+            while session.poll_observation().is_some() {}
+        }
+        let last_command = *inner
+            .last_command
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let idle_at = last_command
+            .filter(|_| !presence)
+            .map(|at| at + IDLE_DISCONNECT);
+        if idle_at.is_some_and(|at| Instant::now() >= at) {
             if let Some(_operation) = inner.operation.try_lock() {
                 let _ = execute(session, Operation::Disconnect, Duration::from_secs(5));
                 inner.connected.store(false, Ordering::SeqCst);
@@ -821,12 +919,83 @@ fn maintenance(inner: &Arc<Inner>, session: &Arc<Session>) {
                     .last_command
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+                continue;
             }
         }
-        thread::sleep(Duration::from_millis(100));
+        let now = Instant::now();
+        let deadline = idle_at
+            .filter(|at| *at > now)
+            .map_or(now + MAINTENANCE_SAFETY_WAKE, |at| {
+                // A busy foreground operation defers the idle check briefly.
+                at.min(now + MAINTENANCE_SAFETY_WAKE)
+            })
+            .max(now + Duration::from_millis(100));
+        let wake = async_io::block_on(futures_lite::future::race(
+            async {
+                match session.diagnostic().await {
+                    Ok(message) => MaintenanceWake::Diagnostic(message),
+                    Err(_) => MaintenanceWake::Other,
+                }
+            },
+            futures_lite::future::race(
+                async {
+                    let _ = inner.maintenance_wait.recv().await;
+                    MaintenanceWake::Other
+                },
+                futures_lite::future::race(
+                    async {
+                        if presence {
+                            std::future::pending::<()>().await;
+                        }
+                        session.wait_observation().await;
+                        MaintenanceWake::Other
+                    },
+                    async {
+                        async_io::Timer::at(deadline).await;
+                        MaintenanceWake::Other
+                    },
+                ),
+            ),
+        ));
+        if let MaintenanceWake::Diagnostic(message) = wake {
+            crate::keylog::log("go", &message);
+        }
     }
     while let Some(message) = session.poll_diagnostic() {
         crate::keylog::log("go", &message);
+    }
+}
+
+#[cfg(test)]
+impl ProtocolClient {
+    /// Test-only: a client whose protocol library is already loaded (e.g. the
+    /// in-process `tesla_ble::fake`), so no shared object is opened.
+    pub(crate) fn with_library(library: Arc<tesla_ble::Library>) -> Self {
+        let client = Self::new(PathBuf::from("/test-library-is-preloaded"));
+        *client.inner.library.lock().unwrap() = Some(library);
+        client
+    }
+
+    /// Test-only: publish a phone-key event as the controller would.
+    pub(crate) fn emit_for_test(
+        &self,
+        vin: &str,
+        kind: PresenceEvent,
+        error: &str,
+        bluetooth_off: bool,
+    ) {
+        emit(
+            &self.inner,
+            vin,
+            self.generation(),
+            kind,
+            error,
+            if bluetooth_off {
+                Status::BluetoothOff
+            } else {
+                Status::Ok
+            },
+        );
     }
 }
 
@@ -880,15 +1049,15 @@ mod tests {
 
     #[test]
     fn terminal_state_is_not_lost_in_an_observation_storm() {
-        let client = ProtocolClient::new(PathBuf::from("/unused"), PathBuf::from("/unused"));
+        let client = ProtocolClient::new(PathBuf::from("/unused"));
         for _ in 0..200 {
-            emit(&client.inner, "V", 1, "presence_auth_ok", "", Status::Ok);
+            emit(&client.inner, "V", 1, PresenceEvent::AuthOk, "", Status::Ok);
         }
         emit(
             &client.inner,
             "V",
             1,
-            "presence_stopped",
+            PresenceEvent::Stopped,
             "bug",
             Status::InternalBug,
         );
@@ -897,12 +1066,12 @@ mod tests {
                 &client.inner,
                 "V",
                 1,
-                "presence_error",
+                PresenceEvent::Error,
                 "radio",
                 Status::Failed,
             );
         }
-        assert_eq!(client.poll_event().unwrap().kind, "presence_stopped");
+        assert_eq!(client.poll_event().unwrap().kind, PresenceEvent::Stopped);
         assert_eq!(client.inner.events.lock().unwrap().len(), 1);
     }
 
@@ -915,20 +1084,14 @@ mod tests {
         let other_private = directory.path().join("other_private.pem");
         let other_public = directory.path().join("other_public.pem");
         crate::keys::generate(&other_private, &other_public, false).unwrap();
-        let client = ProtocolClient::new(PathBuf::from("/must-not-load"), directory.path().into());
-        let args = vec![
-            other_public.to_string_lossy().into_owned(),
-            "owner".into(),
-            "android_device".into(),
-        ];
+        let client = ProtocolClient::new(PathBuf::from("/must-not-load"));
         let error = client
-            .enroll(
-                &args,
+            .pair(
+                &other_public,
                 "5YJ3E1EA7KF000001",
                 private.to_str().unwrap(),
                 20,
                 5,
-                true,
             )
             .err()
             .unwrap();
@@ -941,31 +1104,21 @@ mod tests {
     fn real_library_uses_rust_persisted_keys_and_invalidates_without_children() {
         let path = std::env::var_os("TESLA_BLE_TEST_LIBRARY").expect("TESLA_BLE_TEST_LIBRARY");
         let directory = tempfile::tempdir().unwrap();
-        let client = ProtocolClient::new(path.into(), directory.path().into());
+        let client = ProtocolClient::new(path.into());
         let private = directory.path().join("private_key.pem");
-        let first = client.keygen(false, private.to_str().unwrap()).unwrap();
-        assert!(first.ok);
+        let public = directory.path().join("public_key.pem");
+        crate::keys::generate(&private, &public, false).unwrap();
         let session = client
             .ensure("5YJ3E1EA7KF000001", private.to_str().unwrap())
             .unwrap();
         let result = execute(&session, Operation::PublicKey, Duration::from_secs(1)).unwrap();
         assert_eq!(result.status, Status::Ok);
-        assert_eq!(
-            result.payload,
-            crate::keys::public_bytes(&directory.path().join("public_key.pem")).unwrap()
-        );
+        assert_eq!(result.payload, crate::keys::public_bytes(&public).unwrap());
         let generation = client.generation();
         client.invalidate();
         assert!(session.stopped());
         assert!(client.generation() > generation);
         assert!(!client.is_alive());
-        assert_eq!(
-            client
-                .keygen(false, private.to_str().unwrap())
-                .unwrap()
-                .stdout,
-            first.stdout
-        );
         drop(session);
         drop(client);
     }

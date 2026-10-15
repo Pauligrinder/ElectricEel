@@ -1,21 +1,19 @@
 import QtQuick 2.6
 import Sailfish.Silica 1.0
 import "../js/CommandCatalog.js" as Catalog
+import "../js/CommandText.js" as CommandText
 
 Page {
     id: page
     property var teslaClient
     property string categoryId
     property string categoryTitle
-    property string vin: ""
-    property bool configReady: false
-    property string configError: ""
-    // Last dashboard reading from FirstPage, passed through at push time -
-    // shown as a subheader below. Not re-fetched here: it's a snapshot, not
-    // a live binding, so it can go stale while this page is open (matches
-    // FirstPage's own "Updated Xm ago" label, which is visible again as
-    // soon as the user goes back).
-    property var vehicleStatus: null
+    readonly property string vin: teslaClient ? teslaClient.vin : ""
+    // The dashboard page that owns the live vehicle reading. Rust's
+    // post-command refresh updates it while this page is open, so toggle
+    // rows and the subtitle follow the car instead of a push-time snapshot.
+    property Item dashboard: null
+    readonly property var vehicleStatus: dashboard ? dashboard.vehicleStatus : null
 
     property var category: Catalog.findCategory(categoryId)
     property string pendingCmd: ""
@@ -25,9 +23,7 @@ Page {
 
     // Commands gated by status (see CommandCatalog's visibleWhen): only the
     // toggle action matching the current vehicle state is listed, so the page
-    // mirrors reality instead of offering a mix of "on" and "off" rows. The
-    // status here is the snapshot FirstPage passed at push time, same as the
-    // subtitle - intentionally not re-fetched live.
+    // mirrors reality instead of offering a mix of "on" and "off" rows.
     property var visibleCommands: page.category
                                    ? page.category.commands.filter(function(commandDef) { return page.commandVisible(commandDef) })
                                    : []
@@ -64,29 +60,21 @@ Page {
         return ""
     }
 
+    // A pending reply belongs to the previous car (its ID carries that VIN).
+    onVinChanged: {
+        page.pendingCmd = ""
+        page.pendingLabel = ""
+        page.lastResult = ""
+    }
+
     Connections {
         target: teslaClient
-        onConfigLoaded: {
-            if (page.vin !== vin) {
-                page.pendingCmd = ""
-                page.pendingLabel = ""
-                page.lastResult = ""
-                page.vehicleStatus = null
-            }
-            page.vin = vin
-            page.configReady = true
-            page.configError = ""
-        }
-        onConfigLoadError: {
-            page.configReady = false
-            page.configError = message
-        }
         onCommandFinished: {
             if (requestId !== page.pendingCmd)
                 return
             page.pendingCmd = ""
             page.lastOk = ok
-            page.lastResult = ok ? (stdOut.length ? stdOut : qsTr("OK")) : (stdErr.length ? stdErr : qsTr("exit code %1").arg(exitCode))
+            page.lastResult = ok ? (stdOut.length ? stdOut : qsTr("OK")) : CommandText.failure(stdErr, exitCode)
         }
         onCommandError: {
             if (requestId !== page.pendingCmd)
@@ -101,10 +89,9 @@ Page {
         page.pendingCmd = teslaClient.newRequestId(commandDef.id, page.vin)
         page.pendingLabel = commandDef.label
         page.lastResult = ""
-        teslaClient.runCommand(page.pendingCmd, commandDef.id, argValues || [], true)
+        teslaClient.runCommand(page.pendingCmd, commandDef.id, argValues || [],
+                               Catalog.refreshesStatus(commandDef.id))
     }
-
-    Component.onCompleted: teslaClient.refreshConfig()
 
     function openArgs(commandDef) {
         var dialog = pageStack.push(Qt.resolvedUrl("ArgumentDialog.qml"), { commandDef: page.commandWithStateDefaults(commandDef) })
@@ -113,20 +100,19 @@ Page {
         })
     }
 
-    // Clones a commandDef whose args' `def` values are seeded from the last
-    // status snapshot wherever the catalog marked a `stateDefault` field and
-    // the reading exists and is within the arg's own min/max. The clone is
-    // required because the catalog (CommandCatalog.js) is a shared library
-    // singleton - writing `def` in place would poison every future dialog.
-    // Fallback to the catalog's hardcoded `def` when status isn't loaded.
+    // Clones a commandDef whose args' `def` values are seeded from the
+    // dashboard reading wherever the catalog marked a `stateDefault` field and
+    // the reading exists and is within the arg's own min/max. Always a copy:
+    // the catalog (CommandCatalog.js) is a shared library singleton and the
+    // dialog stores its form values on the args it receives. Falls back to
+    // the catalog's hardcoded `def` when status isn't loaded.
     function commandWithStateDefaults(commandDef) {
-        if (!page.vehicleStatus || !commandDef.args || commandDef.args.length === 0)
-            return commandDef
+        var status = page.vehicleStatus || {}
         var copy = {
             id: commandDef.id,
             label: commandDef.label,
             visibleWhen: commandDef.visibleWhen,
-            args: commandDef.args.map(function(a) {
+            args: (commandDef.args || []).map(function(a) {
                 var c = {}
                 for (var k in a)
                     c[k] = a[k]
@@ -134,7 +120,7 @@ Page {
                 // not depend on ArgumentDialog.onLoaded re-syncing every
                 // field type.
                 delete c.__value
-                var cur = page.vehicleStatus[c.stateDefault]
+                var cur = c.stateDefault ? status[c.stateDefault] : undefined
                 if (c.stateDefault && cur !== undefined && cur !== null
                         && (c.min === undefined || cur >= c.min)
                         && (c.max === undefined || cur <= c.max)) {
@@ -156,20 +142,7 @@ Page {
 
             PageHeader { title: categoryTitle }
 
-            Label {
-                width: parent.width - Theme.horizontalPageMargin * 2
-                anchors.horizontalCenter: parent.horizontalCenter
-                visible: page.configError.length > 0
-                wrapMode: Text.Wrap
-                text: page.configError
-                color: Theme.highlightColor
-            }
-            Button {
-                anchors.horizontalCenter: parent.horizontalCenter
-                visible: page.configError.length > 0
-                text: qsTr("Retry")
-                onClicked: teslaClient.refreshConfig()
-            }
+            ConfigErrorBanner { client: teslaClient }
 
             Label {
                 width: parent.width - Theme.horizontalPageMargin * 2
@@ -214,7 +187,7 @@ Page {
         delegate: BackgroundItem {
             width: listView.width
             height: Theme.itemSizeMedium
-            enabled: page.configReady && page.pendingCmd.length === 0
+            enabled: teslaClient.configReady && page.pendingCmd.length === 0
 
             onClicked: {
                 if (modelData.args && modelData.args.length > 0)

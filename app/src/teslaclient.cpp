@@ -1,6 +1,7 @@
 #include "teslaclient.h"
 #include "commandarguments.h"
 
+#include <QDateTime>
 #include <QDebug>
 #include <QGuiApplication>
 #include <QJsonArray>
@@ -17,6 +18,8 @@ extern "C" {
 TeslaClient::TeslaClient(Runtime *runtime, QObject *parent)
     : QObject(parent), m_runtime(runtime), m_helperVersion(QString::fromUtf8(core_version()))
 {
+    m_monotonic.start();
+    m_wallMinusMonotonic = QDateTime::currentMSecsSinceEpoch();
     runtime_observe(m_runtime, &TeslaClient::notification, this);
     connect(qApp, &QGuiApplication::applicationStateChanged,
             this, &TeslaClient::onApplicationStateChanged);
@@ -54,10 +57,7 @@ void TeslaClient::deliverNotification(const QByteArray &json)
     const QString error = event.value("error").toString();
     const bool ok = event.value("ok").toBool();
     if (type == "initialized") {
-        if (m_helperAvailable != ok) {
-            m_helperAvailable = ok;
-            emit helperAvailableChanged();
-        }
+        // Snapshot acknowledgement; phone-key state follows separately.
     } else if (type == "phone_key_state") {
         const bool active = event.value("active").toBool();
         const QString status = event.value("status").toString();
@@ -99,6 +99,7 @@ void TeslaClient::deliverNotification(const QByteArray &json)
         emit automagicExportBusyChanged();
         emit automagicExportFinished(ok, event.value("path").toString(), error);
     } else if (type == "config_loaded") {
+        applyConfig(event);
         emit configLoaded(event.value("vin").toString(), event.value("model").toString(),
                           event.value("key_name").toString(), event.value("connect_timeout_sec").toInt(),
                           event.value("command_timeout_sec").toInt(), event.value("has_key").toBool(),
@@ -133,19 +134,61 @@ void TeslaClient::submit(const QJsonObject &request)
     else if (op == "preview_destination") emit destinationPreviewed(id, false, QString(), QString(), QString(), error);
     else if (op == "share_destination") emit shareFinished(id, false, QString(), error);
     else if (op == "run") emit commandError(id, error);
-    else if (op == "get_config") emit configLoadError(error);
+    else if (op == "get_config") {
+        setConfigError(error);
+        emit configLoadError(error);
+    }
     else if (op == "export_automagic") {
         m_automagicExportBusy = false;
         emit automagicExportBusyChanged();
         emit automagicExportFinished(false, QString(), error);
     }
-    else if (op == "log_ui" || op == "application_state") { qWarning() << error << op; }
     else qWarning() << error << op;
 }
 
-bool TeslaClient::helperAvailable() const { return m_helperAvailable; }
+void TeslaClient::applyConfig(const QJsonObject &event)
+{
+    // Assign everything before notifying, so a handler reacting to one
+    // change (e.g. vinChanged) already sees the rest of the new reply.
+    const QString vin = event.value("vin").toString();
+    const QString model = event.value("model").toString();
+    const bool hasKey = event.value("has_key").toBool();
+    const QString pem = hasKey ? event.value("pem").toString() : QString();
+    const QString left = event.value("cover_left_action").toString(QStringLiteral("trunk-open"));
+    const QString right = event.value("cover_right_action").toString(QStringLiteral("frunk-open"));
+    const bool vinChanged = m_vin != vin;
+    const bool modelChanged = m_model != model;
+    const bool hasKeyChanged = m_hasKey != hasKey;
+    const bool pemChanged = m_publicKeyPem != pem;
+    const bool readyChanged = !m_configReady;
+    const bool errorChanged = !m_configError.isEmpty();
+    const bool coverChanged = m_coverLeftAction != left || m_coverRightAction != right;
+    m_vin = vin;
+    m_model = model;
+    m_hasKey = hasKey;
+    m_publicKeyPem = pem;
+    m_configReady = true;
+    m_configError.clear();
+    m_coverLeftAction = left;
+    m_coverRightAction = right;
+    if (vinChanged) emit this->vinChanged();
+    if (modelChanged) emit this->modelChanged();
+    if (hasKeyChanged) emit this->hasKeyChanged();
+    if (pemChanged) emit publicKeyPemChanged();
+    if (coverChanged) emit coverActionsChanged();
+    if (errorChanged) emit configErrorChanged();
+    if (readyChanged) emit configReadyChanged();
+}
+
+void TeslaClient::setConfigError(const QString &error)
+{
+    if (m_configError == error)
+        return;
+    m_configError = error;
+    emit configErrorChanged();
+}
+
 QString TeslaClient::appVersion() const { return QString::fromLatin1(APP_VERSION); }
-QString TeslaClient::helperVersion() const { return m_helperVersion; }
 QString TeslaClient::phoneKeyStatus() const { return m_phoneKeyStatus; }
 
 void TeslaClient::runCommand(const QString &requestId, const QString &cmd, const QVariantList &args,
@@ -191,6 +234,16 @@ void TeslaClient::logPowerState(const QString &state) { submit({{"op", "log_ui"}
 
 void TeslaClient::onApplicationStateChanged(Qt::ApplicationState state)
 {
+    // Sailfish reports only Active/Inactive, never ApplicationSuspended, so
+    // Rust's suspended->active resume recovery would never run. A system
+    // suspend stops the monotonic clock but not wall time: when the gap grew
+    // since the previous state change, report the suspend Rust expects.
+    const qint64 wallMinusMonotonic = QDateTime::currentMSecsSinceEpoch() - m_monotonic.elapsed();
+    const bool slept = wallMinusMonotonic - m_wallMinusMonotonic > 10000;
+    m_wallMinusMonotonic = wallMinusMonotonic;
+    if (slept && state != Qt::ApplicationSuspended)
+        submit({{"op", "application_state"}, {"state", "suspended"}});
+
     const char *name = "unknown";
     switch (state) {
     case Qt::ApplicationActive: name = "active"; break;

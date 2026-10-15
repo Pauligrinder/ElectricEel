@@ -1,41 +1,71 @@
 name: Build & publish RPM
 
 # Builds the app RPM (harbour-electric-eel) exactly as documented in
-# README.md and publishes it:
-#   - on a `v*` tag push  -> attached to the GitHub release for that tag
-#   - on workflow_dispatch -> uploaded as workflow artifacts (no release)
+# docs/build.md and publishes it:
+#   - on a `v*` tag push   -> attached to the GitHub release for that tag
+#   - on workflow_dispatch -> uploaded as a workflow artifact (no release)
 #
-# Phase 4 end-state: the Rust control core is an in-process staticlib
-# (aarch64 glibc) staged into the app tree by helper/make-app-bundle.sh,
-# which also builds the private Go protocol library against the Sailfish SDK. The app
-# RPM is self-contained - there is no electric-eel-daemon helper package anymore
-# (BLUEZ_BACKEND_PLAN.md).
+# Versions are NOT rewritten here: the tag must equal the committed version in
+# app/harbour-electric-eel.pro, helper/Cargo.toml, helper/Cargo.lock, the spec
+# Version and the newest %changelog entry. Bump them in a commit, then tag it.
+#
+# The build job only has read access. Only the separate publish job, which
+# runs no repository code, may write to releases (see its permissions).
 
 on:
   push:
     tags:
       - 'v*'
   workflow_dispatch:
-    inputs:
-      version:
-        description: 'RPM version to build (e.g. 0.1.1). Leave empty to use the pushed tag.'
-        required: false
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: rpm-release-${{ github.ref }}
   cancel-in-progress: true
+
+env:
+  # Keep in sync with ci.yml, build.sh and helper/build-go-library-sdk.sh.
+  SAILFISH_SDK_IMAGE: coderus/sailfishos-platform-sdk-aarch64:5.2.0.15@sha256:e5f7596d14502746b308c3dde36f65fc25d7f76c45a01acaed56a1f55b76f592
+  SAILFISH_TARGET: SailfishOS-5.2.0.15-aarch64
 
 jobs:
   build:
     name: Build RPM
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Verify the committed versions (and the tag, if any)
+        id: version
+        run: |
+          set -euo pipefail
+          pro="$(sed -n 's/^VERSION *= *//p' app/harbour-electric-eel.pro)"
+          cargo="$(sed -n 's/^version = "\(.*\)"/\1/p' helper/Cargo.toml | head -1)"
+          lock="$(awk '/^name = "electric-eel-core"$/ {getline; gsub(/version = |"/, ""); print}' helper/Cargo.lock)"
+          spec="$(sed -n 's/^Version: *//p' app/rpm/harbour-electric-eel.spec)"
+          changelog="$(sed -n 's/^\* .* - \([^ ]*\) *$/\1/p' app/rpm/harbour-electric-eel.spec | head -1)"
+          printf '.pro=%s Cargo.toml=%s Cargo.lock=%s spec=%s changelog=%s\n' \
+            "$pro" "$cargo" "$lock" "$spec" "$changelog"
+          if ! printf '%s' "$pro" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::invalid VERSION '$pro' in app/harbour-electric-eel.pro"; exit 1
+          fi
+          for v in "$cargo" "$lock" "$spec"; do
+            [ "$v" = "$pro" ] || { echo "::error::committed versions diverge (see above)"; exit 1; }
+          done
+          case "$changelog" in
+            "$pro"-*) ;;
+            *) echo "::error::newest %changelog entry ($changelog) is not for $pro"; exit 1 ;;
+          esac
+          if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "${GITHUB_REF_NAME#v}" != "$pro" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match the committed version $pro"; exit 1
+          fi
+          echo "version=$pro" >> "$GITHUB_OUTPUT"
 
       - name: Free disk space for the Sailfish SDK image
         run: |
@@ -44,88 +74,45 @@ jobs:
           df -h
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
-          # helper/session/go.mod requires go >= 1.26.5
-          go-version: '1.26.5'
+          go-version-file: helper/session/go.mod
+          # Release builds never reuse a cache another workflow could write.
+          cache: false
 
-      - name: Set up Rust (aarch64 glibc target for the in-app staticlib)
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-unknown-linux-gnu
-
-      - name: Compute RPM version
-        id: version
-        # The workflow_dispatch input is routed through an env var (not
-        # interpolated straight into the run: script) so its contents are
-        # never re-parsed by the shell - a value like "$(curl ...)" can't
-        # inject commands. It's still strictly validated below before use.
-        env:
-          RELEASE_VERSION: ${{ github.event.inputs.version }}
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "$RELEASE_VERSION" ]; then
-            VER="$RELEASE_VERSION"
-          else
-            VER="${GITHUB_REF_NAME#v}"
-          fi
-          if ! echo "$VER" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "invalid version '$VER' (expected semver like 0.3.1)" >&2
-            exit 1
-          fi
-          echo "version=${VER}" >> "$GITHUB_OUTPUT"
-
-      # The app's APP_VERSION (from $${VERSION} in the .pro) and the
-      # core's version (cargo package version, core_version()) are surfaced
-      # on the Settings page and compared on the front page; stamp both from
-      # the same tag so a matched pair always reports equal versions. This
-      # must run BEFORE the bundle is staged so the staticlib's
-      # core_version() carries the new tag.
-      - name: Stamp app core build versions from the tag
-        run: |
-          sed -i "s/^VERSION =.*/VERSION = ${{ steps.version.outputs.version }}/" app/harbour-electric-eel.pro
-          sed -i "s/^version = .*/version = \"${{ steps.version.outputs.version }}\"/" helper/Cargo.toml
-          grep '^VERSION =' app/harbour-electric-eel.pro
-          grep '^version =' helper/Cargo.toml
-          test "$(sed -n 's/^VERSION = //p' app/harbour-electric-eel.pro)" = \
-               "$(sed -n 's/^version = "\(.*\)"/\1/p' helper/Cargo.toml)" \
-            || { echo "app (.pro) and core (Cargo.toml) build versions diverged"; exit 1; }
+      - name: Install the pinned Rust toolchain (helper/rust-toolchain.toml)
+        working-directory: helper
+        run: rustup toolchain install
 
       - name: Pull Sailfish Platform SDK
-        run: docker pull coderus/sailfishos-platform-sdk-aarch64
+        run: docker pull "$SAILFISH_SDK_IMAGE"
 
-      # Rust staticlib + SDK-built Go shared library, staged into app/thirdparty
-      # and app/lib. Nothing
-      # here is committed to git (see .gitignore) - it is build output.
+      # Rust staticlib + SDK-built Go shared library, staged into
+      # app/thirdparty and app/lib. Build output only, never committed.
       - name: Stage the in-app core bundle (staticlib + Go protocol library)
-        run: |
-          ./helper/make-app-bundle.sh
-
-      - name: Stamp RPM version into the spec files
-        run: |
-          sed -i "s/^Version:.*/Version:       ${{ steps.version.outputs.version }}/" app/rpm/harbour-electric-eel.spec
-          grep '^Version:' app/rpm/harbour-electric-eel.spec
+        run: ./helper/make-app-bundle.sh
 
       - name: Build and Harbour-check the app RPM in the Sailfish SDK container
         run: |
           set -euxo pipefail
-          docker create --name electric-eel-build coderus/sailfishos-platform-sdk-aarch64 sleep infinity
-          docker start electric-eel-build
+          docker create --name electric-eel-build "$SAILFISH_SDK_IMAGE" sleep infinity
           trap 'docker rm -f electric-eel-build >/dev/null 2>&1 || true' EXIT
+          docker start electric-eel-build
 
-          # Staticlib + private shared library staged by make-app-bundle.sh.
           docker cp app electric-eel-build:/home/mersdk/app
           docker exec -u root electric-eel-build chown -R mersdk:mersdk /home/mersdk/app
           docker exec -w /home/mersdk/app electric-eel-build \
-            mb2 --target SailfishOS-5.2.0.15-aarch64 build
+            mb2 --target "$SAILFISH_TARGET" build
           docker exec -w /home/mersdk/app electric-eel-build \
-            mb2 --target SailfishOS-5.2.0.15-aarch64 check --suites harbour
+            mb2 --target "$SAILFISH_TARGET" check --suites harbour
           mkdir -p app/RPMS
           docker cp electric-eel-build:/home/mersdk/app/RPMS/. app/RPMS/
 
       - name: Sanity-check the built RPM
+        env:
+          EXPECTED_VERSION: ${{ steps.version.outputs.version }}
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq rpm >/dev/null
-          expected="${{ steps.version.outputs.version }}"
           found=0
           for f in app/RPMS/*.rpm; do
             [ -e "$f" ] || continue
@@ -135,23 +122,41 @@ jobs:
             ver="$(rpm -qp --qf '%{VERSION}' "$f")"
             arch="$(rpm -qp --qf '%{ARCH}' "$f")"
             [ "$arch" = "aarch64" ] || { echo "wrong arch '$arch' for $f (expected aarch64)"; exit 1; }
-            [ "$ver" = "$expected" ] || { echo "version '$ver' != expected '$expected' for $f"; exit 1; }
+            [ "$ver" = "$EXPECTED_VERSION" ] || { echo "version '$ver' != expected '$EXPECTED_VERSION' for $f"; exit 1; }
           done
           [ "$found" -eq 1 ] || { echo "no RPMs produced"; exit 1; }
-
-      - name: Publish RPM to the tag release
-        if: github.event_name == 'push'
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            app/RPMS/*.rpm
-          generate_release_notes: true
-          make_latest: true
+          (cd app/RPMS && sha256sum -- *.rpm | tee SHA256SUMS)
 
       - name: Upload RPM as workflow artifact
-        if: github.event_name == 'workflow_dispatch'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: rpm-${{ steps.version.outputs.version }}
           path: |
             app/RPMS/*.rpm
+            app/RPMS/SHA256SUMS
+          if-no-files-found: error
+
+  publish:
+    name: Publish RPM to the tag release
+    needs: build
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download the built RPM
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: rpm-${{ needs.build.outputs.version }}
+          path: dist
+
+      - name: Publish
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
+        with:
+          files: |
+            dist/*.rpm
+            dist/SHA256SUMS
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+          make_latest: true

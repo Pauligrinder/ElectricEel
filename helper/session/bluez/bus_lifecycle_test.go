@@ -37,7 +37,7 @@ func TestBusSessionReplacement(t *testing.T) {
 
 	open := func() *Conn {
 		t.Helper()
-		conn, err := Open()
+		conn, err := Open(nil)
 		if err != nil {
 			t.Fatal(err)
 		}

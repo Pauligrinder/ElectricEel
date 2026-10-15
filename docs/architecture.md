@@ -20,33 +20,53 @@ capabilities, no `devel-su` install. Sailjail permissions: `Bluetooth;Documents`
   lifecycle work. Both UI queues are bounded at 64. Presence events wake the
   control loop immediately, with a one-second fallback drain; restarting
   presence never runs in the event drain. The executor drives five-second
-  retries and coalesced resume recovery. Session-generation tags reject stale
-  events and start results. The control loop owns the published phone-key
+  retries and coalesced resume recovery; it and the maintenance thread are
+  event/deadline-driven rather than polling. Session-generation tags reject
+  stale events and start results. The control loop owns the published phone-key
   state and the 2.5-second refresh deadline, measured from command completion.
   A separate Rust lease thread keeps renewing during BLE work.
 - **Silica UI** (`app/qml`, `app/src`): the `TeslaClient` QObject is injected
   into QML by the UI callback. It serializes UI actions to `runtime_submit`
   and copies pushed Rust notifications into queued Qt deliveries, updating
-  properties and emitting signals on the GUI thread. Callback detachment is
-  a synchronization barrier before UI destruction. There are no Qt worker
-  threads or backend timers. QML retains only the dashboard's label-age
-  timer, which updates presentation without touching the car. QML pages:
-  FirstPage (dashboard + categories), CategoryPage (generic command list),
-  ArgumentDialog (per-command form), PairingPage, SettingsPage,
-  NavigationPage. Configuration-load failures are explicit errors rather than
-  fabricated empty data. Dashboard requests are tagged by page, sequence and
-  VIN; changing VIN clears telemetry and rejects late replies. Per-category
-  ages keep partial refreshes from making retained readings appear fresh.
+  properties and emitting signals on the GUI thread. Configuration is exposed
+  as properties (`vin`, `model`, `hasKey`, `publicKeyPem`, `configReady`,
+  `configError`, `coverLeftAction`, `coverRightAction`) that pages bind to
+  instead of caching their own copies. Callback detachment is a
+  synchronization barrier before UI destruction. There are no Qt worker
+  threads or backend timers: a system suspend is detected on the next
+  application-state change, when wall-clock time has advanced more than 10 s
+  beyond the monotonic clock, and reported to Rust as `suspended` before the
+  new state. QML retains only the dashboard's label-age timer, which updates
+  presentation without touching the car. QML pages: FirstPage (dashboard +
+  categories), CategoryPage (generic command list, following the live
+  dashboard status), ArgumentDialog (per-command form), PairingPage,
+  SettingsPage, NavigationPage, with shared `ConfigErrorBanner.qml`,
+  `VersionWarning.qml` and `js/CommandText.js`. Configuration-load failures
+  are explicit errors rather than fabricated empty data. The dashboard
+  refreshes when the VIN or key changes, when Rust requests it, and on
+  pull-down; a refresh requested while a chain is running is re-run after it.
+  Only state-changing commands (`Catalog.refreshesStatus`, including cover
+  actions) request a post-command refresh. Dashboard requests are tagged by
+  page, sequence and VIN; changing VIN clears telemetry and rejects late
+  replies. Per-category ages keep partial refreshes from making retained
+  readings appear fresh. Bluetooth being off is a typed phone-key link state
+  (`bluetooth-off`) that the UI shows persistently.
 - **Control core** (`helper/src`, Rust staticlib `libelectriceelcore.a`,
-  C ABI via cbindgen `electriceelcore.h`): config + key files
-  (`config.json`, `private_key.pem`, `public_key.pem` under the app data
-  dir), command allow-list, destination parser (`share.rs`) and typed command
-  parsing (`protocol_commands.rs`). Keys/PEM persistence live in `keys.rs`.
-  One foreground BLE command at a time (`ble_sem`).
+  C ABI via cbindgen `electriceelcore.h`: `runtime_submit`,
+  `runtime_observe`, `core_version` and `electric_eel_app_main` only):
+  config + key files (`config.json`, `private_key.pem`, `public_key.pem`
+  under the app data dir), command catalog (`commands.rs`), destination
+  parser (`share.rs`) and the single command-argument validator
+  (`protocol_commands::parse`, ranges/arity/units). Keys/PEM persistence live
+  in `keys.rs`. The core holds an optional `ProtocolClient` (`None` only
+  when the Go library could not be loaded, i.e. BLE is unavailable). One foreground BLE command at a time
+  (`ble_sem`). Saving Settings restarts the protocol session only when the
+  VIN or timeout changed.
 - **Phone-key controller** (`helper/src/protocol_client.rs`, `phone_key.rs`):
   Rust owns proximity, target eligibility, reconnect backoff, idle retention,
   periodic status, inside inference and NFC enrollment polling. Its controller
-  and logging/idle maintenance run independently of the UI executor.
+  and logging/idle maintenance run independently of the UI executor; the
+  presence controller ticks at 10 Hz while presence is on.
 - **Protocol library** (`helper/session/library`, Go `libteslable.so` in
   `/usr/share/harbour-electric-eel/lib/`): holds authenticated BLE sessions and
   executes typed operations through an async C ABI. It calls pinned
@@ -110,17 +130,35 @@ cannot pair a stale public half and mark a different private key enrolled.
 Cooperative `org.bluez` D-Bus backend (`helper/session/bluez/`):
 discovery, GATT connect, notify/write framing over the system bus. The
 radio stays owned by the OS stack, so other Bluetooth users (e.g. a
-soundbar) remain owned by the OS stack. Legacy socket/raw-HCI code is retained
-only for standalone-daemon compatibility and regression fixtures; it is excluded
-from the Harbour application build.
+soundbar) remain owned by the OS stack. The former standalone daemon, session
+child process and legacy socket/raw-HCI transport have been removed.
+
+Each protocol session opens its own BlueZ handle with its own diagnostics
+logger (`bluez.Open(log)`), so diagnostics are attributed per session. Connect
+waits at most one second for the adapter's discovery to stop and then connects
+anyway (another client may be scanning). Radio-off and adapter errors are
+permanent: they are not retried and surface as `BluetoothOff`. On a reused
+link, a rejected or unanswered handshake does not tear the link down; only
+`NotConnected`/`Uncertain` outcomes do. A command on a dropped link reports
+`NotConnected` and never reconnects silently. Devices are not permanently
+marked trusted; `SetAutoConnect` runs under the operation's context. A failed
+discovery watcher is reaped and can be restarted.
 
 ## Phone-key presence
 
 After NFC pairing, the Rust controller runs a proximity loop
 while the app is alive: it keeps an authenticated session up while the
-vehicle beacon is near (RSSI hysteresis) and answers VCSEC
-`AuthenticationRequest` messages, so handle-pull unlock and drive work
-without tapping. It never locks/unlocks proactively; walk-away locking
+vehicle beacon is near and answers VCSEC `AuthenticationRequest` messages,
+so handle-pull unlock and drive work without tapping. Only genuine
+authentication requests are queued for passive entry (newest wins); a
+replaced request is logged as a diagnostic, not a fault. Nearness uses RSSI
+hysteresis (`helper/src/phone_key.rs`): entering near needs 2 consecutive
+samples at or above -88 dBm within 5 s; a sample weaker than -95 dBm resets
+that streak; samples between -95 and -88 dBm only keep an already-near
+vehicle near. The vehicle's beacon name is derived from the VIN locally in
+`helper/session/bluez` (the library no longer links go-ble or logxi).
+`ErrKeyNotPaired` and inactive-key responses are reported as authentication
+failures. It never locks/unlocks proactively; walk-away locking
 stays the vehicle's own setting.
 
 Disconnected discovery is continuous and event-driven: an independent BlueZ
@@ -148,8 +186,9 @@ successful hold, every D-Bus failure, and display status (`0` unknown, `1` off,
 `2` dimmed, `3` on), separately from Qt app lifecycle. Periodic wakeups cannot
 preserve an authenticated GATT session and are not used.
 
-Rust owns daily append handles, pruning, retention and the 10 MiB daily cap.
-Go/BlueZ callbacks enqueue diagnostics for Rust's logging worker. Overflow is
+Rust is the only log writer: it owns daily append handles, pruning, retention
+and the 10 MiB daily cap. Go/BlueZ callbacks enqueue diagnostics (observation
+kind 6) for Rust's logging worker. Overflow is
 counted and reported; private key material is not diagnostic data.
 
 Phone-key events are also published on the session bus through
@@ -176,8 +215,9 @@ dispatch does not use string tags or `serde_json::Value` lookups.
 ## Source layout
 
 ```
-helper/src/{app,runtime,cpukeepalive,lib,core,ffi,config,commands,share,session_client}.rs
+helper/src/{app,runtime,cpukeepalive,lib,core,ffi,config,commands,share,error}.rs
 helper/src/{tesla_ble,protocol_client,protocol_commands,phone_key,keys,keylog}.rs
+helper/src/cover_action.rs        cover quick-action allow-list
 helper/src/automagic.rs           Documents export of the embedded import preset
 helper/src/notification.rs        typed runtime-to-Qt notification contract
 docs/automagic-hotspot/           canonical hotspot sources/actions/flows

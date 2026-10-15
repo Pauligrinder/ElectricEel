@@ -3,7 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
 const vm = require("node:vm");
-const { loadFunctions, runHandler } = require("./qml_helpers.cjs");
+const { loadFunctions, runHandler, runRootHandler } = require("./qml_helpers.cjs");
 
 test("switching VIN clears previous vehicle telemetry before choosing a toggle command", () => {
     const root = path.join(__dirname, "../qml");
@@ -27,12 +27,10 @@ test("switching VIN clears previous vehicle telemetry before choosing a toggle c
     const commands = [];
     context.teslaClient = { runCommand: (_id, cmd) => commands.push(cmd) };
     loadFunctions(source, ["runStatus", "setOptimistic", "toggleLock"], context);
-    const handler = source.match(/onConfigLoaded:\s*\{([\s\S]*?)\n        \}/);
-    assert.ok(handler, "onConfigLoaded must be discoverable");
-    context.vin = "7SAYGDEE0PF000001";
-    context.model = "modely";
-    context.hasKey = true;
-    vm.runInContext(`(function() { ${handler[1]} })()`, context);
+    // The page's vin binds to TeslaClient.vin; a new value runs onVinChanged.
+    context.page.vin = "7SAYGDEE0PF000001";
+    context.page.model = "modely";
+    runRootHandler(source, "onVinChanged", context);
     assert.equal(context.page.vehicleStatus.locked, null, "new VIN inherited old car's unlocked state");
     assert.equal(context.page.vehicleStatus.batteryLevel, null, "new VIN inherited old car's battery reading");
     assert.equal(context.page.vehicleStatus.updatedAt, 0, "new VIN inherited old car's freshness timestamp");

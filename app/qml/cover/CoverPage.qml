@@ -1,5 +1,7 @@
 import QtQuick 2.6
 import Sailfish.Silica 1.0
+import "../js/CommandCatalog.js" as Catalog
+import "../js/CommandText.js" as CommandText
 import "../js/VehicleState.js" as VState
 import "../js/PhoneKeyState.js" as PhoneKey
 import "../js/CoverActions.js" as CoverActions
@@ -8,14 +10,17 @@ CoverBackground {
     id: cover
 
     property var teslaClient
-    property string vin: ""
-    property string model: ""
-    property bool hasKey: false
+    readonly property string vin: teslaClient ? teslaClient.vin : ""
+    readonly property string model: teslaClient ? teslaClient.model : ""
+    readonly property bool hasKey: teslaClient ? teslaClient.hasKey : false
+    readonly property string configError: teslaClient ? teslaClient.configError : ""
+    readonly property string leftAction: CoverActions.action(teslaClient ? teslaClient.coverLeftAction : "", 0).id
+    readonly property string rightAction: CoverActions.action(teslaClient ? teslaClient.coverRightAction : "", 1).id
     property bool commandBusy: false
     property string pendingCmd: ""
-    property string configError: ""
-    property string leftAction: "trunk-open"
-    property string rightAction: "frunk-open"
+    property string pendingAction: ""
+    // Last cover command failure, shown until the next command.
+    property string commandFailure: ""
 
     readonly property bool isPaired: cover.hasKey && cover.vin.length > 0
 
@@ -23,50 +28,45 @@ CoverBackground {
     readonly property string connectionKind: PhoneKey.connectionKind(
         teslaClient ? teslaClient.phoneKeyLink : "stopped", isPaired)
 
-    readonly property bool isConnected: connectionKind === "connected"
     // A command can establish its own link while presence is scanning.
     // Use the dashboard's key/VIN prerequisites, not the connection icon.
-    readonly property bool canCommand: !!teslaClient && teslaClient.helperAvailable && isPaired && configError.length === 0
+    readonly property bool canCommand: !!teslaClient && isPaired && configError.length === 0
 
     function runCoverCommand(cmd) {
         if (!cover.canCommand || cover.commandBusy)
             return
         cover.commandBusy = true
+        cover.commandFailure = ""
+        cover.pendingAction = cmd
         cover.pendingCmd = teslaClient.newRequestId("cover:" + cmd, cover.vin)
-        teslaClient.runCommand(cover.pendingCmd, cmd, [])
+        // State-changing actions ask Rust for the dashboard's settled refresh.
+        teslaClient.runCommand(cover.pendingCmd, cmd, [], Catalog.refreshesStatus(cmd))
     }
 
-    Component.onCompleted: {
-        if (teslaClient)
-            teslaClient.refreshConfig()
+    // A pending reply belongs to the previous car.
+    onVinChanged: {
+        cover.pendingCmd = ""
+        cover.commandBusy = false
+        cover.commandFailure = ""
     }
 
     Connections {
         target: teslaClient
-        onConfigLoaded: {
-            cover.configError = ""
-            if (cover.vin !== vin) {
-                cover.pendingCmd = ""
-                cover.commandBusy = false
-            }
-            cover.vin = vin
-            cover.model = model
-            cover.hasKey = hasKey
-            cover.leftAction = CoverActions.action(coverLeftAction, 0).id
-            cover.rightAction = CoverActions.action(coverRightAction, 1).id
-        }
-        onConfigLoadError: cover.configError = message
         onCommandFinished: {
-            if (requestId === cover.pendingCmd) {
-                cover.commandBusy = false
-                cover.pendingCmd = ""
-            }
+            if (requestId !== cover.pendingCmd)
+                return
+            cover.commandBusy = false
+            cover.pendingCmd = ""
+            if (!ok)
+                cover.commandFailure = CoverActions.action(cover.pendingAction, 0).title + ": "
+                    + CommandText.failure(stdErr, exitCode)
         }
         onCommandError: {
-            if (requestId === cover.pendingCmd) {
-                cover.commandBusy = false
-                cover.pendingCmd = ""
-            }
+            if (requestId !== cover.pendingCmd)
+                return
+            cover.commandBusy = false
+            cover.pendingCmd = ""
+            cover.commandFailure = CoverActions.action(cover.pendingAction, 0).title + ": " + message
         }
     }
 
@@ -112,13 +112,26 @@ CoverBackground {
         z: 1
 
         Label {
+            id: commandFailureLabel
+            width: parent.width
+            visible: cover.commandFailure.length > 0
+            height: visible ? implicitHeight : 0
+            wrapMode: Text.Wrap
+            maximumLineCount: 3
+            elide: Text.ElideRight
+            font.pixelSize: Theme.fontSizeExtraSmall
+            color: "#FF453A"
+            text: cover.commandFailure
+        }
+
+        Label {
             id: configErrorLabel
             width: parent.width
             visible: cover.configError.length > 0
             height: visible ? implicitHeight : 0
             wrapMode: Text.Wrap
             font.pixelSize: Theme.fontSizeExtraSmall
-            text: cover.configError + "\n" + qsTr("Retry")
+            text: cover.configError + "\n" + qsTranslate("ConfigErrorBanner", "Retry")
             MouseArea {
                 anchors.fill: parent
                 onClicked: teslaClient.refreshConfig()
@@ -166,7 +179,9 @@ CoverBackground {
         Item {
             width: parent.width
             height: Math.max(0, parent.height - statusSlot.height - configErrorLabel.height
-                    - parent.spacing * (1 + (configErrorLabel.visible ? 1 : 0)))
+                    - commandFailureLabel.height
+                    - parent.spacing * (1 + (configErrorLabel.visible ? 1 : 0)
+                                          + (commandFailureLabel.visible ? 1 : 0)))
 
             Image {
                 id: carImage
@@ -183,7 +198,7 @@ CoverBackground {
                 width: Math.min(parent.width * 0.55, parent.height * 0.55)
                 height: width
                 fillMode: Image.PreserveAspectFit
-                source: "image://theme/icon-size-large?file:///usr/share/icons/hicolor/128x128/apps/harbour-electric-eel.png"
+                source: "file:///usr/share/icons/hicolor/128x128/apps/harbour-electric-eel.png"
                 visible: !cover.isPaired
             }
         }

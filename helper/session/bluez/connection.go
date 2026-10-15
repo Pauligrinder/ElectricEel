@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/godbus/dbus"
@@ -63,14 +62,9 @@ type Connection struct {
 
 	// RX reassembly state. Touched only by the rxLoop goroutine (the single
 	// writer), so it needs no lock of its own.
-	rxBuf          []byte
-	lastRx         time.Time
-	rxBackpressure atomic.Uint64
+	rxBuf  []byte
+	lastRx time.Time
 }
-
-// RXBackpressure counts full-inbox incidents; a saturated stream is retired
-// rather than silently losing a response and leaving commands ambiguous.
-func (c *Connection) RXBackpressure() uint64 { return c.rxBackpressure.Load() }
 
 // SetInboundObserver registers (or clears, with nil) a tap on inbound
 // datagrams. The observer receives a private copy of each reassembled
@@ -90,11 +84,6 @@ func (c *Connection) Receive() <-chan []byte {
 
 func (c *Connection) VIN() string {
 	return c.vin
-}
-
-// DevicePath returns the org.bluez Device1 object path for this link.
-func (c *Connection) DevicePath() dbus.ObjectPath {
-	return c.devPath
 }
 
 // Dropped is closed when BlueZ reports Connected=false or Close runs.
@@ -122,20 +111,10 @@ func (c *Connection) DeviceConnected(ctx context.Context) (bool, error) {
 	return connected, nil
 }
 
-// SetTrusted marks the vehicle as a trusted BlueZ device so reconnects do
-// not require interactive pairing prompts.
-func (c *Connection) SetTrusted(trusted bool) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	return c.bus.object(bluezService, c.devPath).setProp(ctx, deviceIface, "Trusted", trusted)
-}
-
-// SetAutoConnect asks bluetoothd to reconnect when the vehicle advertises.
-// Uses Properties.Set (Device1 has no SetProperty method). Presence mode
-// still watches Dropped() and re-runs StartSession after a reconnect.
-func (c *Connection) SetAutoConnect(enabled bool) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+// SetAutoConnect sets whether bluetoothd reconnects when the vehicle
+// advertises, within the caller's operation deadline. Uses Properties.Set
+// (Device1 has no SetProperty method).
+func (c *Connection) SetAutoConnect(ctx context.Context, enabled bool) error {
 	return c.bus.object(bluezService, c.devPath).setProp(ctx, deviceIface, "AutoConnect", enabled)
 }
 
@@ -389,7 +368,8 @@ func (c *Connection) flush() bool {
 	select {
 	case c.inbox <- buf:
 	default:
-		c.rxBackpressure.Add(1)
+		// A saturated stream is retired rather than silently losing a
+		// response and leaving commands ambiguous.
 		c.notifyDropped()
 		c.rxBuf = nil
 		return false

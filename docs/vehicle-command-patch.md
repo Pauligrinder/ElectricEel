@@ -37,10 +37,12 @@ ElectricEel additions on top (same "minimum copy" principle):
 - `pkg/vehicle/vehicle.go` — `SessionInfo` closes its response receiver on
   every return path. Pairing polls session information while awaiting NFC
   approval, so retaining those dispatcher registrations would leak state.
-- `pkg/protocol/key.go` — owner-only, synced atomic private-key replacement,
-  shared by the session and legacy CLI instead of duplicating persistence code.
+- `pkg/protocol/key.go` — owner-only, synced atomic private-key replacement.
+  Added for the former Go session daemon; the app no longer uses it (Rust's
+  `keys.rs` owns key persistence and passes the private scalar through the
+  C ABI), so this hunk only affects the upstream CLI tools.
 - `cmd/tesla-keygen/main.go` — non-forced file-key creation preserves an existing
-  unreadable key and reports the error, matching the session's reuse policy.
+  unreadable key and reports the error. Also unused by the app.
 
 Everything else in this directory is byte-identical to v0.4.1
 (`git clone https://github.com/teslamotors/vehicle-command.git &&

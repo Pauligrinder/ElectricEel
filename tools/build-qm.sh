@@ -5,7 +5,7 @@
 # the RPM and loaded per locale by main.cpp. Neither the host nor the
 # SailfishOS SDK ship linguist tools, so lupdate/lrelease come from the PySide6-Essentials
 # wheel (pip download only — no system Qt needed), cached under
-# $XDG_CACHE_HOME/qt-tools alongside the Qt libs they resolve via
+# $XDG_CACHE_HOME/qt-tools/pyside6-essentials-<version> alongside the Qt libs they resolve via
 # RUNPATH $ORIGIN/Qt/lib.
 #
 # Usage:
@@ -14,7 +14,13 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]:-..}")/.." && pwd)"
-tools_dir="${XDG_CACHE_HOME:-$HOME/.cache}/qt-tools"
+# Pinned: the --check gate compares byte-for-byte, so a different
+# lupdate/lrelease release could change the generated catalogs. 6.12.0
+# reproduces the committed app/translations. Bump deliberately, rerun this
+# script and commit the regenerated catalogs in the same change.
+pyside_requirement="PySide6-Essentials==6.12.0"
+pyside_version="${pyside_requirement#*==}"
+tools_dir="${XDG_CACHE_HOME:-$HOME/.cache}/qt-tools/pyside6-essentials-$pyside_version"
 lupdate="$tools_dir/PySide6/lupdate"
 lrelease="$tools_dir/PySide6/lrelease"
 check_only=0
@@ -23,20 +29,24 @@ if [ "${1:-}" = "--check" ]; then
 fi
 
 if [ ! -x "$lupdate" ] || [ ! -x "$lrelease" ]; then
-    echo "Fetching Qt linguist tools (PySide6-Essentials wheel)..."
-    mkdir -p "$tools_dir" /tmp/qttools-wheel
-    pip download --no-deps --dest /tmp/qttools-wheel PySide6-Essentials
+    echo "Fetching Qt linguist tools (PySide6-Essentials==$pyside_version wheel)..."
+    wheel_dir="$(mktemp -d)"
+    trap 'rm -rf "$wheel_dir"' EXIT
+    mkdir -p "$tools_dir"
+    pip download --no-deps --only-binary=:all: --dest "$wheel_dir" "$pyside_requirement"
     rm -rf "$tools_dir/PySide6"
-    python3 -c "
-import zipfile, glob
-z = zipfile.ZipFile(glob.glob('/tmp/qttools-wheel/*.whl')[0])
+    WHEEL_DIR="$wheel_dir" TOOLS_DIR="$tools_dir" python3 -c "
+import glob, os, sys, zipfile
+wheels = glob.glob(os.path.join(os.environ['WHEEL_DIR'], '*.whl'))
+if len(wheels) != 1:
+    sys.exit(f'expected exactly one wheel, found {wheels}')
+z = zipfile.ZipFile(wheels[0])
 names = [n for n in z.namelist()
          if n in ('PySide6/lupdate', 'PySide6/lrelease')
          or n.startswith('PySide6/Qt/lib/')]
-z.extractall('$tools_dir', members=names)
+z.extractall(os.environ['TOOLS_DIR'], members=names)
 "
     chmod +x "$lupdate" "$lrelease"
-    rm -rf /tmp/qttools-wheel
 fi
 
 # Smoke test with stderr visible: a broken toolchain (e.g. unresolvable

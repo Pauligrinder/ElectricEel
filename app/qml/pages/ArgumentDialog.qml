@@ -29,6 +29,10 @@ Dialog {
                 formValid = false
                 return
             }
+            if (value.length > 0 && a.pattern && !a.pattern.test(value)) {
+                formValid = false
+                return
+            }
             if (value.length > 0 && (a.type === "int" || a.type === "float")) {
                 var numeric = value
                 if (a.sendSuffix && numeric.slice(-a.sendSuffix.length) === a.sendSuffix)
@@ -99,11 +103,13 @@ Dialog {
 
                 delegate: Loader {
                     width: column.width
-                    active: !modelData.hidden
                     property var argSpec: modelData
                     sourceComponent: {
                         if (modelData.type === "enum") return enumField
                         if (modelData.type === "pin") return pinField
+                        // Catalog opt-out for ranges a slider cannot resolve
+                        // (coordinates: one pixel would be kilometres).
+                        if (modelData.input === "text") return textField
                         // Sliders always have *some* value under the thumb,
                         // so an optional numeric field can't use one - it
                         // would always send a value, never really skip it
@@ -171,6 +177,7 @@ Dialog {
         TextField {
             property var argSpec
             label: argSpec ? argSpec.name : ""
+            placeholderText: argSpec && argSpec.placeholder ? argSpec.placeholder : ""
             echoMode: TextInput.Password
             inputMethodHints: Qt.ImhDigitsOnly
             onTextChanged: {

@@ -68,13 +68,6 @@ function modelImage(id) {
     return "../../img/model3.png"
 }
 
-function modelName(id) {
-    var found = findModel(id)
-    if (found.entry)
-        return found.entry.name
-    return qsTr("Model 3")
-}
-
 function modelIndex(id) {
     var found = findModel(id)
     return found.index
@@ -135,19 +128,16 @@ function guessModel(vin) {
 
 function emptyStatus() {
     return {
+        // null = unknown: toggles then choose their safe/forward action.
         locked: null,
-        doorsOpen: false,
-        trunkFrontOpen: false,
         trunkRearOpen: false,
-        windowsOpen: false,
+        windowsOpen: null,
         insideTemp: null,
-        outsideTemp: null,
         isClimateOn: false,
         driverTempSetting: null,
         batteryLevel: null,
         chargingState: "",
         chargePortOpen: false,
-        minutesToFullCharge: 0,
         chargeLimitSoc: null,
         chargeCurrent: null,
         updatedAt: 0,
@@ -216,9 +206,6 @@ function mergeBodyControllerState(status, jsonText) {
             }
             if (hasKnown) {
                 hasReading = true
-                s.doorsOpen = closureIsOpen(c.frontDriverDoor) || closureIsOpen(c.frontPassengerDoor)
-                    || closureIsOpen(c.rearDriverDoor) || closureIsOpen(c.rearPassengerDoor)
-                s.trunkFrontOpen = closureIsOpen(c.frontTrunk)
                 s.trunkRearOpen = closureIsOpen(c.rearTrunk)
             }
         }
@@ -239,10 +226,6 @@ function mergeClosuresState(status, jsonText) {
             return s
         var obj = root.closuresState
         s.locked = !!obj.locked
-        s.doorsOpen = !!(obj.doorOpenDriverFront || obj.doorOpenDriverRear ||
-                          obj.doorOpenPassengerFront || obj.doorOpenPassengerRear ||
-                          obj.doorOpenTrunkFront || obj.doorOpenTrunkRear)
-        s.trunkFrontOpen = !!obj.doorOpenTrunkFront
         s.trunkRearOpen = !!obj.doorOpenTrunkRear
         s.windowsOpen = !!(obj.windowOpenDriverFront || obj.windowOpenPassengerFront ||
                             obj.windowOpenDriverRear || obj.windowOpenPassengerRear)
@@ -261,7 +244,6 @@ function mergeClimateState(status, jsonText) {
             return s
         var obj = root.climateState
         s.insideTemp = obj.insideTempCelsius !== undefined ? obj.insideTempCelsius : null
-        s.outsideTemp = obj.outsideTempCelsius !== undefined ? obj.outsideTempCelsius : null
         s.driverTempSetting = obj.driverTempSetting !== undefined ? obj.driverTempSetting : null
         s.isClimateOn = !!obj.isClimateOn
         markUpdated(s, "climate")
@@ -298,7 +280,6 @@ function mergeChargeState(status, jsonText) {
         s.batteryLevel = obj.batteryLevel !== undefined ? obj.batteryLevel : null
         s.chargingState = oneofVariantName(obj.chargingState)
         s.chargePortOpen = !!obj.chargePortDoorOpen
-        s.minutesToFullCharge = obj.minutesToFullCharge || 0
         // chargeLimitSoc is the car's configured charge limit in % (the
         // value charging-set-limit writes); chargeCurrent is the charging
         // current setting in A (what charging-set-amps writes), preferring
@@ -312,6 +293,24 @@ function mergeChargeState(status, jsonText) {
         console.log("VehicleState: charge parse failed:", e, jsonText)
     }
     return s
+}
+
+// The dashboard refresh chain, in order: body-controller-state first (VCSEC:
+// lock/closures even while infotainment sleeps), then the three
+// infotainment `state` categories. One BLE round-trip per leg.
+var STATUS_LEGS = [
+    { stage: "body", command: "body-controller-state", args: [], merge: mergeBodyControllerState },
+    { stage: "closures", command: "state", args: ["closures"], merge: mergeClosuresState },
+    { stage: "climate", command: "state", args: ["climate"], merge: mergeClimateState },
+    { stage: "charge", command: "state", args: ["charge"], merge: mergeChargeState },
+]
+
+function statusLegIndex(stage) {
+    for (var i = 0; i < STATUS_LEGS.length; i++) {
+        if (STATUS_LEGS[i].stage === stage)
+            return i
+    }
+    return -1
 }
 
 // Returns -1 if there's no reading yet, so callers can hide the "updated

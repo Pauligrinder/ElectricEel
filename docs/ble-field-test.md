@@ -9,7 +9,7 @@ access, or live instructions are needed during the walk.
 
 1. Install the diagnostic RPM through Sailfish's normal package/file-manager
    interface if it accepts local RPM upgrades. Close ElectricEel completely
-   and reopen it so the new session child runs. Check that your VIN and key
+   and reopen it so the new version runs. Check that your VIN and key
    are still present in Settings; do not generate a new key.
 2. Enable Bluetooth, leave ElectricEel open (background/cover is fine), and
    check that it says **Phone key scanning**. Carry the NFC key card in case
@@ -17,7 +17,9 @@ access, or live instructions are needed during the walk.
    separate Bluetooth scanner during the baseline.
 3. Note the start time on your phone clock. Make sure you can access
    `Documents/ElectricEel/phone-key-YYYY-MM-DD.log` in Sailfish File Browser.
-   A new file should contain `session`/`presence` and `bluez` lines. If the
+   A new file should contain `core` lines (e.g. `phone-key presence started`)
+   and `go` lines from the Bluetooth layer (`scan …`, `event watcher …`,
+   `connect …`). If the
    file is absent, stop here and tell us; we can arrange another collection
    method before the walk.
 
@@ -53,15 +55,18 @@ contain the VIN, so redact it if you prefer before sharing. If the test
 crossed midnight, include both days. No system log or privileged command is
 required for this first pass; ask before running any command on the phone.
 
-The `bluez` scan-window lines count full object-tree reads, beacon/RSSI
-snapshots, RSSI `PropertiesChanged` signals, and their total/maximum read
-time. RSSI snapshot counts are **not** counts of fresh radio advertisements:
-BlueZ can retain RSSI on a cached device. An `rssiUpdateSignals=0` window
-does not prove the radio heard nothing (BlueZ need not emit a signal for every
-advertisement), but a nonzero count confirms actual updates reached the app.
-`lastRSSIUpdateAge=-1ns` means no RSSI signal has been observed yet. The `ui`
-lines show Qt application-state transitions; screen-off might not trigger a
-Qt state change. `presence loop gap` marks an interval when the session child
-was not advancing; it cannot by itself distinguish suspension from a blocked
-call. Connect-attempt and discovery-transition lines show where retries or
-timeouts occurred.
+Every line is `<local time>  <tag>  <message>`. `core` lines record phone-key
+start/stop, refusals and resume-from-suspend session recycling. `go` lines are
+the Go/BlueZ diagnostics: `scan started`/`scan found beacon after=… polls=…
+rssiPresent=…`/`scan ended …` summarize each scan, `event watcher started` and
+`watcher discovery lost`/`restart failed` cover continuous discovery, and the
+`connect …` lines show each connection attempt, its duration and retry, the
+discovery stop before `Device1.Connect`, `connect proceeding while another
+client keeps discovery active`, and the service-resolution wait. RSSI seen on a
+cached BlueZ device is not proof of a fresh advertisement; `scan ignoring stale
+cached device without fresh RSSI` marks such cases. `presence` lines record
+`presence_away_confirmed`; `keepalive` lines record the CPU keep-alive lease;
+`ui` lines show Qt application-state transitions (screen-off might not trigger
+a Qt state change). A `diagnostic queue overflow` line means Go diagnostics
+were dropped. Bluetooth turned off is reported as a persistent status in the
+app rather than retried.

@@ -243,6 +243,7 @@ fn renew(core: &Core, quit: &AtomicBool, address: Option<&str>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tesla_ble::fake;
     use std::io::{BufRead, BufReader};
     use std::process::{Command, Stdio};
     use std::sync::mpsc;
@@ -296,15 +297,25 @@ mod tests {
         exercise_lease(60);
     }
 
+    /// Kills and reaps the private D-Bus daemon.
+    struct Daemon(std::process::Child);
+
+    impl Drop for Daemon {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+
     fn exercise_lease(period: i32) {
         let child = Command::new("dbus-daemon")
             .args(["--session", "--nofork", "--print-address=1"])
             .stdout(Stdio::piped())
             .spawn()
             .expect("dbus-daemon installed for integration test");
-        let mut daemon = crate::child::KillOnDrop(child);
+        let mut daemon = Daemon(child);
         let mut address = String::new();
-        BufReader::new(daemon.stdout.take().unwrap())
+        BufReader::new(daemon.0.stdout.take().unwrap())
             .read_line(&mut address)
             .unwrap();
         let (sender, receiver) = mpsc::channel();
@@ -325,20 +336,29 @@ mod tests {
             .unwrap();
 
         let dir = tempfile::tempdir().unwrap();
+        let vin = format!("5YJ3E1EA0PF4{period:05}");
         let cfg = crate::config::Config {
-            vin: "5YJ3E1EA0PF000000".into(),
+            vin: vin.clone(),
             vin_state: crate::config::VinState::Paired,
             ..crate::config::Config::default()
         };
         cfg.save(&dir.path().join("config.json")).unwrap();
-        std::fs::write(dir.path().join("private_key.pem"), "private").unwrap();
-        let state = dir.path().to_string_lossy().into_owned();
-        let session = crate::session_client::SessionClient::new(
-            dir.path().join("missing"),
-            "bluez",
-            dir.path().into(),
+        crate::keys::generate(
+            &dir.path().join("private_key.pem"),
+            &dir.path().join("public_key.pem"),
+            false,
+        )
+        .unwrap();
+        // Presence keeps failing to start: the lease must still be held.
+        fake::script(
+            &vin,
+            fake::Script {
+                statuses: [(fake::WATCH_START, (fake::FAILED, "radio failure".into()))].into(),
+                ..fake::Script::default()
+            },
         );
-        let core = Arc::new(Core::new(state.clone(), state, Some(session)).unwrap());
+        let client = crate::protocol_client::ProtocolClient::with_library(fake::library());
+        let core = Arc::new(Core::new(dir.path(), Some(client)).unwrap());
         assert!(core.start_phone_key().is_err());
         assert!(core.phone_key_enabled());
         {

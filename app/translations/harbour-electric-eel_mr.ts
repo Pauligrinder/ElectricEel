@@ -3,18 +3,18 @@
   <context>
     <name>ArgumentDialog</name>
     <message>
-      <location filename="../qml/pages/ArgumentDialog.qml" line="83" />
+      <location filename="../qml/pages/ArgumentDialog.qml" line="87" />
       <source>Run</source>
       <translation>चालवा</translation>
     </message>
     <message>
-      <location filename="../qml/pages/ArgumentDialog.qml" line="151" />
-      <location filename="../qml/pages/ArgumentDialog.qml" line="232" />
+      <location filename="../qml/pages/ArgumentDialog.qml" line="157" />
+      <location filename="../qml/pages/ArgumentDialog.qml" line="239" />
       <source> (optional)</source>
       <translation> (पर्यायी)</translation>
     </message>
     <message>
-      <location filename="../qml/pages/ArgumentDialog.qml" line="155" />
+      <location filename="../qml/pages/ArgumentDialog.qml" line="161" />
       <source>(not set)</source>
       <translation>(सेट केलेले नाही)</translation>
     </message>
@@ -22,57 +22,47 @@
   <context>
     <name>CategoryPage</name>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="47" />
+      <location filename="../qml/pages/CategoryPage.qml" line="43" />
       <source>%1 • %2°C inside</source>
       <translation>%1 • आतमध्ये %2 °C</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="48" />
+      <location filename="../qml/pages/CategoryPage.qml" line="44" />
       <source>Climate on</source>
       <translation>हवामान चालू</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="48" />
+      <location filename="../qml/pages/CategoryPage.qml" line="44" />
       <source>Climate off</source>
       <translation>हवामान बंद</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="54" />
+      <location filename="../qml/pages/CategoryPage.qml" line="50" />
       <source>%1% battery%2</source>
       <translation>%1% बॅटरी%2</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="57" />
+      <location filename="../qml/pages/CategoryPage.qml" line="53" />
       <source> • Charging</source>
       <translation> • चार्ज होत आहे</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="62" />
+      <location filename="../qml/pages/CategoryPage.qml" line="58" />
       <source>Doors locked</source>
       <translation>दारे बंद</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="62" />
+      <location filename="../qml/pages/CategoryPage.qml" line="58" />
       <source>Doors unlocked</source>
       <translation>दारे उघडी</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="89" />
+      <location filename="../qml/pages/CategoryPage.qml" line="77" />
       <source>OK</source>
       <translation>ठीक</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="89" />
-      <source>exit code %1</source>
-      <translation>एक्झिट कोड %1</translation>
-    </message>
-    <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="170" />
-      <source>Retry</source>
-      <translation>पुन्हा प्रयत्न करा</translation>
-    </message>
-    <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="208" />
+      <location filename="../qml/pages/CategoryPage.qml" line="181" />
       <source>Running %1...</source>
       <translation>%1 चालू आहे...</translation>
     </message>
@@ -80,344 +70,361 @@
   <context>
     <name>CommandCatalog</name>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="33" />
+      <location filename="../qml/js/CommandCatalog.js" line="34" />
       <source>Attention</source>
       <translation>लक्ष द्या</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="36" />
+      <location filename="../qml/js/CommandCatalog.js" line="37" />
       <source>Honk Horn</source>
       <translation>हॉर्न</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="37" />
+      <location filename="../qml/js/CommandCatalog.js" line="38" />
       <source>Flash Lights</source>
       <translation>लाइट फ्लॅश</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="38" />
+      <location filename="../qml/js/CommandCatalog.js" line="39" />
       <source>Wake Vehicle</source>
       <translation>वाहन जागे करा</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="43" />
+      <location filename="../qml/js/CommandCatalog.js" line="44" />
       <source>Climate</source>
       <translation>हवामान</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="46" />
+      <location filename="../qml/js/CommandCatalog.js" line="47" />
       <source>Climate On</source>
       <translation>हवामान चालू करा</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="47" />
+      <location filename="../qml/js/CommandCatalog.js" line="48" />
       <source>Climate Off</source>
       <translation>हवामान बंद करा</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="51" />
+      <location filename="../qml/js/CommandCatalog.js" line="52" />
       <source>Set Temperature</source>
       <translation>तापमान सेट करा</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="58" />
+      <location filename="../qml/js/CommandCatalog.js" line="59" />
       <source>Seat Heater</source>
       <translation>सीट हीटर</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="62" />
+      <location filename="../qml/js/CommandCatalog.js" line="63" />
       <source>Steering Wheel Heater</source>
       <translation>स्टीयरिंग हीटर</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="67" />
+      <location filename="../qml/js/CommandCatalog.js" line="68" />
       <source>Auto Seat &amp; Climate</source>
       <translation>ऑटो सीट व हवामान</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="71" />
+      <location filename="../qml/js/CommandCatalog.js" line="72" />
       <source>Add Preconditioning Schedule</source>
       <translation>प्रीकंडिशनिंग शेड्यूल जोडा</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="72" />
+      <location filename="../qml/js/CommandCatalog.js" line="73" />
       <source>Remove Preconditioning Schedule</source>
       <translation>प्रीकंडिशनिंग शेड्यूल काढा</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="77" />
+      <location filename="../qml/js/CommandCatalog.js" line="78" />
       <source>Charging</source>
       <translation>चार्जिंग</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="80" />
+      <location filename="../qml/js/CommandCatalog.js" line="81" />
       <source>Start Charging</source>
       <translation>चार्जिंग सुरू करा</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="81" />
+      <location filename="../qml/js/CommandCatalog.js" line="82" />
       <source>Stop Charging</source>
       <translation>चार्जिंग थांबवा</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="82" />
+      <location filename="../qml/js/CommandCatalog.js" line="83" />
       <source>Open Charge Port</source>
       <translation>चार्ज पोर्ट उघडा</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="83" />
+      <location filename="../qml/js/CommandCatalog.js" line="84" />
       <source>Close Charge Port</source>
       <translation>चार्ज पोर्ट बंद करा</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="84" />
+      <location filename="../qml/js/CommandCatalog.js" line="85" />
       <source>Set Charge Limit</source>
       <translation>चार्ज मर्यादा सेट करा</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="87" />
+      <location filename="../qml/js/CommandCatalog.js" line="88" />
       <source>Set Charge Current</source>
       <translation>चार्ज करंट सेट करा</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="90" />
+      <location filename="../qml/js/CommandCatalog.js" line="91" />
       <source>Schedule Charging</source>
       <translation>चार्जिंग शेड्यूल करा</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="93" />
+      <location filename="../qml/js/CommandCatalog.js" line="94" />
       <source>Cancel Scheduled Charging</source>
       <translation>शेड्यूल्ड चार्जिंग रद्द करा</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="94" />
+      <location filename="../qml/js/CommandCatalog.js" line="95" />
       <source>Add Charge Schedule</source>
       <translation>चार्ज शेड्यूल जोडा</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="95" />
+      <location filename="../qml/js/CommandCatalog.js" line="96" />
       <source>Remove Charge Schedule</source>
       <translation>चार्ज शेड्यूल काढा</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="100" />
+      <location filename="../qml/js/CommandCatalog.js" line="101" />
       <source>Locks &amp; Security</source>
       <translation>लॉक व सुरक्षा</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="103" />
+      <location filename="../qml/js/CommandCatalog.js" line="104" />
       <source>Lock</source>
       <translation>लॉक करा</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="104" />
+      <location filename="../qml/js/CommandCatalog.js" line="105" />
       <source>Unlock</source>
       <translation>अनलॉक करा</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="110" />
+      <location filename="../qml/js/CommandCatalog.js" line="111" />
       <source>Remote Start (Keyless Drive)</source>
       <translation>रिमोट स्टार्ट (चावीशिवाय ड्राइव्ह)</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="111" />
+      <location filename="../qml/js/CommandCatalog.js" line="112" />
       <source>Sentry Mode</source>
       <translation>सेंट्री मोड</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="112" />
+      <location filename="../qml/js/CommandCatalog.js" line="114" />
       <source>Valet Mode On</source>
       <translation>व्हॅले मोड चालू</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="113" />
+      <location filename="../qml/js/CommandCatalog.js" line="115" />
       <source>Valet Mode Off</source>
       <translation>व्हॅले मोड बंद</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="114" />
+      <location filename="../qml/js/CommandCatalog.js" line="116" />
       <source>Guest Mode On</source>
       <translation>गेस्ट मोड चालू</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="115" />
+      <location filename="../qml/js/CommandCatalog.js" line="117" />
       <source>Guest Mode Off</source>
       <translation>गेस्ट मोड बंद</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="116" />
+      <location filename="../qml/js/CommandCatalog.js" line="118" />
       <source>Erase Guest Data</source>
       <translation>गेस्ट डेटा पुसा</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="117" />
+      <location filename="../qml/js/CommandCatalog.js" line="119" />
       <source>Auto-Secure (Model X)</source>
       <translation>ऑटो-सिक्युअर (Model X)</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="127" />
+      <location filename="../qml/js/CommandCatalog.js" line="129" />
       <source>Trunk, Frunk &amp; Windows</source>
       <translation>डिक्या व खिडक्या</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="130" />
+      <location filename="../qml/js/CommandCatalog.js" line="132" />
       <source>Open Rear Trunk</source>
       <translation>मागची डिकी उघडा</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="131" />
+      <location filename="../qml/js/CommandCatalog.js" line="133" />
       <source>Move Rear Trunk</source>
       <translation>मागची डिकी चालवा</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="132" />
+      <location filename="../qml/js/CommandCatalog.js" line="134" />
       <source>Close Rear Trunk</source>
       <translation>मागची डिकी बंद करा</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="133" />
+      <location filename="../qml/js/CommandCatalog.js" line="135" />
       <source>Open Front Trunk</source>
       <translation>पुढची डिकी उघडा</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="134" />
+      <location filename="../qml/js/CommandCatalog.js" line="136" />
       <source>Open Tonneau (Cybertruck)</source>
       <translation>टोनो उघडा (Cybertruck)</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="135" />
+      <location filename="../qml/js/CommandCatalog.js" line="137" />
       <source>Close Tonneau (Cybertruck)</source>
       <translation>टोनो बंद करा (Cybertruck)</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="136" />
+      <location filename="../qml/js/CommandCatalog.js" line="138" />
       <source>Stop Tonneau (Cybertruck)</source>
       <translation>टोनो थांबवा (Cybertruck)</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="137" />
+      <location filename="../qml/js/CommandCatalog.js" line="139" />
       <source>Vent Windows</source>
       <translation>खिडक्या उघडा</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="138" />
+      <location filename="../qml/js/CommandCatalog.js" line="140" />
       <source>Close Windows</source>
       <translation>खिडक्या बंद करा</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="143" />
+      <location filename="../qml/js/CommandCatalog.js" line="145" />
       <source>Media</source>
       <translation>मीडिया</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="146" />
+      <location filename="../qml/js/CommandCatalog.js" line="148" />
       <source>Play / Pause</source>
       <translation>वाजवा / थांबवा</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="147" />
+      <location filename="../qml/js/CommandCatalog.js" line="149" />
       <source>Next Track</source>
       <translation>पुढचा ट्रॅक</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="148" />
+      <location filename="../qml/js/CommandCatalog.js" line="150" />
       <source>Previous Track</source>
       <translation>मागचा ट्रॅक</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="149" />
+      <location filename="../qml/js/CommandCatalog.js" line="151" />
       <source>Next Favorite</source>
       <translation>पुढचा आवडता</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="150" />
+      <location filename="../qml/js/CommandCatalog.js" line="152" />
       <source>Previous Favorite</source>
       <translation>मागचा आवडता</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="151" />
+      <location filename="../qml/js/CommandCatalog.js" line="153" />
       <source>Volume Up</source>
       <translation>आवाज वाढवा</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="152" />
+      <location filename="../qml/js/CommandCatalog.js" line="154" />
       <source>Volume Down</source>
       <translation>आवाज कमी करा</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="153" />
+      <location filename="../qml/js/CommandCatalog.js" line="155" />
       <source>Set Volume</source>
       <translation>आवाज सेट करा</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="160" />
+      <location filename="../qml/js/CommandCatalog.js" line="162" />
       <source>Software</source>
       <translation>सॉफ्टवेअर</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="167" />
+      <location filename="../qml/js/CommandCatalog.js" line="169" />
       <source>Start Software Update</source>
       <translation>सॉफ्टवेअर अपडेट सुरू करा</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="170" />
+      <location filename="../qml/js/CommandCatalog.js" line="172" />
       <source>Cancel Software Update</source>
       <translation>सॉफ्टवेअर अपडेट रद्द करा</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="175" />
+      <location filename="../qml/js/CommandCatalog.js" line="177" />
       <source>Keys</source>
       <translation>चाव्या</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="178" />
+      <location filename="../qml/js/CommandCatalog.js" line="180" />
       <source>List Enrolled Keys</source>
       <translation>नोंदणीकृत चाव्यांची यादी</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="185" />
+      <location filename="../qml/js/CommandCatalog.js" line="187" />
       <source>Add Key</source>
       <translation>चावी जोडा</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="190" />
+      <location filename="../qml/js/CommandCatalog.js" line="192" />
       <source>Remove Key</source>
       <translation>चावी काढा</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="197" />
+      <location filename="../qml/js/CommandCatalog.js" line="199" />
       <source>Session Info</source>
       <translation>सत्र माहिती</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="205" />
+      <location filename="../qml/js/CommandCatalog.js" line="207" />
       <source>Diagnostics</source>
       <translation>डायग्नोस्टिक्स</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="208" />
+      <location filename="../qml/js/CommandCatalog.js" line="210" />
       <source>Ping Vehicle</source>
       <translation>वाहन पिंग</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="216" />
+      <location filename="../qml/js/CommandCatalog.js" line="218" />
       <source>Get Vehicle State</source>
       <translation>वाहन स्थिती वाचा</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="219" />
+      <location filename="../qml/js/CommandCatalog.js" line="221" />
       <source>Body Controller State</source>
       <translation>बॉडी कंट्रोलर स्थिती</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="223" />
+      <location filename="../qml/js/CommandCatalog.js" line="225" />
       <source>Keep Accessory Power</source>
       <translation>अ‍ॅक्सेसरी पॉवर ठेवा</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="224" />
+      <location filename="../qml/js/CommandCatalog.js" line="226" />
       <source>Low Power Mode</source>
       <translation>लो पॉवर मोड</translation>
+    </message>
+  </context>
+  <context>
+    <name>CommandText</name>
+    <message>
+      <location filename="../qml/js/CommandText.js" line="6" />
+      <source>exit code %1</source>
+      <translation>एक्झिट कोड %1</translation>
+    </message>
+  </context>
+  <context>
+    <name>ConfigErrorBanner</name>
+    <message>
+      <location filename="../qml/cover/CoverPage.qml" line="134" />
+      <location filename="../qml/pages/ConfigErrorBanner.qml" line="22" />
+      <source>Retry</source>
+      <translation>पुन्हा प्रयत्न करा</translation>
     </message>
   </context>
   <context>
@@ -454,119 +461,91 @@
     </message>
   </context>
   <context>
-    <name>CoverPage</name>
-    <message>
-      <location filename="../qml/cover/CoverPage.qml" line="121" />
-      <source>Retry</source>
-      <translation>पुन्हा प्रयत्न करा</translation>
-    </message>
-  </context>
-  <context>
     <name>FirstPage</name>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="282" />
-      <source>The control core failed to start. Reinstall the app, then pull down to refresh.</source>
-      <translation>कंट्रोल कोर सुरू होऊ शकला नाही. अ‍ॅप पुन्हा इंस्टॉल करा, मग रिफ्रेशसाठी खाली खेचा.</translation>
-    </message>
-    <message>
-      <location filename="../qml/pages/FirstPage.qml" line="284" />
-      <source>The control core is too old to report its version. Reinstall the app (%1), then pull down to refresh.</source>
-      <translation>कंट्रोल कोर व्हर्जन सांगायला खूप जुना आहे. अ‍ॅप (%1) पुन्हा इंस्टॉल करा, मग रिफ्रेशसाठी खाली खेचा.</translation>
-    </message>
-    <message>
-      <location filename="../qml/pages/FirstPage.qml" line="285" />
-      <source>Version mismatch: app %1, core %2. Reinstall the app, then pull down to refresh.</source>
-      <translation>व्हर्जन जुळत नाही: अ‍ॅप %1, कोर %2. अ‍ॅप पुन्हा इंस्टॉल करा, मग रिफ्रेशसाठी खाली खेचा.</translation>
-    </message>
-    <message>
-      <location filename="../qml/pages/FirstPage.qml" line="63" />
-      <location filename="../qml/pages/FirstPage.qml" line="303" />
+      <location filename="../qml/pages/FirstPage.qml" line="59" />
+      <location filename="../qml/pages/FirstPage.qml" line="250" />
       <source>No VIN configured</source>
       <translation>VIN कॉन्फिगर केलेले नाही</translation>
     </message>
     <message>
       <location filename="../qml/pages/FirstPage.qml" line="55" />
-      <source>Control helper unavailable</source>
-      <translation>नियंत्रण सेवा उपलब्ध नाही</translation>
-    </message>
-    <message>
-      <location filename="../qml/pages/FirstPage.qml" line="59" />
       <source>No key: generate and pair a key first</source>
       <translation>कळ नाही: आधी कळ तयार करा आणि पेअर करा</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="307" />
+      <location filename="../qml/pages/FirstPage.qml" line="254" />
       <source>Key ready</source>
       <translation>चावी तयार</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="307" />
+      <location filename="../qml/pages/FirstPage.qml" line="254" />
       <source>No key - tap for Settings / Pairing</source>
       <translation>चावी नाही - सेटिंग्ज / जोडणीसाठी टॅप करा</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="362" />
+      <location filename="../qml/pages/FirstPage.qml" line="308" />
       <source> • charging</source>
       <translation> • चार्ज होत आहे</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="371" />
+      <location filename="../qml/pages/FirstPage.qml" line="317" />
       <source>• %1°C</source>
       <translation>• %1 °C</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="396" />
+      <location filename="../qml/pages/FirstPage.qml" line="342" />
       <source>Updating...</source>
       <translation>अपडेट होत आहे...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="398" />
+      <location filename="../qml/pages/FirstPage.qml" line="344" />
       <source>Status unavailable (%1). Vehicle may be asleep - try Wake Vehicle (Attention), then Refresh Status.</source>
       <translation>स्थिती उपलब्ध नाही (%1). वाहन झोपले असेल - वाहन जागे करा (लक्ष द्या) करून पहा, मग स्थिती रिफ्रेश करा.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="400" />
+      <location filename="../qml/pages/FirstPage.qml" line="346" />
       <source>Pull down to refresh status</source>
       <translation>स्थिती रिफ्रेशसाठी खाली खेचा</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="402" />
+      <location filename="../qml/pages/FirstPage.qml" line="348" />
       <source>Updated just now</source>
       <translation>त्ताच अपडेट झाले</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="403" />
+      <location filename="../qml/pages/FirstPage.qml" line="349" />
       <source>Updated %1m ago</source>
       <translation>%1 मि पूर्वी अपडेट झाले</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="496" />
+      <location filename="../qml/pages/FirstPage.qml" line="403" />
       <source>Categories</source>
       <translation>श्रेण्या</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="546" />
+      <location filename="../qml/pages/FirstPage.qml" line="452" />
       <source>Send Destination</source>
       <translation>गंतव्य पाठवा</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="550" />
+      <location filename="../qml/pages/FirstPage.qml" line="456" />
       <source>Pair Vehicle</source>
       <translation>वाहन जोडा</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="554" />
+      <location filename="../qml/pages/FirstPage.qml" line="460" />
       <source>Settings</source>
       <translation>सेटिंग्ज</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="558" />
-      <location filename="../qml/pages/SettingsPage.qml" line="199" />
+      <location filename="../qml/pages/FirstPage.qml" line="464" />
+      <location filename="../qml/pages/SettingsPage.qml" line="204" />
       <source>Refresh</source>
       <translation>रिफ्रेश</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="562" />
+      <location filename="../qml/pages/FirstPage.qml" line="468" />
       <source>Refresh Status</source>
       <translation>स्थिती रिफ्रेश करा</translation>
     </message>
@@ -574,82 +553,77 @@
   <context>
     <name>NavigationPage</name>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="53" />
+      <location filename="../qml/pages/NavigationPage.qml" line="51" />
       <source>Paste or type a destination first.</source>
       <translation>आधी गंतव्य पेस्ट करा किंवा लिहा.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="57" />
+      <location filename="../qml/pages/NavigationPage.qml" line="55" />
       <source>Checking...</source>
       <translation>तपासत आहे...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="67" />
+      <location filename="../qml/pages/NavigationPage.qml" line="65" />
       <source>Nothing to send.</source>
       <translation>पाठवायला काही नाही.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="105" />
+      <location filename="../qml/pages/NavigationPage.qml" line="92" />
       <source>Cannot use this: %1</source>
       <translation>वापरता येणार नाही: %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="109" />
+      <location filename="../qml/pages/NavigationPage.qml" line="96" />
       <source>Coordinates %1, %2 — navigation will start there.</source>
       <translation>निर्देशांक %1, %2 — नेव्हिगेशन तिथेच सुरू होईल.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="112" />
+      <location filename="../qml/pages/NavigationPage.qml" line="99" />
       <source>Address "%1" — the car will look it up.</source>
       <translation>पत्ता “%1” — गाडी स्वतः शोधेल.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="119" />
+      <location filename="../qml/pages/NavigationPage.qml" line="106" />
       <source>Send failed: %1</source>
       <translation>पाठवणे अयशस्वी: %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="119" />
+      <location filename="../qml/pages/NavigationPage.qml" line="106" />
       <source>OK</source>
       <translation>ठीक</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="139" />
+      <location filename="../qml/pages/NavigationPage.qml" line="127" />
       <source>Car Navigation</source>
       <translation>गाडी नेव्हिगेशन</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="152" />
-      <source>Retry</source>
-      <translation>पुन्हा प्रयत्न करा</translation>
-    </message>
-    <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="159" />
+      <location filename="../qml/pages/NavigationPage.qml" line="134" />
       <source>Destination</source>
       <translation>गंतव्य</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="160" />
+      <location filename="../qml/pages/NavigationPage.qml" line="135" />
       <source>Paste address, coordinates, or map link</source>
       <translation>पत्ता, निर्देशांक किंवा नकाशा लिंक पेस्ट करा</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="168" />
+      <location filename="../qml/pages/NavigationPage.qml" line="143" />
       <source>Preview</source>
       <translation>झलक</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="186" />
+      <location filename="../qml/pages/NavigationPage.qml" line="161" />
       <source>Send to Car</source>
       <translation>गाडीला पाठवा</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="208" />
+      <location filename="../qml/pages/NavigationPage.qml" line="183" />
       <source>Notes</source>
       <translation>नोंदी</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="217" />
+      <location filename="../qml/pages/NavigationPage.qml" line="192" />
       <source>This uses Bluetooth, like lock/unlock — the car must be in range, no internet needed on either side. Coordinates are sent exactly; addresses and links are looked up by the car itself, so unusual spellings may resolve differently than on your phone. From Android apps: copy the address or link, then paste it above.</source>
       <translation>लॉक/अनलॉकसारखे Bluetooth वापरते — गाडी रेंजमध्ये हवी, इंटरनेट नको. निर्देशांक अचूक पाठवले जातात; पत्ते व लिंक गाडी स्वतः शोधते, त्यामुळे असामान्य स्पेलिंग फोनपेक्षा वेगळे समजले जाऊ शकते. Android अ‍ॅप्समधून: पत्ता किंवा लिंक कॉपी करून वर पेस्ट करा.</translation>
     </message>
@@ -657,82 +631,92 @@
   <context>
     <name>PairingPage</name>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="31" />
+      <location filename="../qml/pages/PairingPage.qml" line="36" />
       <source>Key generated. Tap "Pair with Vehicle", then tap your NFC card on the center console when prompted on the car's screen.</source>
       <translation>चावी तयार झाली. “वाहन जोडा” टॅप करा, मग गाडीची स्क्रीन सांगेल तेव्हा NFC कार्ड सेंटर कन्सोलवर टॅप करा.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="33" />
+      <location filename="../qml/pages/PairingPage.qml" line="38" />
       <source>Key generation failed: %1</source>
       <translation>चावी तयार करणे अयशस्वी: %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="38" />
+      <location filename="../qml/pages/PairingPage.qml" line="43" />
       <source>Paired.</source>
       <translation>जोडले.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="38" />
+      <location filename="../qml/pages/PairingPage.qml" line="43" />
       <source>Pairing failed: %1</source>
       <translation>जोडणी अयशस्वी: %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="47" />
+      <location filename="../qml/pages/PairingPage.qml" line="52" />
       <source>No keys listed</source>
       <translation>कोणतीही कळ सूचीबद्ध नाही</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="87" />
+      <location filename="../qml/pages/PairingPage.qml" line="86" />
       <source>Pairing &amp; Keys</source>
       <translation>जोडणी व चाव्या</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="100" />
-      <source>Retry</source>
-      <translation>पुन्हा प्रयत्न करा</translation>
-    </message>
-    <message>
-      <location filename="../qml/pages/PairingPage.qml" line="109" />
+      <location filename="../qml/pages/PairingPage.qml" line="95" />
       <source>Set the VIN in Settings first. Then generate a key, then pair it with the car over BLE - you'll need to be next to the vehicle and tap the NFC card on the center console to approve.</source>
       <translation>आधी सेटिंग्जमध्ये VIN टाका. मग चावी तयार करून BLEने गाडीशी जोडा – गाडीशेजारी उभे राहा आणि मान्यतेसाठी NFC कार्ड सेंटर कन्सोलवर टॅप करा.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="121" />
+      <location filename="../qml/pages/PairingPage.qml" line="107" />
       <source>Phone key starting...</source>
       <translation>फोन चावी सुरू होत आहे...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="149" />
+      <location filename="../qml/pages/PairingPage.qml" line="119" />
+      <source>Phone-key logs: %1</source>
+      <translation>फोन चावी लॉग: %1</translation>
+    </message>
+    <message>
+      <location filename="../qml/pages/PairingPage.qml" line="135" />
       <source>Generating...</source>
       <translation>तयार होत आहे...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="149" />
+      <location filename="../qml/pages/PairingPage.qml" line="135" />
       <source>Generate Key</source>
       <translation>चावी तयार करा</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="175" />
+      <location filename="../qml/pages/PairingPage.qml" line="151" />
+      <source>Replace Key</source>
+      <translation>चावी बदला</translation>
+    </message>
+    <message>
+      <location filename="../qml/pages/PairingPage.qml" line="153" />
+      <source>Replacing key</source>
+      <translation>चावी बदलत आहे</translation>
+    </message>
+    <message>
+      <location filename="../qml/pages/PairingPage.qml" line="169" />
       <source>Waiting for NFC tap...</source>
       <translation>NFC टॅपची वाट...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="175" />
+      <location filename="../qml/pages/PairingPage.qml" line="169" />
       <source>Pair with Vehicle</source>
       <translation>वाहन जोडा</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="181" />
+      <location filename="../qml/pages/PairingPage.qml" line="175" />
       <source>Requesting pairing over BLE - approve on the car's touchscreen / NFC card now.</source>
       <translation>BLE जोडणी विनंती – टचस्क्रीन / NFC कार्डवर आत्ताच मान्यता द्या.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="201" />
+      <location filename="../qml/pages/PairingPage.qml" line="195" />
       <source>Enrolled Keys</source>
       <translation>नोंदणीकृत चाव्या</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="205" />
+      <location filename="../qml/pages/PairingPage.qml" line="199" />
       <source>List Enrolled Keys</source>
       <translation>नोंदणीकृत चाव्यांची यादी</translation>
     </message>
@@ -745,138 +729,138 @@
       <translation>गोठवण लोड होत आहे...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="58" />
+      <location filename="../qml/pages/SettingsPage.qml" line="56" />
       <source>Key on file</source>
       <translation>चावी आहे</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="58" />
+      <location filename="../qml/pages/SettingsPage.qml" line="56" />
       <source>No key yet - use Pair Vehicle from the main menu</source>
       <translation>अजून चावी नाही – मुख्य मेनूतून वाहन जोडा वापरा</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="66" />
+      <location filename="../qml/pages/SettingsPage.qml" line="64" />
       <source>Saved</source>
       <translation>सेव्ह झाले</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="66" />
+      <location filename="../qml/pages/SettingsPage.qml" line="64" />
       <source>Save failed: %1</source>
       <translation>सेव्ह अयशस्वी: %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="70" />
+      <location filename="../qml/pages/SettingsPage.qml" line="81" />
       <source>Exported to %1. In Automagic, use States → Import to select this folder, then Reload Daemon.</source>
       <translation>%1 येथे निर्यात केले. Automagic मध्ये हे फोल्डर निवडण्यासाठी States → Import वापरा, नंतर Reload Daemon निवडा.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="71" />
+      <location filename="../qml/pages/SettingsPage.qml" line="82" />
       <source>Automagic export failed: %1</source>
       <translation>Automagic निर्यात अयशस्वी: %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="86" />
+      <location filename="../qml/pages/SettingsPage.qml" line="97" />
       <source>Settings</source>
       <translation>सेटिंग्ज</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="110" />
+      <location filename="../qml/pages/SettingsPage.qml" line="121" />
       <source>Vehicle VIN</source>
       <translation>वाहन VIN</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="115" />
+      <location filename="../qml/pages/SettingsPage.qml" line="126" />
       <source>17-character VIN</source>
       <translation>17-अक्षरी VIN</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="141" />
+      <location filename="../qml/pages/SettingsPage.qml" line="146" />
       <source>Front-page car model</source>
       <translation>पहिल्या पेजवर कार मॉडेल</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="142" />
+      <location filename="../qml/pages/SettingsPage.qml" line="147" />
       <source>Auto selects the model from the VIN</source>
       <translation>VINवरून मॉडेल ऑटो निवडते</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="158" />
+      <location filename="../qml/pages/SettingsPage.qml" line="163" />
       <source>Key name</source>
       <translation>चावीचे नाव</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="159" />
+      <location filename="../qml/pages/SettingsPage.qml" line="164" />
       <source>harbour-electric-eel</source>
       <translation>harbour-electric-eel</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="169" />
+      <location filename="../qml/pages/SettingsPage.qml" line="174" />
       <source>Connect timeout</source>
       <translation>कनेक्ट कालमर्यादा</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="176" />
-      <location filename="../qml/pages/SettingsPage.qml" line="190" />
+      <location filename="../qml/pages/SettingsPage.qml" line="181" />
+      <location filename="../qml/pages/SettingsPage.qml" line="195" />
       <source>%1 s</source>
       <translation>%1 सेकंद</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="186" />
+      <location filename="../qml/pages/SettingsPage.qml" line="191" />
       <source>Command timeout</source>
       <translation>आदेश कालमर्यादा</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="207" />
+      <location filename="../qml/pages/SettingsPage.qml" line="212" />
       <source>Cover actions</source>
       <translation>कव्हर कृती</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="212" />
+      <location filename="../qml/pages/SettingsPage.qml" line="217" />
       <source>Left action</source>
       <translation>डावी कृती</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="230" />
+      <location filename="../qml/pages/SettingsPage.qml" line="235" />
       <source>Right action</source>
       <translation>उजवी कृती</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="245" />
+      <location filename="../qml/pages/SettingsPage.qml" line="250" />
       <source>Automagic</source>
       <translation>Automagic</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="254" />
+      <location filename="../qml/pages/SettingsPage.qml" line="259" />
       <source>Export hotspot flows to Documents, then import them in Automagic. Automagic turns the hotspot on for presence_inside and off for presence_away_confirmed. ElectricEel emits the latter 3 minutes after presence_far unless presence_inside arrives first; repeated presence_far events do not restart the timer. ElectricEel must stay running.</source>
       <translation>हॉटस्पॉट फ्लो दस्तऐवजांमध्ये निर्यात करा, नंतर ते Automagic मध्ये आयात करा. Automagic, presence_inside वर हॉटस्पॉट सुरू करते आणि presence_away_confirmed वर बंद करते. presence_inside आधी न आल्यास ElectricEel, presence_far नंतर 3 मिनिटांनी दुसरी घटना पाठवते; वारंवार येणाऱ्या presence_far घटना टाइमर पुन्हा सुरू करत नाहीत. ElectricEel चालू राहणे आवश्यक आहे.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="259" />
+      <location filename="../qml/pages/SettingsPage.qml" line="264" />
       <source>Export Automagic flows</source>
       <translation>Automagic फ्लो निर्यात करा</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="262" />
+      <location filename="../qml/pages/SettingsPage.qml" line="267" />
       <source>Exporting Automagic flows...</source>
       <translation>Automagic फ्लो निर्यात होत आहेत...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="274" />
+      <location filename="../qml/pages/SettingsPage.qml" line="279" />
       <source>If you used Add Automagic flows in an earlier version, disable its old hotspot flows before importing this preset. Automagic lets you resolve matching IDs during import. Extra triggers are included for your own flows, such as launching an app.</source>
       <translation>आधीच्या आवृत्तीत Automagic फ्लो जोडा वापरले असल्यास, हे प्रीसेट आयात करण्यापूर्वी त्याचे जुने हॉटस्पॉट फ्लो अक्षम करा. Automagic आयात करताना समान ID मधील संघर्ष सोडवू देते. तुमच्या स्वतःच्या फ्लोसाठी अतिरिक्त ट्रिगर देखील आहेत, जसे की ॲप सुरू करणे.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="279" />
+      <location filename="../qml/pages/SettingsPage.qml" line="284" />
       <source>Save</source>
       <translation>सेव्ह करा</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="293" />
+      <location filename="../qml/pages/SettingsPage.qml" line="298" />
       <source>Pairing &amp; Keys</source>
       <translation>जोडणी व चाव्या</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="297" />
+      <location filename="../qml/pages/SettingsPage.qml" line="302" />
       <source>About</source>
       <translation>विषयी</translation>
     </message>
@@ -884,21 +868,6 @@
       <location filename="../qml/pages/SettingsPage.qml" line="311" />
       <source>App: ElectricEel %1   |   core: %2</source>
       <translation>अ‍ॅप: ElectricEel %1   |   कोर: %2</translation>
-    </message>
-    <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="315" />
-      <source>(too old / unknown)</source>
-      <translation>(खूप जुने / अज्ञात)</translation>
-    </message>
-    <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="328" />
-      <source>The control core is too old to report a version - reinstall the app.</source>
-      <translation>कंट्रोल कोर व्हर्जन सांगायला खूप जुना आहे – अ‍ॅप पुन्हा इंस्टॉल करा.</translation>
-    </message>
-    <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="329" />
-      <source>Version mismatch: core %1 vs app %2 - reinstall the app.</source>
-      <translation>जुळत नाही: कोर %1 विरुद्ध अ‍ॅप %2 – अ‍ॅप पुन्हा इंस्टॉल करा.</translation>
     </message>
   </context>
   <context>
@@ -910,7 +879,6 @@
     </message>
     <message>
       <location filename="../qml/js/VehicleState.js" line="47" />
-      <location filename="../qml/js/VehicleState.js" line="75" />
       <source>Model 3</source>
       <translation>Model 3</translation>
     </message>
@@ -933,6 +901,14 @@
       <location filename="../qml/js/VehicleState.js" line="51" />
       <source>Cybertruck</source>
       <translation>Cybertruck</translation>
+    </message>
+  </context>
+  <context>
+    <name>VersionWarning</name>
+    <message>
+      <location filename="../qml/pages/VersionWarning.qml" line="16" />
+      <source>Version mismatch: core %1 vs app %2 - reinstall the app.</source>
+      <translation>जुळत नाही: कोर %1 विरुद्ध अ‍ॅप %2 – अ‍ॅप पुन्हा इंस्टॉल करा.</translation>
     </message>
   </context>
 </TS>

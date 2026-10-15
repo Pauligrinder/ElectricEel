@@ -1,147 +1,163 @@
-/// Every subcommand tesla-control accepts (cmd/tesla-control/commands.go
-/// upstream). `Run()` only ever execs one of these - never an arbitrary
-/// string - so a compromised or buggy caller on the D-Bus system bus can't
-/// smuggle in flags. A linear scan over ~50 short strings is simpler than a
-/// HashSet/phf set here and the cost is irrelevant for a command that's
-/// about to spawn a subprocess and wait seconds for it anyway.
-pub(crate) const COMMAND_CATALOG: &[&str] = &[
-    "valet-mode-on",
-    "valet-mode-off",
-    "unlock",
-    "lock",
-    "drive",
-    "climate-on",
-    "climate-off",
-    "climate-set-temp",
-    "add-key",
-    "add-key-request",
-    "remove-key",
-    "rename-key",
-    "list-keys",
-    "honk",
-    "ping",
-    "flash-lights",
-    "keep-accessory-power",
-    "low-power-mode",
-    "charging-set-limit",
-    "charging-set-amps",
-    "charging-start",
-    "charging-stop",
-    "charging-schedule",
-    "charging-schedule-cancel",
-    "charging-schedule-add",
-    "charging-schedule-remove",
-    "media-set-volume",
-    "media-volume-up",
-    "media-volume-down",
-    "media-next-favorite",
-    "media-next-track",
-    "media-previous-track",
-    "media-previous-favorite",
-    "media-toggle-playback",
-    "software-update-start",
-    "software-update-cancel",
-    "sentry-mode",
-    "wake",
-    "tonneau-open",
-    "tonneau-close",
-    "tonneau-stop",
-    "trunk-open",
-    "trunk-move",
-    "trunk-close",
-    "frunk-open",
-    "charge-port-open",
-    "charge-port-close",
-    "autosecure-modelx",
-    "session-info",
-    "seat-heater",
-    "steering-wheel-heater",
-    "auto-seat-and-climate",
-    "windows-vent",
-    "windows-close",
-    "body-controller-state",
-    "guest-mode-on",
-    "guest-mode-off",
-    "erase-guest-data",
-    "precondition-schedule-add",
-    "precondition-schedule-remove",
-    "product-info",
-    "state",
-];
-
-/// Subcommands whose arguments carry a secret PIN. Their argument lists are
-/// redacted from the audit log rather than written to the system journal in
-/// cleartext. valet-mode-on is the only one in the pinned v0.4.1 binary -
-/// verified by grepping `commands_vendor.go` for a "PIN" argument name; the
-/// parental-controls-* entries once listed here were removed along with
-/// their `COMMAND_CATALOG` entries (see below) since they don't exist
-/// upstream at all.
-pub(crate) const PIN_COMMANDS: &[&str] = &["valet-mode-on"];
-
-pub(crate) fn is_known_command(cmd: &str) -> bool {
-    COMMAND_CATALOG.contains(&cmd)
+/// Every command the app may run, in protocol-library command-ID order: the
+/// discriminant is the ABI command ID (see `helper/session/library/commands.go`).
+/// The name is the kebab-cased variant. Append; never reorder.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    strum::EnumString,
+    strum::IntoStaticStr,
+    strum::Display,
+    strum::VariantArray,
+)]
+#[strum(serialize_all = "kebab-case")]
+#[repr(u32)]
+pub(crate) enum Command {
+    ValetModeOn = 1,
+    ValetModeOff,
+    Unlock,
+    Lock,
+    Drive,
+    ClimateOn,
+    ClimateOff,
+    ClimateSetTemp,
+    AddKey,
+    AddKeyRequest,
+    RemoveKey,
+    RenameKey,
+    ListKeys,
+    Honk,
+    Ping,
+    FlashLights,
+    KeepAccessoryPower,
+    LowPowerMode,
+    ChargingSetLimit,
+    ChargingSetAmps,
+    ChargingStart,
+    ChargingStop,
+    ChargingSchedule,
+    ChargingScheduleCancel,
+    ChargingScheduleAdd,
+    ChargingScheduleRemove,
+    MediaSetVolume,
+    MediaVolumeUp,
+    MediaVolumeDown,
+    MediaNextFavorite,
+    MediaNextTrack,
+    MediaPreviousTrack,
+    MediaPreviousFavorite,
+    MediaTogglePlayback,
+    SoftwareUpdateStart,
+    SoftwareUpdateCancel,
+    SentryMode,
+    Wake,
+    TonneauOpen,
+    TonneauClose,
+    TonneauStop,
+    TrunkOpen,
+    TrunkMove,
+    TrunkClose,
+    FrunkOpen,
+    ChargePortOpen,
+    ChargePortClose,
+    AutosecureModelx,
+    SessionInfo,
+    SeatHeater,
+    SteeringWheelHeater,
+    AutoSeatAndClimate,
+    WindowsVent,
+    WindowsClose,
+    BodyControllerState,
+    GuestModeOn,
+    GuestModeOff,
+    EraseGuestData,
+    PreconditionScheduleAdd,
+    PreconditionScheduleRemove,
+    ProductInfo,
+    State,
 }
 
-pub(crate) fn is_pin_command(cmd: &str) -> bool {
-    PIN_COMMANDS.contains(&cmd)
+impl Command {
+    /// The stable protocol-library command ID.
+    pub(crate) fn id(self) -> u32 {
+        self as u32
+    }
+
+    /// Whether the arguments carry a secret PIN. Their argument lists are
+    /// redacted from the audit log rather than written to the system journal
+    /// in cleartext. valet-mode-on is the only one in the pinned v0.4.1
+    /// binary - verified by grepping `commands_vendor.go` for a "PIN"
+    /// argument name; the parental-controls-* commands once listed here were
+    /// removed since they don't exist upstream at all.
+    pub(crate) fn has_pin(self) -> bool {
+        self == Self::ValetModeOn
+    }
+
+    /// Whether the arguments carry schedule coordinates (location data).
+    pub(crate) fn has_location(self) -> bool {
+        matches!(
+            self,
+            Self::ChargingScheduleAdd | Self::PreconditionScheduleAdd
+        )
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::collections::HashSet;
+    use strum::VariantArray;
 
-    fn session_commands() -> HashSet<&'static str> {
-        let source = include_str!("../session/commands_vendor.go");
-        let source = source
-            .split_once("var commands = map[string]*Command{")
+    /// The production Go library's stable command-ID table, in ID order.
+    fn library_commands() -> Vec<&'static str> {
+        let source = include_str!("../session/library/commands.go");
+        let table = source
+            .split_once("var commandNames = [...]string{")
             .unwrap()
-            .1;
-        let regex = regex::Regex::new(r#"(?m)^\t"([a-z0-9-]+)":\s*\{"#).unwrap();
-        let commands: HashSet<_> = regex
-            .captures_iter(source)
+            .1
+            .split_once('}')
+            .unwrap()
+            .0;
+        let regex = regex::Regex::new(r#""([a-z0-9-]+)""#).unwrap();
+        let commands: Vec<_> = regex
+            .captures_iter(table)
             .map(|capture| capture.get(1).unwrap().as_str())
-            .filter(|command| !["get", "post"].contains(command))
             .collect();
-        assert!(!commands.is_empty(), "session command extraction failed");
+        assert!(!commands.is_empty(), "library command extraction failed");
         commands
     }
 
     #[test]
     fn test_pin_commands_coverage() {
-        let cmd = "valet-mode-on";
-        assert!(
-            is_pin_command(cmd),
-            "pin-bearing command {cmd:?} not in PIN_COMMANDS"
-        );
-        assert!(
-            is_known_command(cmd),
-            "pin-bearing command {cmd:?} not in COMMAND_CATALOG"
-        );
-        for cmd in ["unlock", "honk", "trunk-open", "ping"] {
+        assert!(Command::ValetModeOn.has_pin());
+        for cmd in [
+            Command::Unlock,
+            Command::Honk,
+            Command::TrunkOpen,
+            Command::Ping,
+        ] {
             assert!(
-                !is_pin_command(cmd),
-                "non-secret command {cmd:?} incorrectly marked as pin-bearing"
+                !cmd.has_pin(),
+                "non-secret command {cmd} incorrectly marked as pin-bearing"
             );
         }
     }
 
     #[test]
-    fn test_command_catalog_matches_upstream() {
-        let known = session_commands();
-        let unknown: Vec<&str> = COMMAND_CATALOG
+    fn test_command_catalog_matches_library_ids() {
+        // Command IDs cross the ABI as discriminants, so order matters.
+        let names: Vec<&str> = Command::VARIANTS
             .iter()
             .copied()
-            .filter(|c| !known.contains(c))
+            .map(<&str>::from)
             .collect();
-        assert!(
-            unknown.is_empty(),
-            "COMMAND_CATALOG lists commands that don't exist in the pinned \
-             v0.4.1 tesla-control (would always fail with \"unrecognized \
-             command\"): {unknown:?}"
-        );
-        let catalog: HashSet<_> = COMMAND_CATALOG.iter().copied().collect();
-        assert_eq!(catalog, known, "Rust and session command catalogs differ");
+        assert_eq!(names, library_commands());
+        for (index, cmd) in Command::VARIANTS.iter().enumerate() {
+            assert_eq!(cmd.id() as usize, index + 1, "{cmd}");
+            assert_eq!(cmd.to_string().parse::<Command>().unwrap(), *cmd);
+        }
     }
 
     // Same check, applied to the QML app's own command catalog - the two
@@ -165,7 +181,7 @@ mod tests {
              stale; fix the test before trusting a green run"
         );
 
-        let known = session_commands();
+        let known: HashSet<_> = library_commands().into_iter().collect();
         let mut unknown: Vec<&str> = js_commands
             .iter()
             .copied()
@@ -174,8 +190,8 @@ mod tests {
         unknown.sort_unstable();
         assert!(
             unknown.is_empty(),
-            "CommandCatalog.js lists commands that don't exist in the \
-             pinned v0.4.1 tesla-control: {unknown:?}"
+            "CommandCatalog.js lists commands the protocol library \
+             does not implement: {unknown:?}"
         );
     }
 }

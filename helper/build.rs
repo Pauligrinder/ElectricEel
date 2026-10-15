@@ -23,7 +23,9 @@ fn main() {
         .generate()
         .expect("cbindgen should generate the union header")
         .write_to_file(out);
-    println!("cargo:rerun-if-changed=src/ffi.rs");
-    println!("cargo:rerun-if-changed=src/runtime.rs");
-    println!("cargo:rerun-if-changed=src/app.rs");
+    // cbindgen parses the whole crate (module tree from lib.rs, #[repr(C)]
+    // types in any module), so any source change can alter the header.
+    // A directory path makes cargo rerun when anything under src/ changes.
+    println!("cargo:rerun-if-changed=src");
+    println!("cargo:rerun-if-changed=Cargo.toml");
 }

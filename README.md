@@ -43,7 +43,9 @@ devel-su pkcon install-local /tmp/harbour-electric-eel-*.aarch64.rpm
 1. Launch ElectricEel → pull down → **Settings** → enter the VIN → Save.
 2. Pull down → **Pair Vehicle** → **Generate Key** → **Pair with
    Vehicle** → tap the NFC card on the center console when the car
-   prompts.
+   prompts. If key generation fails because the stored key is unreadable or
+   mismatched, a **Replace Key** button appears; replacing it unpairs this
+   phone, so pair again afterwards.
 3. Start with read-only commands (Diagnostics → Ping) before actuation
    commands (Lock/Unlock, Climate, Trunk).
 
@@ -57,12 +59,18 @@ trunk, lock, unlock, flash lights, and horn.
 
 ## Documentation
 
-Technical details live in `docs/`: `architecture.md` (how the app is
-built), `navigation-share.md` (destination sharing), `translations.md`
-(localization workflow), `build.md` (building and releasing),
-`limitations.md` (current limits), `vehicle-command-patch.md`
-(Bluetooth protocol additions), and `phone-key-events.md` (D-Bus integration
-events for other apps).
+Technical details live in `docs/`:
+
+- [architecture.md](docs/architecture.md): how the app is built
+- [build.md](docs/build.md): building, testing, pinned toolchains and releasing
+- [translations.md](docs/translations.md): localization workflow
+- [navigation-share.md](docs/navigation-share.md): destination sharing
+- [phone-key-events.md](docs/phone-key-events.md): D-Bus integration events for other apps
+- [automagic.md](docs/automagic.md): Automagic flows for phone-key events
+- [tesla-ble-abi.md](docs/tesla-ble-abi.md): the Go protocol library's C ABI
+- [vehicle-command-patch.md](docs/vehicle-command-patch.md): Bluetooth protocol additions
+- [limitations.md](docs/limitations.md) and [ble-field-test.md](docs/ble-field-test.md): current limits and field-test procedure
+- [production-review.md](docs/production-review.md): resolved production review findings
 
 To launch an app or run another automation on phone-key events, follow
 [Configure Automagic](docs/automagic.md). It includes an importable example;

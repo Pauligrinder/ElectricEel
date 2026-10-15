@@ -1,6 +1,6 @@
-//! Safe owner of the in-process Go protocol library (ABI v1).
+//! Safe owner of the in-process Go protocol library (ABI v2, see
+//! `helper/session/abi/tesla_ble.h`), driven by `protocol_client.rs`.
 //!
-//! The application migration is staged: this module is not yet wired into Core.
 //! Submission is non-blocking; completion callbacks copy into Rust channels.
 //! Call `shutdown().await` on a backend worker before dropping a session. Drop
 //! is a blocking safety backstop, never an excuse to destroy live callback data.
@@ -75,9 +75,40 @@ pub enum Value {
     Bytes(Vec<u8>),
 }
 
+/// Typed command parameter tags (`ee_value.kind`); 0 means omitted.
+#[derive(Clone, Copy)]
+#[repr(u32)]
+enum ValueKind {
+    Integer = 1,
+    Number = 2,
+    Bytes = 3,
+}
+
+/// Callback message kinds (`enum ee_notification`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, strum::FromRepr)]
+#[repr(u32)]
+enum CallbackKind {
+    Complete = 1,
+    Diagnostic = 2,
+    Stopped = 3,
+    Observation = 4,
+}
+
+/// Observation kinds (`enum ee_observation`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, strum::FromRepr)]
+#[repr(u32)]
+pub enum ObservationKind {
+    Advertisement = 1,
+    Disconnected = 2,
+    Authenticated = 3,
+    AuthFailed = 4,
+    WatchFailed = 5,
+    Log = 6,
+}
+
 #[derive(Debug, Clone)]
 pub struct Observation {
-    pub kind: u32,
+    pub kind: ObservationKind,
     pub target: u64,
     pub rssi: i32,
     pub value: u32,
@@ -302,9 +333,56 @@ impl CallbackState {
                 error: reason.into(),
             });
         }
-        if self.diagnostics.try_send(reason.into()).is_err() {
+        self.diagnose(reason.into());
+    }
+}
+
+impl CallbackState {
+    fn diagnose(&self, diagnostic: String) {
+        if self.diagnostics.try_send(diagnostic).is_err() {
             self.lost_diagnostics.fetch_add(1, Ordering::Relaxed);
         }
+    }
+
+    fn observe(&self, message: &Message) {
+        let Some(kind) = ObservationKind::from_repr(message.event) else {
+            self.diagnose(format!(
+                "ignoring unknown ABI observation kind {}",
+                message.event
+            ));
+            return;
+        };
+        let error = unsafe { copy_bytes(message.error) }.unwrap_or_default();
+        let event = Observation {
+            kind,
+            target: message.target,
+            rssi: message.rssi,
+            value: message.value,
+            status: message.status.into(),
+            error: String::from_utf8_lossy(&error).into_owned(),
+        };
+        if event.kind == ObservationKind::Log {
+            self.diagnose(event.error);
+            return;
+        }
+        if event.status == Status::InternalBug {
+            self.faulted.store(true, Ordering::SeqCst);
+        }
+        let mut events = self
+            .events
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        // Coalesce advertisement snapshots, never silently discard a
+        // terminal/error observation. Overflow faults the session.
+        if event.kind == ObservationKind::Advertisement {
+            events.retain(|event| event.kind != ObservationKind::Advertisement);
+        }
+        if events.len() == 64 {
+            self.fail("protocol observation queue overflow");
+        } else {
+            events.push_back(event);
+        }
+        let _ = self.event_ready.try_send(());
     }
 }
 
@@ -336,8 +414,12 @@ unsafe extern "C" fn callback(context: *mut libc::c_void, message: *const Messag
             state.fail("invalid ABI callback envelope/session");
             return;
         }
-        match message.kind {
-            1 => {
+        let Some(kind) = CallbackKind::from_repr(message.kind) else {
+            state.fail("unknown ABI callback kind");
+            return;
+        };
+        match kind {
+            CallbackKind::Complete => {
                 let payload = unsafe { copy_bytes(message.payload) };
                 let error = unsafe { copy_bytes(message.error) };
                 let outcome = match (payload, error) {
@@ -366,60 +448,19 @@ unsafe extern "C" fn callback(context: *mut libc::c_void, message: *const Messag
                     state.fail("duplicate or unknown operation completion");
                 }
             }
-            2 => {
+            CallbackKind::Diagnostic => {
                 state.faulted.store(true, Ordering::SeqCst);
                 if let Some(error) = unsafe { copy_bytes(message.error) } {
-                    if state
-                        .diagnostics
-                        .try_send(String::from_utf8_lossy(&error).into_owned())
-                        .is_err()
-                    {
-                        state.lost_diagnostics.fetch_add(1, Ordering::Relaxed);
-                    }
+                    state.diagnose(String::from_utf8_lossy(&error).into_owned());
                 }
             }
-            3 => {
+            CallbackKind::Stopped => {
                 let _ = state.stopped.try_send(());
                 state.stopped.close();
                 state.diagnostics.close();
                 state.event_ready.close();
             }
-            4 => {
-                let error = unsafe { copy_bytes(message.error) }.unwrap_or_default();
-                let event = Observation {
-                    kind: message.event,
-                    target: message.target,
-                    rssi: message.rssi,
-                    value: message.value,
-                    status: message.status.into(),
-                    error: String::from_utf8_lossy(&error).into_owned(),
-                };
-                if event.kind == 6 {
-                    if state.diagnostics.try_send(event.error).is_err() {
-                        state.lost_diagnostics.fetch_add(1, Ordering::Relaxed);
-                    }
-                    return;
-                }
-                if event.status == Status::InternalBug {
-                    state.faulted.store(true, Ordering::SeqCst);
-                }
-                let mut events = state
-                    .events
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                // Coalesce advertisement snapshots, never silently discard a
-                // terminal/error observation. Overflow faults the session.
-                if event.kind == 1 {
-                    events.retain(|event| event.kind != 1);
-                }
-                if events.len() == 64 {
-                    state.fail("protocol observation queue overflow");
-                } else {
-                    events.push_back(event);
-                }
-                let _ = state.event_ready.try_send(());
-            }
-            _ => state.fail("unknown ABI callback kind"),
+            CallbackKind::Observation => state.observe(message),
         }
     });
     if delivery.is_err() && !context.is_null() {
@@ -537,21 +578,21 @@ impl Session {
                 .iter()
                 .map(|value| match value {
                     Value::Integer(integer) => RawValue {
-                        kind: 1,
+                        kind: ValueKind::Integer as u32,
                         reserved: 0,
                         integer: *integer,
                         number: 0.0,
                         bytes: Bytes::borrowed(&[]),
                     },
                     Value::Number(number) => RawValue {
-                        kind: 2,
+                        kind: ValueKind::Number as u32,
                         reserved: 0,
                         integer: 0,
                         number: *number,
                         bytes: Bytes::borrowed(&[]),
                     },
                     Value::Bytes(bytes) => RawValue {
-                        kind: 3,
+                        kind: ValueKind::Bytes as u32,
                         reserved: 0,
                         integer: 0,
                         number: 0.0,
@@ -738,6 +779,259 @@ impl Drop for Session {
                 Status::from(status)
             );
         }
+    }
+}
+
+/// Test-only, in-process stand-in for the Go ABI (`tesla_ble.h`), so the
+/// production `ProtocolClient`/`Core`/runtime path can be exercised without
+/// the Go shared library. Sessions are scripted by VIN: every operation
+/// completes synchronously with `Ok` unless the VIN's script overrides it.
+#[cfg(test)]
+pub(crate) mod fake {
+    pub(crate) use super::ObservationKind;
+    use super::{Arc, Bytes, Callback, CallbackKind, Config, Library, Message, Request};
+    use std::collections::HashMap;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::{LazyLock, Mutex};
+    use std::time::Duration;
+
+    /// Operation codes from `tesla_ble.h`.
+    pub(crate) const WATCH_START: u32 = 6;
+    pub(crate) const WATCH_STOP: u32 = 7;
+    pub(crate) const VEHICLE_COMMAND: u32 = 10;
+    /// Status codes.
+    pub(crate) const FAILED: u32 = 5;
+    pub(crate) const CANCELLED: u32 = 6;
+    pub(crate) const NOT_CONNECTED: u32 = 10;
+    pub(crate) const BLUETOOTH_OFF: u32 = 11;
+
+    #[derive(Clone, Default)]
+    pub(crate) struct Script {
+        /// Completion (status, error) per operation code; default is `Ok`.
+        pub(crate) statuses: HashMap<u32, (u32, String)>,
+        /// Operations that complete only when cancelled or stopped.
+        pub(crate) hold: Vec<u32>,
+        /// Time `ee_session_destroy` spends in backend teardown.
+        pub(crate) destroy_delay: Duration,
+    }
+
+    struct Live {
+        callback: Callback,
+        context: usize,
+        vin: String,
+        stopped: bool,
+        held: Vec<u64>,
+    }
+
+    static SCRIPTS: LazyLock<Mutex<HashMap<String, Script>>> =
+        LazyLock::new(|| Mutex::new(HashMap::new()));
+    static LIVE: LazyLock<Mutex<HashMap<u64, Live>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
+    /// Every submitted operation code, per VIN.
+    static SUBMITTED: LazyLock<Mutex<HashMap<String, Vec<u32>>>> =
+        LazyLock::new(|| Mutex::new(HashMap::new()));
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+
+    pub(crate) fn script(vin: &str, script: Script) {
+        SCRIPTS.lock().unwrap().insert(vin.into(), script);
+    }
+
+    /// Operation codes submitted so far for this VIN.
+    pub(crate) fn submitted(vin: &str) -> Vec<u32> {
+        SUBMITTED
+            .lock()
+            .unwrap()
+            .get(vin)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// Number of held (not yet completed) operations for this VIN.
+    pub(crate) fn held(vin: &str) -> usize {
+        LIVE.lock()
+            .unwrap()
+            .values()
+            .filter(|live| live.vin == vin)
+            .map(|live| live.held.len())
+            .sum()
+    }
+
+    pub(crate) fn library() -> Arc<Library> {
+        Arc::new(Library {
+            create,
+            submit,
+            cancel,
+            stop,
+            destroy,
+        })
+    }
+
+    fn message(kind: CallbackKind, session: u64) -> Message {
+        Message {
+            size: u32::try_from(std::mem::size_of::<Message>()).unwrap(),
+            kind: kind as u32,
+            session,
+            request: 0,
+            status: 0,
+            reserved: 0,
+            payload: Bytes::borrowed(&[]),
+            error: Bytes::borrowed(&[]),
+            event: 0,
+            rssi: 0,
+            target: 0,
+            value: 0,
+            padding: 0,
+        }
+    }
+
+    fn deliver(handle: u64, message: &Message) {
+        let target = LIVE
+            .lock()
+            .unwrap()
+            .get(&handle)
+            .map(|live| (live.callback, live.context));
+        if let Some((callback, context)) = target {
+            // SAFETY: the context stays live until destroy removes the handle.
+            unsafe { callback(context as *mut libc::c_void, message) };
+        }
+    }
+
+    fn complete(handle: u64, request: u64, status: u32, error: &str) {
+        let mut completion = message(CallbackKind::Complete, handle);
+        completion.request = request;
+        completion.status = status;
+        completion.error = Bytes::borrowed(error.as_bytes());
+        deliver(handle, &completion);
+    }
+
+    /// Deliver one raw observation to every live session of this VIN.
+    pub(crate) fn observe(vin: &str, event: ObservationKind, status: u32) {
+        observe_target(vin, event, status, 0, 0);
+    }
+
+    /// Deliver an observation carrying a discovery target and RSSI.
+    pub(crate) fn observe_target(
+        vin: &str,
+        event: ObservationKind,
+        status: u32,
+        target: u64,
+        rssi: i32,
+    ) {
+        let handles: Vec<u64> = LIVE
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(_, live)| live.vin == vin && !live.stopped)
+            .map(|(handle, _)| *handle)
+            .collect();
+        for handle in handles {
+            let mut observation = message(CallbackKind::Observation, handle);
+            observation.event = event as u32;
+            observation.status = status;
+            observation.target = target;
+            observation.rssi = rssi;
+            deliver(handle, &observation);
+        }
+    }
+
+    unsafe extern "C" fn create(
+        config: *mut Config,
+        callback: Callback,
+        context: *mut libc::c_void,
+        handle: *mut u64,
+    ) -> u32 {
+        // SAFETY: Rust's Session::new passes a live config and handle slot.
+        let config = unsafe { &*config };
+        let length = usize::try_from(config.vin.len).unwrap();
+        // SAFETY: the VIN bytes are borrowed for the duration of create.
+        let vin = unsafe { std::slice::from_raw_parts(config.vin.data, length) };
+        let id = NEXT.fetch_add(1, Ordering::SeqCst);
+        LIVE.lock().unwrap().insert(
+            id,
+            Live {
+                callback,
+                context: context as usize,
+                vin: String::from_utf8_lossy(vin).into_owned(),
+                stopped: false,
+                held: Vec::new(),
+            },
+        );
+        // SAFETY: caller-owned output slot.
+        unsafe { *handle = id };
+        0
+    }
+
+    unsafe extern "C" fn submit(handle: u64, request: *mut Request) -> u32 {
+        // SAFETY: Rust's Session::submit passes a live request.
+        let request = unsafe { &*request };
+        let vin = match LIVE.lock().unwrap().get(&handle) {
+            Some(live) if !live.stopped => live.vin.clone(),
+            Some(_) => return 3,
+            None => return 4,
+        };
+        SUBMITTED
+            .lock()
+            .unwrap()
+            .entry(vin.clone())
+            .or_default()
+            .push(request.operation);
+        let script = SCRIPTS
+            .lock()
+            .unwrap()
+            .get(&vin)
+            .cloned()
+            .unwrap_or_default();
+        if script.hold.contains(&request.operation) {
+            if let Some(live) = LIVE.lock().unwrap().get_mut(&handle) {
+                live.held.push(request.id);
+            }
+            return 0;
+        }
+        let (status, error) = script
+            .statuses
+            .get(&request.operation)
+            .cloned()
+            .unwrap_or_default();
+        complete(handle, request.id, status, &error);
+        0
+    }
+
+    unsafe extern "C" fn cancel(handle: u64, request: u64) -> u32 {
+        let held = LIVE.lock().unwrap().get_mut(&handle).is_some_and(|live| {
+            let before = live.held.len();
+            live.held.retain(|id| *id != request);
+            live.held.len() != before
+        });
+        if held {
+            complete(handle, request, CANCELLED, "cancelled");
+        }
+        0
+    }
+
+    unsafe extern "C" fn stop(handle: u64) -> u32 {
+        let held = LIVE.lock().unwrap().get_mut(&handle).and_then(|live| {
+            (!std::mem::replace(&mut live.stopped, true)).then(|| std::mem::take(&mut live.held))
+        });
+        if let Some(held) = held {
+            for request in held {
+                complete(handle, request, CANCELLED, "session stopped");
+            }
+            deliver(handle, &message(CallbackKind::Stopped, handle));
+        }
+        0
+    }
+
+    unsafe extern "C" fn destroy(handle: u64) -> u32 {
+        let vin = LIVE
+            .lock()
+            .unwrap()
+            .get(&handle)
+            .map(|live| live.vin.clone());
+        let delay = vin
+            .and_then(|vin| SCRIPTS.lock().unwrap().get(&vin).map(|s| s.destroy_delay))
+            .unwrap_or_default();
+        std::thread::sleep(delay);
+        LIVE.lock().unwrap().remove(&handle);
+        0
     }
 }
 

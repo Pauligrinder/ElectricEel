@@ -65,11 +65,12 @@ desktop-file-install --delete-original \
 - Export Automagic presets through Rust using the Documents permission
 - Move delayed-away policy and typed runtime notifications into Rust
 - Validate Harbour packaging in CI and before release publication
-* Tue Oct 13 2026 Pauli Kettunen <pauligrinder@gmail.com> - 0.3.2-1
-- Settings button writes Automagic triggers and hotspot flows for PhoneKeyEvent
-- Hotspot off waits 3 minutes unless presence_inside arrives first
 * Tue Oct 13 2026 Marco Napetti <marco.napetti@proton.me> - 0.3.2-1
 - Fix phone-key recovery after protocol session teardown
+- Settings button writes Automagic triggers and hotspot flows for PhoneKeyEvent
+  (Pauli Kettunen)
+- Hotspot off waits 3 minutes unless presence_inside arrives first
+  (Pauli Kettunen)
 * Tue Oct 13 2026 Marco Napetti <marco.napetti@proton.me> - 0.3.1-1
 - Use Go Tesla Command via FFI
 * Sun Sep 27 2026 Marco Napetti <marco.napetti@proton.me> - 0.3.0-1

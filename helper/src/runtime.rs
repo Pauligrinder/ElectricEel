@@ -12,6 +12,7 @@ use serde::Deserialize;
 use crate::core::Core;
 use crate::cpukeepalive::CpuKeepAlive;
 use crate::notification::{Notification, PhoneKeyLink};
+use crate::phone_key::PresenceEvent;
 
 pub type UiCallback = unsafe extern "C" fn(*mut c_void, *const c_char);
 
@@ -133,7 +134,7 @@ pub(crate) enum Request {
         text: String,
     },
     ApplicationState {
-        state: String,
+        state: AppState,
     },
     LogUi {
         message: String,
@@ -142,9 +143,32 @@ pub(crate) enum Request {
     Shutdown,
 }
 
+/// `Qt::ApplicationState`, as named by the Qt client.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, strum::Display)]
+#[serde(rename_all = "lowercase")]
+#[strum(serialize_all = "lowercase")]
+pub(crate) enum AppState {
+    Active,
+    Inactive,
+    Hidden,
+    Suspended,
+    #[serde(other)]
+    Unknown,
+}
+
+/// Messages for the serial BLE executor. `Wake` asks it to re-evaluate
+/// lifecycle state (resume, presence stopped, shutdown) without a request.
+enum BleMessage {
+    Request(Request),
+    Wake,
+}
+
+/// Longest BLE-executor sleep; every lifecycle change also wakes it.
+const BLE_IDLE_WAIT: Duration = Duration::from_secs(30);
+
 pub struct Runtime {
     requests: async_channel::Sender<Request>,
-    ble_requests: mpsc::SyncSender<Request>,
+    ble_requests: mpsc::SyncSender<BleMessage>,
     ble_worker: Option<JoinHandle<()>>,
     shutdown: Arc<AtomicBool>,
     core: Arc<Core>,
@@ -190,6 +214,11 @@ impl Runtime {
             let shutdown = Arc::clone(&shutdown);
             let resume = Arc::clone(&resume);
             let stopped = Arc::clone(&stopped);
+            let lifecycle = Lifecycle {
+                resume,
+                stopped,
+                wake: ble_requests.clone(),
+            };
             thread::spawn(move || {
                 async_io::block_on(run(
                     &core,
@@ -197,8 +226,7 @@ impl Runtime {
                     completions,
                     &sink,
                     &shutdown,
-                    &resume,
-                    &stopped,
+                    &lifecycle,
                 ));
             })
         };
@@ -220,18 +248,28 @@ impl Runtime {
         }
         serde_json::from_str(json).is_ok_and(|request| match request {
             Request::Shutdown => {
-                self.shutdown.store(true, Ordering::SeqCst);
-                self.core.cancel_session();
-                self.requests.close();
+                self.begin_shutdown();
                 true
             }
             Request::Run { .. }
             | Request::Pair
             | Request::GenerateKey { .. }
             | Request::SetConfig { .. }
-            | Request::ShareDestination { .. } => self.ble_requests.try_send(request).is_ok(),
+            | Request::ShareDestination { .. } => self
+                .ble_requests
+                .try_send(BleMessage::Request(request))
+                .is_ok(),
             _ => self.requests.try_send(request).is_ok(),
         })
+    }
+
+    /// Stops admission and cancels protocol work without blocking the caller.
+    fn begin_shutdown(&self) {
+        self.shutdown.store(true, Ordering::SeqCst);
+        self.core.cancel_session();
+        self.requests.close();
+        // A full queue already guarantees the executor wakes up.
+        let _ = self.ble_requests.try_send(BleMessage::Wake);
     }
 
     /// # Safety
@@ -260,9 +298,7 @@ impl Drop for Runtime {
     fn drop(&mut self) {
         // Detach before joining so shutdown cannot call into a destroyed UI.
         self.notifications.observe(None);
-        self.shutdown.store(true, Ordering::SeqCst);
-        self.core.cancel_session();
-        self.requests.close();
+        self.begin_shutdown();
         if let Some(worker) = self.worker.take() {
             let _ = worker.join();
         }
@@ -296,11 +332,12 @@ impl PhoneState {
     fn publish_due_away(&mut self, core: &Core, sink: &Notifications, now: Instant) {
         if let Some(vin) = self
             .away
-            .take_due(now, &core.get_config().0, core.session_generation())
+            .take_due(now, &core.vin(), core.session_generation())
         {
-            crate::keylog::log("presence", &format!("presence_away_confirmed vin={vin}"));
+            let kind = PresenceEvent::AwayConfirmed;
+            crate::keylog::log("presence", &format!("{kind} vin={vin}"));
             sink.send(&Notification::PhoneKeyEvent {
-                kind: "presence_away_confirmed".into(),
+                kind,
                 vin,
                 time: crate::keylog::utc_stamp(),
                 error: String::new(),
@@ -320,7 +357,7 @@ impl PhoneState {
             if *generation < core.session_generation() {
                 return false;
             }
-            self.away.observe(kind, vin, *generation, Instant::now());
+            self.away.observe(*kind, vin, *generation, Instant::now());
         }
         if let Notification::PhoneKeyState {
             active,
@@ -361,59 +398,74 @@ impl PhoneState {
             Err(error) => {
                 self.active = false;
                 self.status = error.to_string();
-                self.link = if matches!(error, crate::error::OperationError::NotPaired) {
-                    PhoneKeyLink::Unpaired
-                } else {
-                    PhoneKeyLink::Error
+                self.link = match error {
+                    crate::error::OperationError::NotPaired => PhoneKeyLink::Unpaired,
+                    crate::error::OperationError::BluetoothOff(_) => PhoneKeyLink::BluetoothOff,
+                    _ => PhoneKeyLink::Error,
                 };
             }
         }
         self.publish(sink);
     }
 
-    fn poll(&mut self, core: &Core, sink: &Notifications, stopped: &AtomicU64) {
+    /// Publishes queued presence events. Returns whether a stop was recorded
+    /// in `stopped`, i.e. whether the BLE executor must be woken.
+    fn poll(&mut self, core: &Core, sink: &Notifications, stopped: &AtomicU64) -> bool {
+        let mut stop_seen = false;
         while let Some(mut event) = core.drain_phone_key_event() {
             if event.generation < core.session_generation() {
                 continue;
             }
             self.generation = event.generation;
             if event.vin.is_empty() {
-                event.vin = core.get_config().0;
+                event.vin = core.vin();
             }
-            if event.kind == "presence_stopped" {
+            if event.kind == PresenceEvent::Stopped {
                 stopped.fetch_max(event.generation, Ordering::SeqCst);
+                stop_seen = true;
             }
             self.away
-                .observe(&event.kind, &event.vin, event.generation, Instant::now());
-            match event.kind.as_str() {
-                "presence_stopped" => self.active = false,
-                "presence_restarted" | "presence_near" => self.active = true,
-                _ => (),
-            }
-            self.link = match event.kind.as_str() {
-                "presence_near" => PhoneKeyLink::Connected,
-                "presence_auth_ok" => PhoneKeyLink::Authorized,
-                "presence_far" | "presence_restarted" | "presence_disconnected" => {
-                    PhoneKeyLink::Scanning
-                }
-                "presence_stopped" => PhoneKeyLink::Stopped,
-                "presence_error" | "presence_auth_failed" => PhoneKeyLink::Error,
-                _ => self.link,
+                .observe(event.kind, &event.vin, event.generation, Instant::now());
+            let (active, link, status) = match event.kind {
+                PresenceEvent::Near => (
+                    Some(true),
+                    PhoneKeyLink::Connected,
+                    Some("Phone key connected".to_string()),
+                ),
+                PresenceEvent::AuthOk => (
+                    None,
+                    PhoneKeyLink::Authorized,
+                    Some("Phone key authorized".to_string()),
+                ),
+                PresenceEvent::Restarted => (
+                    Some(true),
+                    PhoneKeyLink::Scanning,
+                    Some("Phone key scanning".to_string()),
+                ),
+                PresenceEvent::Far | PresenceEvent::Disconnected => (
+                    None,
+                    PhoneKeyLink::Scanning,
+                    Some("Phone key scanning".to_string()),
+                ),
+                PresenceEvent::Stopped => (
+                    Some(false),
+                    PhoneKeyLink::Stopped,
+                    Some(with_error("Phone key stopped", &event.error)),
+                ),
+                PresenceEvent::Error | PresenceEvent::AuthFailed => (
+                    None,
+                    PhoneKeyLink::Error,
+                    Some(with_error("Phone key error", &event.error)),
+                ),
+                PresenceEvent::Inside | PresenceEvent::AwayConfirmed => (None, self.link, None),
             };
-            if event.error_code == "bluetooth-off" {
-                self.link = PhoneKeyLink::BluetoothOff;
+            if let Some(active) = active {
+                self.active = active;
             }
-            let status = match event.kind.as_str() {
-                "presence_near" => Some("Phone key connected".to_string()),
-                "presence_far" | "presence_restarted" | "presence_disconnected" => {
-                    Some("Phone key scanning".to_string())
-                }
-                "presence_auth_ok" => Some("Phone key authorized".to_string()),
-                "presence_stopped" => Some(with_error("Phone key stopped", &event.error)),
-                "presence_error" | "presence_auth_failed" => {
-                    Some(with_error("Phone key error", &event.error))
-                }
-                _ => None,
+            self.link = if event.bluetooth_off {
+                PhoneKeyLink::BluetoothOff
+            } else {
+                link
             };
             if let Some(status) = status {
                 self.status = status;
@@ -432,6 +484,21 @@ impl PhoneState {
             });
             self.publish(sink);
         }
+        stop_seen
+    }
+}
+
+/// State the control loop shares with the BLE executor.
+struct Lifecycle {
+    resume: Arc<AtomicBool>,
+    stopped: Arc<AtomicU64>,
+    wake: mpsc::SyncSender<BleMessage>,
+}
+
+impl Lifecycle {
+    fn wake(&self) {
+        // A full queue already guarantees the executor wakes up.
+        let _ = self.wake.try_send(BleMessage::Wake);
     }
 }
 
@@ -455,13 +522,19 @@ async fn wait_wake(
     core: &Core,
     receiver: &async_channel::Receiver<Request>,
     completions: &async_channel::Receiver<Completion>,
-    export: &mut Option<async_global_executor::Task<Notification>>,
+    export: Option<&async_channel::Receiver<Notification>>,
     deadline: Instant,
 ) -> Wake {
     futures_lite::future::race(
         futures_lite::future::race(async { Wake::Request(receiver.recv().await) }, async {
-            match export.as_mut() {
-                Some(task) => Wake::Export(task.await),
+            match export {
+                Some(finished) => Wake::Export(finished.recv().await.unwrap_or_else(|_| {
+                    Notification::AutomagicExportFinished {
+                        ok: false,
+                        path: String::new(),
+                        error: "Automagic export failed".into(),
+                    }
+                })),
                 None => std::future::pending().await,
             }
         }),
@@ -482,15 +555,14 @@ async fn wait_wake(
     .await
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 async fn run(
     core: &Core,
     receiver: async_channel::Receiver<Request>,
     completions: async_channel::Receiver<Completion>,
     sink: &Notifications,
     shutdown: &AtomicBool,
-    resume: &AtomicBool,
-    stopped: &AtomicU64,
+    lifecycle: &Lifecycle,
 ) {
     let mut phone = PhoneState {
         active: false,
@@ -502,14 +574,16 @@ async fn run(
     let mut poll_at = Instant::now();
     let mut refresh_at = None;
     let mut suspended = false;
-    let mut export: Option<async_global_executor::Task<Notification>> = None;
+    let mut export: Option<async_channel::Receiver<Notification>> = None;
     loop {
         if shutdown.load(Ordering::SeqCst) {
             break;
         }
         // Drain already queued presence events before expiring a deadline, so
         // an inside event at the boundary wins over delayed-away publication.
-        phone.poll(core, sink, stopped);
+        if phone.poll(core, sink, &lifecycle.stopped) {
+            lifecycle.wake();
+        }
         let now = Instant::now();
         if now >= poll_at {
             poll_at = Instant::now() + Duration::from_secs(1);
@@ -524,14 +598,18 @@ async fn run(
             .away
             .deadline()
             .map_or(deadline, |away| deadline.min(away));
-        let wake = wait_wake(core, &receiver, &completions, &mut export, deadline).await;
+        let wake = wait_wake(core, &receiver, &completions, export.as_ref(), deadline).await;
         if shutdown.load(Ordering::SeqCst) {
             break;
         }
         match wake {
             Wake::Request(Ok(Request::Shutdown) | Err(_)) | Wake::Completion(Err(_)) => break,
             Wake::Timer => (),
-            Wake::Presence => phone.poll(core, sink, stopped),
+            Wake::Presence => {
+                if phone.poll(core, sink, &lifecycle.stopped) {
+                    lifecycle.wake();
+                }
+            }
             Wake::Export(event) => {
                 export = None;
                 sink.send(&event);
@@ -547,20 +625,24 @@ async fn run(
                 }
                 // Filesystem I/O must not stall either the serial control loop
                 // or BLE maintenance. There is at most one export task.
-                export = Some(async_global_executor::spawn_blocking(move || {
-                    match crate::automagic::export(std::path::Path::new(&documents_dir)) {
-                        Ok(path) => Notification::AutomagicExportFinished {
-                            ok: true,
-                            path: path.to_string_lossy().into_owned(),
-                            error: String::new(),
+                let (finished, result) = async_channel::bounded(1);
+                export = Some(result);
+                thread::spawn(move || {
+                    let _ = finished.send_blocking(
+                        match crate::automagic::export(std::path::Path::new(&documents_dir)) {
+                            Ok(path) => Notification::AutomagicExportFinished {
+                                ok: true,
+                                path: path.to_string_lossy().into_owned(),
+                                error: String::new(),
+                            },
+                            Err(error) => Notification::AutomagicExportFinished {
+                                ok: false,
+                                path: String::new(),
+                                error: error.to_string(),
+                            },
                         },
-                        Err(error) => Notification::AutomagicExportFinished {
-                            ok: false,
-                            path: String::new(),
-                            error: error.to_string(),
-                        },
-                    }
-                }));
+                    );
+                });
             }
             Wake::Completion(Ok(Completion::RefreshAt(deadline))) => refresh_at = Some(deadline),
             Wake::Completion(Ok(Completion::Notification(event))) => {
@@ -570,11 +652,12 @@ async fn run(
             }
             Wake::Request(Ok(Request::ApplicationState { state })) => {
                 crate::keylog::log("ui", &format!("applicationState={state}"));
-                if state == "suspended" {
+                if state == AppState::Suspended {
                     suspended = true;
-                } else if state == "active" && suspended {
+                } else if state == AppState::Active && suspended {
                     suspended = false;
-                    resume.store(true, Ordering::SeqCst);
+                    lifecycle.resume.store(true, Ordering::SeqCst);
+                    lifecycle.wake();
                 }
             }
             Wake::Request(Ok(Request::LogUi { message })) => crate::keylog::log("ui", &message),
@@ -593,7 +676,7 @@ async fn run(
 
 fn run_ble(
     core: &Core,
-    receiver: &mpsc::Receiver<Request>,
+    receiver: &mpsc::Receiver<BleMessage>,
     completed: &async_channel::Sender<Completion>,
     shutdown: &AtomicBool,
     resume: &AtomicBool,
@@ -625,13 +708,12 @@ fn run_ble(
             phone.generation = core.session_generation();
             sink.send(&Notification::PhoneKeyEvent {
                 kind: if result.is_ok() {
-                    "presence_restarted"
+                    PresenceEvent::Restarted
                 } else {
-                    "presence_stopped"
-                }
-                .into(),
+                    PresenceEvent::Stopped
+                },
                 generation: phone.generation,
-                vin: core.get_config().0,
+                vin: core.vin(),
                 time: crate::keylog::utc_stamp(),
                 error: result
                     .as_ref()
@@ -641,8 +723,16 @@ fn run_ble(
             });
             phone.started(result, &sink);
         }
-        match receiver.recv_timeout(Duration::from_millis(100)) {
-            Ok(request) => {
+        // Sleep until a request, an explicit wake (resume, presence stopped,
+        // shutdown) or the scheduled presence retry.
+        let wait = core
+            .phone_key_retry_deadline()
+            .map_or(BLE_IDLE_WAIT, |deadline| {
+                deadline.saturating_duration_since(Instant::now())
+            })
+            .min(BLE_IDLE_WAIT);
+        match receiver.recv_timeout(wait) {
+            Ok(BleMessage::Request(request)) => {
                 if shutdown.load(Ordering::SeqCst) {
                     break;
                 }
@@ -660,7 +750,7 @@ fn run_ble(
                     ));
                 }
             }
-            Err(mpsc::RecvTimeoutError::Timeout) => (),
+            Ok(BleMessage::Wake) | Err(mpsc::RecvTimeoutError::Timeout) => (),
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
         }
     }
@@ -677,12 +767,12 @@ fn dispatch(core: &Core, request: Request, sink: &Notifications, phone: &mut Pho
             args,
             ..
         } => match core.run(&cmd, &args) {
-            Ok((ok, stdout, stderr, exit_code)) => sink.send(&Notification::CommandFinished {
+            Ok(outcome) => sink.send(&Notification::CommandFinished {
                 request_id,
-                ok,
-                stdout,
-                stderr,
-                exit_code,
+                ok: outcome.ok,
+                stdout: outcome.stdout,
+                stderr: outcome.stderr,
+                exit_code: outcome.exit_code,
             }),
             Err(e) => sink.send(&Notification::CommandError {
                 request_id,
@@ -749,14 +839,8 @@ fn dispatch(core: &Core, request: Request, sink: &Notifications, phone: &mut Pho
         }
         Request::PreviewDestination { request_id, text } => {
             let (ok, kind, value1, value2, error) = match Core::preview_destination(&text) {
-                Ok((kind, value1, value2)) => (true, kind, value1, value2, String::new()),
-                Err(e) => (
-                    false,
-                    String::new(),
-                    String::new(),
-                    String::new(),
-                    e.to_string(),
-                ),
+                Ok((kind, value1, value2)) => (true, Some(kind), value1, value2, String::new()),
+                Err(e) => (false, None, String::new(), String::new(), e.to_string()),
             };
             sink.send(&Notification::DestinationPreviewed {
                 request_id,
@@ -785,6 +869,7 @@ fn dispatch(core: &Core, request: Request, sink: &Notifications, phone: &mut Pho
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tesla_ble::fake;
     use serde_json::{json, Value};
     use std::ffi::CStr;
 
@@ -807,51 +892,103 @@ mod tests {
         }
     }
 
+    /// A core on the production protocol client over the fake Go library.
+    fn fake_core(dir: &std::path::Path, vin: &str, state: crate::config::VinState) -> Core {
+        crate::config::Config {
+            vin: vin.into(),
+            vin_state: state,
+            ..crate::config::Config::default()
+        }
+        .save(&dir.join("config.json"))
+        .unwrap();
+        crate::keys::generate(
+            &dir.join("private_key.pem"),
+            &dir.join("public_key.pem"),
+            false,
+        )
+        .unwrap();
+        Core::new(
+            dir,
+            Some(crate::protocol_client::ProtocolClient::with_library(
+                fake::library(),
+            )),
+        )
+        .unwrap()
+    }
+
+    fn wait_until(condition: impl Fn() -> bool) {
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while !condition() {
+            assert!(Instant::now() < deadline, "condition not reached");
+            thread::sleep(Duration::from_millis(5));
+        }
+    }
+
+    #[test]
+    fn application_state_names_match_qt_client_and_tolerate_unknown_ones() {
+        for (name, state) in [
+            ("active", AppState::Active),
+            ("inactive", AppState::Inactive),
+            ("hidden", AppState::Hidden),
+            ("suspended", AppState::Suspended),
+            ("unknown", AppState::Unknown),
+            ("something-new", AppState::Unknown),
+        ] {
+            let request = format!(r#"{{"op":"application_state","state":"{name}"}}"#);
+            let Ok(Request::ApplicationState { state: parsed }) = serde_json::from_str(&request)
+            else {
+                panic!("{name}")
+            };
+            assert_eq!(parsed, state, "{name}");
+        }
+    }
+
     #[test]
     fn blocked_ble_keeps_control_and_presence_responsive_and_shutdown_skips_queue() {
         let dir = tempfile::tempdir().unwrap();
-        let cfg = crate::config::Config {
-            vin: "5YJ3E1EA0PF000000".into(),
-            ..crate::config::Config::default()
-        };
-        cfg.save(&dir.path().join("config.json")).unwrap();
-        std::fs::write(dir.path().join("private_key.pem"), "private").unwrap();
-        std::fs::write(dir.path().join("public_key.pem"), "public").unwrap();
-        let (session, got, peer) = crate::session_client::tests::accept_blocked_mock(dir.path());
-        let state = dir.path().to_string_lossy().into_owned();
+        let vin = "5YJ3E1EA0PF200001";
+        // Vehicle commands never complete on their own: only shutdown ends them.
+        fake::script(
+            vin,
+            fake::Script {
+                hold: vec![fake::VEHICLE_COMMAND],
+                ..fake::Script::default()
+            },
+        );
         let runtime = Runtime::launch(
-            Core::new(state.clone(), state, Some(session)).unwrap(),
+            fake_core(dir.path(), vin, crate::config::VinState::Paired),
             false,
         );
         let (sender, receiver) = mpsc::channel::<Value>();
         let mut sender = Box::new(sender);
         unsafe { runtime.observe(Some(notification), std::ptr::addr_of_mut!(*sender).cast()) };
         receive(&receiver, "initialized", Duration::from_secs(2));
-        while receive(&receiver, "phone_key_state", Duration::from_secs(2))["link"] != "unpaired" {}
-        assert!(runtime.submit(r#"{"op":"run","request_id":"slow","cmd":"lock","args":[]}"#));
-        got.recv_timeout(Duration::from_secs(2)).unwrap();
-        let start = Instant::now();
-        assert!(runtime.submit(r#"{"op":"get_config"}"#));
-        let mut presence = None;
-        let config = loop {
-            let event = receiver
-                .recv_timeout(Duration::from_millis(100).saturating_sub(start.elapsed()))
-                .unwrap();
-            if event["type"] == "phone_key_event" {
-                presence = Some(event);
-            } else if event["type"] == "config_loaded" {
-                break event;
+        // The car advertises nearby: presence connects.
+        let near = loop {
+            fake::observe_target(vin, fake::ObservationKind::Advertisement, 0, 7, -60);
+            if let Ok(event) = receiver.recv_timeout(Duration::from_millis(50)) {
+                if event["type"] == "phone_key_event" && event["kind"] == "presence_near" {
+                    break event;
+                }
             }
         };
-        assert_eq!(config["vin"], "5YJ3E1EA0PF000000");
+        assert_eq!(near["vin"], vin);
+        assert!(runtime.submit(r#"{"op":"run","request_id":"slow","cmd":"lock","args":[]}"#));
+        wait_until(|| fake::held(vin) == 1);
+
+        let start = Instant::now();
+        assert!(runtime.submit(r#"{"op":"get_config"}"#));
+        let config = receive(&receiver, "config_loaded", Duration::from_millis(100));
+        assert_eq!(config["vin"], vin);
         assert!(start.elapsed() < Duration::from_millis(100));
-        let event = presence
-            .unwrap_or_else(|| receive(&receiver, "phone_key_event", Duration::from_secs(1)));
-        assert_eq!(event["kind"], "presence_near");
+        // Presence observations are still processed while BLE work is blocked.
+        fake::observe(vin, fake::ObservationKind::Authenticated, 0);
+        let event = receive(&receiver, "phone_key_event", Duration::from_secs(1));
+        assert_eq!(event["kind"], "presence_auth_ok");
         assert!(runtime.submit(r#"{"op":"snapshot"}"#));
         receive(&receiver, "initialized", Duration::from_millis(100));
         let snapshot = receive(&receiver, "phone_key_state", Duration::from_millis(100));
-        assert_eq!(snapshot["link"], "connected");
+        assert_eq!(snapshot["link"], "authorized");
         assert!(runtime
             .submit(&json!({"op":"export_automagic", "documents_dir":dir.path()}).to_string()));
         let exported = receive(
@@ -880,38 +1017,16 @@ mod tests {
         assert!(!runtime.submit(r#"{"op":"get_config"}"#));
         drop(runtime);
         assert!(start.elapsed() < Duration::from_secs(1));
-        peer.join().unwrap();
     }
 
     #[test]
     fn phone_key_machine_state_tracks_events_independently_of_diagnostics() {
         let dir = tempfile::tempdir().unwrap();
-        let events = [
-            ("presence_near", "", "connected", true),
-            ("presence_auth_ok", "", "authorized", true),
-            ("presence_inside", "", "authorized", true),
-            ("presence_error", "bluetooth-off", "bluetooth-off", true),
-            ("presence_auth_failed", "", "error", true),
-            ("presence_disconnected", "", "scanning", true),
-            ("presence_stopped", "", "stopped", false),
-        ];
-        let mut greet = vec![r#"{"type":"hello","v":1}"#.into()];
-        for (kind, code, _, _) in events {
-            greet.push(json!({"type":"event", "kind":kind, "error_code":code, "error":"diagnostic wording unrelated to state"}).to_string());
-        }
-        let (session, _, peer) = crate::session_client::tests::accept_mock(dir.path(), greet,
-            vec![r#"{"type":"response","id":"{ID}","ok":true,"stdout":"","stderr":"","exit_code":0}"#.into()]);
-        // The response barrier proves every preceding event was demultiplexed.
-        session
-            .run("ping", &[], "VIN", "/key", 1, 1, Duration::from_secs(2))
-            .unwrap();
-        let state = dir.path().to_string_lossy().into_owned();
-        let core = Core::new(state.clone(), state, Some(session)).unwrap();
+        let vin = "5YJ3E1EA0PF200002";
+        let core = fake_core(dir.path(), vin, crate::config::VinState::Unpaired);
+        let client = core.protocol();
+        let sink = Notifications::default();
         let (sender, receiver) = mpsc::channel();
-        let sink = Notifications {
-            relay: None,
-            ..Notifications::default()
-        };
         let mut sender = Box::new(sender);
         sink.observe(Some(Observer {
             callback: notification,
@@ -924,29 +1039,44 @@ mod tests {
             generation: 0,
             away: crate::phone_key::AwayDeadline::default(),
         };
-        phone.poll(&core, &sink, &AtomicU64::new(0));
-        for (_, _, link, active) in events {
+        let stopped = AtomicU64::new(0);
+        for (kind, bluetooth_off, link, active) in [
+            (PresenceEvent::Near, false, "connected", true),
+            (PresenceEvent::AuthOk, false, "authorized", true),
+            (PresenceEvent::Inside, false, "authorized", true),
+            (PresenceEvent::Error, true, "bluetooth-off", true),
+            (PresenceEvent::AuthFailed, false, "error", true),
+            (PresenceEvent::Disconnected, false, "scanning", true),
+            (PresenceEvent::Stopped, false, "stopped", false),
+        ] {
+            client.emit_for_test(
+                vin,
+                kind,
+                "diagnostic wording unrelated to state",
+                bluetooth_off,
+            );
+            let stop_seen = phone.poll(&core, &sink, &stopped);
+            assert_eq!(stop_seen, kind == PresenceEvent::Stopped);
             let state = receive(&receiver, "phone_key_state", Duration::from_secs(1));
-            assert_eq!(state["link"], link);
-            assert_eq!(state["active"], active);
+            assert_eq!(state["link"], link, "{kind}");
+            assert_eq!(state["active"], active, "{kind}");
         }
+        assert_eq!(stopped.load(Ordering::SeqCst), core.session_generation());
         sink.observe(None);
-        drop(core);
-        peer.join().unwrap();
     }
 
     #[test]
     fn delayed_away_publication_preserves_raw_events_and_uses_standard_event_shape() {
         let dir = tempfile::tempdir().unwrap();
-        let (session, _, peer) = crate::session_client::tests::accept_mock(dir.path(),
-            vec![r#"{"type":"hello","v":1}"#.into(),
-                r#"{"type":"event","kind":"presence_far"}"#.into()],
-            vec![r#"{"type":"response","id":"{ID}","ok":true,"stdout":"","stderr":"","exit_code":0}"#.into()]);
-        session
-            .run("ping", &[], "", "/key", 1, 1, Duration::from_secs(2))
-            .unwrap();
-        let state = dir.path().to_string_lossy().into_owned();
-        let core = Core::new(state.clone(), state, Some(session)).unwrap();
+        let core = Core::new(
+            dir.path(),
+            Some(crate::protocol_client::ProtocolClient::with_library(
+                fake::library(),
+            )),
+        )
+        .unwrap();
+        core.protocol()
+            .emit_for_test("", PresenceEvent::Far, "", false);
         let (sender, receiver) = mpsc::channel();
         let sink = Notifications::default();
         let mut sender = Box::new(sender);
@@ -976,38 +1106,37 @@ mod tests {
         phone.publish_due_away(&core, &sink, Instant::now() + Duration::from_secs(360));
         assert!(receiver.try_recv().is_err());
         sink.observe(None);
-        drop(core);
-        peer.join().unwrap();
     }
 
     #[test]
     fn blocked_key_generation_does_not_hold_the_configuration_lock() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("private_key.pem"), "private").unwrap();
-        std::fs::write(dir.path().join("public_key.pem"), "public").unwrap();
-        let (session, got, peer) = crate::session_client::tests::accept_blocked_mock(dir.path());
-        let state = dir.path().to_string_lossy().into_owned();
+        let vin = "5YJ3E1EA0PF200003";
+        // Replacing the key stops presence first; that radio work never ends.
+        fake::script(
+            vin,
+            fake::Script {
+                hold: vec![fake::WATCH_STOP],
+                ..fake::Script::default()
+            },
+        );
         let runtime = Runtime::launch(
-            Core::new(state.clone(), state, Some(session)).unwrap(),
+            fake_core(dir.path(), vin, crate::config::VinState::Paired),
             false,
         );
         let (sender, receiver) = mpsc::channel::<Value>();
         let mut sender = Box::new(sender);
         unsafe { runtime.observe(Some(notification), std::ptr::addr_of_mut!(*sender).cast()) };
         receive(&receiver, "initialized", Duration::from_secs(2));
-        assert!(runtime.submit(r#"{"op":"generate_key","force":false}"#));
-        let request = got.recv_timeout(Duration::from_secs(2)).unwrap();
-        assert_eq!(
-            serde_json::from_str::<Value>(&request).unwrap()["cmd"],
-            "keygen"
-        );
+        wait_until(|| runtime.core.phone_key_enabled());
+        assert!(runtime.submit(r#"{"op":"generate_key","force":true}"#));
+        wait_until(|| fake::held(vin) == 1);
         assert!(runtime.submit(r#"{"op":"get_config"}"#));
         assert_eq!(
             receive(&receiver, "config_loaded", Duration::from_millis(100))["has_key"],
             true
         );
         drop(runtime);
-        peer.join().unwrap();
     }
 
     #[test]
@@ -1062,7 +1191,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let state = dir.path().to_string_lossy().into_owned();
         for first_start in [true, false] {
-            let runtime = Runtime::new(Core::new(state.clone(), state.clone(), None).unwrap());
+            let runtime = Runtime::new(Core::new(state.clone(), None).unwrap());
             let (sender, receiver) = mpsc::channel::<Value>();
             let mut sender = Box::new(sender);
             unsafe { runtime.observe(Some(notification), std::ptr::addr_of_mut!(*sender).cast()) };
@@ -1099,7 +1228,7 @@ mod tests {
     fn commands_and_delayed_refresh_are_rust_driven_and_callbacks_detach() {
         let dir = tempfile::tempdir().unwrap();
         let state = dir.path().to_string_lossy().into_owned();
-        let runtime = Runtime::new(Core::new(state.clone(), state, None).unwrap());
+        let runtime = Runtime::new(Core::new(state, None).unwrap());
         let (sender, receiver) = mpsc::channel::<Value>();
         let mut sender = Box::new(sender);
         unsafe { runtime.observe(Some(notification), std::ptr::addr_of_mut!(*sender).cast()) };
@@ -1154,23 +1283,56 @@ mod tests {
     }
 
     #[test]
+    fn preview_and_share_failures_publish_empty_results() {
+        let dir = tempfile::tempdir().unwrap();
+        let runtime = Runtime::launch(Core::new(dir.path(), None).unwrap(), false);
+        let (sender, receiver) = mpsc::channel::<Value>();
+        let mut sender = Box::new(sender);
+        unsafe { runtime.observe(Some(notification), std::ptr::addr_of_mut!(*sender).cast()) };
+        assert!(
+            runtime.submit(r#"{"op":"preview_destination","request_id":"ok","text":"geo:45,9"}"#)
+        );
+        assert_eq!(
+            receive(&receiver, "destination_previewed", Duration::from_secs(2))["kind"],
+            "gps"
+        );
+        assert!(
+            runtime.submit(r#"{"op":"preview_destination","request_id":"bad","text":"999,999"}"#)
+        );
+        let failed = receive(&receiver, "destination_previewed", Duration::from_secs(2));
+        assert_eq!(failed["request_id"], "bad");
+        assert_eq!(failed["ok"], false);
+        for field in ["kind", "value1", "value2"] {
+            assert_eq!(
+                failed[field], "",
+                "{field} must not carry an earlier preview"
+            );
+        }
+        assert_ne!(failed["error"], "");
+        assert!(
+            runtime.submit(r#"{"op":"share_destination","request_id":"share","text":"geo:45,9"}"#)
+        );
+        let shared = receive(&receiver, "share_finished", Duration::from_secs(2));
+        assert_eq!(shared["ok"], false);
+        assert_eq!(shared["output"], "");
+        assert_ne!(shared["error"], "");
+        unsafe { runtime.observe(None, std::ptr::null_mut()) };
+        drop(runtime);
+    }
+
+    #[test]
     fn failed_start_is_retried_without_a_ui_poll() {
         let dir = tempfile::tempdir().unwrap();
-        let cfg = crate::config::Config {
-            vin: "5YJ3E1EA0PF000000".into(),
-            vin_state: crate::config::VinState::Paired,
-            ..crate::config::Config::default()
-        };
-        cfg.save(&dir.path().join("config.json")).unwrap();
-        std::fs::write(dir.path().join("private_key.pem"), "private").unwrap();
-        let state = dir.path().to_string_lossy().into_owned();
-        let session = crate::session_client::SessionClient::new(
-            dir.path().join("missing"),
-            "bluez",
-            dir.path().into(),
+        let vin = "5YJ3E1EA0PF200004";
+        fake::script(
+            vin,
+            fake::Script {
+                statuses: [(fake::WATCH_START, (fake::FAILED, "radio failure".into()))].into(),
+                ..fake::Script::default()
+            },
         );
         let runtime = Runtime::launch(
-            Core::new(state.clone(), state, Some(session)).unwrap(),
+            fake_core(dir.path(), vin, crate::config::VinState::Paired),
             false,
         );
         let (sender, receiver) = mpsc::channel::<Value>();
@@ -1180,10 +1342,61 @@ mod tests {
         // The real five-second retry deadline must fire autonomously.
         let event = receive(&receiver, "phone_key_event", Duration::from_secs(8));
         assert_eq!(event["kind"], "presence_stopped");
-        assert_eq!(event["vin"], "5YJ3E1EA0PF000000");
+        assert_eq!(event["vin"], vin);
         assert_ne!(event["error"].as_str().unwrap(), "");
         assert!(event["time"].as_str().unwrap().ends_with('Z'));
         unsafe { runtime.observe(None, std::ptr::null_mut()) };
         drop(runtime);
+    }
+
+    // REVIEW ROUND 3 BUG (protocol_client.rs `outcome`/`start_presence`,
+    // error.rs `OperationError::PresenceFailed(String)`, runtime.rs
+    // `PhoneState::started`): when presence cannot start because Bluetooth is
+    // off, Go reports EE_BLUETOOTH_OFF, but `RunOutcome` keeps only the error
+    // text, `Core` wraps it as a generic `PresenceFailed`, and the runtime
+    // publishes link `error`. The dedicated `bluetooth-off` UI state is thus
+    // unreachable at startup, and when Bluetooth is switched off while
+    // presence runs it is shown only until the immediate restart attempt
+    // (within ~100 ms) overwrites it with `error`, re-published every 5 s.
+    // Desired: a start failure classified as Bluetooth-off publishes
+    // `link: "bluetooth-off"`.
+    #[test]
+    fn review_round3_bluetooth_off_start_failure_publishes_bluetooth_off_link() {
+        let dir = tempfile::tempdir().unwrap();
+        let vin = "5YJ3E1EA0PF300005";
+        fake::script(
+            vin,
+            fake::Script {
+                statuses: [(
+                    fake::WATCH_START,
+                    (
+                        fake::BLUETOOTH_OFF,
+                        "Bluetooth adapter is powered off".into(),
+                    ),
+                )]
+                .into(),
+                ..fake::Script::default()
+            },
+        );
+        let runtime = Runtime::launch(
+            fake_core(dir.path(), vin, crate::config::VinState::Paired),
+            false,
+        );
+        let (sender, receiver) = mpsc::channel::<Value>();
+        let mut sender = Box::new(sender);
+        unsafe { runtime.observe(Some(notification), std::ptr::addr_of_mut!(*sender).cast()) };
+        let state = loop {
+            let state = receive(&receiver, "phone_key_state", Duration::from_secs(3));
+            if state["link"] != "stopped" {
+                break state;
+            }
+        };
+        unsafe { runtime.observe(None, std::ptr::null_mut()) };
+        drop(runtime);
+        assert_eq!(state["active"], false);
+        assert_eq!(
+            state["link"], "bluetooth-off",
+            "Bluetooth-off start failure published as {state}"
+        );
     }
 }

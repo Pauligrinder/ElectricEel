@@ -33,13 +33,20 @@ test("native cover actions use loaded choices and serialize commands while busy"
     const context = vm.createContext({
         CoverActions: catalogue(),
         cover: { vin: "VIN", canCommand: true, commandBusy: false, requestSeq: 0 },
-        teslaClient: { runCommand: (...args) => requests.push(args) },
-        vin: "VIN", model: "model3", hasKey: true,
-        coverLeftAction: "flash-lights", coverRightAction: "unlock",
+        teslaClient: {
+            runCommand: (...args) => requests.push(args),
+            coverLeftAction: "flash-lights", coverRightAction: "unlock",
+        },
+        ok: true,
     });
     loadFunctions(source, ["runCoverCommand"], context);
     context.cover.runCoverCommand = context.runCoverCommand;
-    runHandler(source, "onConfigLoaded", context);
+    // The cover binds its actions to TeslaClient's configuration properties.
+    for (const side of ["leftAction", "rightAction"]) {
+        const binding = source.match(new RegExp(`property string ${side}:\\s*([^\\n]+)`));
+        assert.ok(binding, `${side} binding must be discoverable`);
+        context.cover[side] = vm.runInContext(binding[1], context);
+    }
     const triggers = Array.from(source.matchAll(/onTriggered:\s*([^\n]+)/g), match => match[1]);
     assert.equal(triggers.length, 2);
     vm.runInContext(triggers[0], context);

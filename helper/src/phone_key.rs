@@ -1,9 +1,46 @@
 //! Pure application policy; no Go state machine or wall-clock comparisons.
 use std::time::{Duration, Instant};
 
+/// A phone-key lifecycle/state event. The wire name is the snake-cased
+/// variant with a `presence_` prefix (`AuthOk` -> `"presence_auth_ok"`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, strum::IntoStaticStr, strum::Display)]
+#[strum(serialize_all = "snake_case", prefix = "presence_")]
+pub(crate) enum PresenceEvent {
+    Near,
+    Far,
+    Inside,
+    AuthOk,
+    AuthFailed,
+    Disconnected,
+    Error,
+    Stopped,
+    Restarted,
+    AwayConfirmed,
+}
+
+impl serde::Serialize for PresenceEvent {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.into())
+    }
+}
+
+/// RSSI at or above which an advertisement counts toward entering "near".
+pub(crate) const ENTER_RSSI: i32 = -88;
+/// RSSI below which an advertisement is "far": it resets the confirmation
+/// streak and never refreshes presence. Between the two thresholds a sample
+/// only keeps an already-near vehicle near (hysteresis), so a beacon hovering
+/// around one threshold cannot flap.
+pub(crate) const EXIT_RSSI: i32 = -95;
+/// Consecutive strong samples needed to enter "near"; a single reflection
+/// spike must not trigger a connection attempt.
+pub(crate) const ENTER_CONFIRMATIONS: u32 = 2;
+/// A strong sample older than this no longer counts toward the streak.
+pub(crate) const CONFIRMATION_WINDOW: Duration = Duration::from_secs(5);
+
 pub(crate) struct Proximity {
     pub near: bool,
     confirmations: u32,
+    last_strong: Option<Instant>,
     last_seen: Option<Instant>,
     pub target: u64,
     pub target_at: Option<Instant>,
@@ -16,6 +53,7 @@ impl Default for Proximity {
         Self {
             near: false,
             confirmations: 0,
+            last_strong: None,
             last_seen: None,
             target: 0,
             target_at: None,
@@ -27,18 +65,33 @@ impl Default for Proximity {
 
 impl Proximity {
     pub fn advertisement(&mut self, now: Instant, target: u64, rssi: i32) {
-        if rssi >= -90 {
-            self.confirmations += 1;
+        if rssi >= ENTER_RSSI {
+            let streak = self
+                .last_strong
+                .is_some_and(|at| now.saturating_duration_since(at) <= CONFIRMATION_WINDOW);
+            self.confirmations = if streak {
+                self.confirmations.saturating_add(1)
+            } else {
+                1
+            };
+            self.last_strong = Some(now);
+            if self.confirmations >= ENTER_CONFIRMATIONS {
+                self.near = true;
+            }
+        } else if rssi < EXIT_RSSI {
+            self.confirmations = 0;
+            self.last_strong = None;
+            self.target = 0;
+            self.target_at = None;
+            return;
+        } else if !self.near {
+            // Hysteresis band: neither confirms nor resets a pending streak.
+            return;
+        }
+        if self.near {
             self.last_seen = Some(now);
             self.target = target;
             self.target_at = Some(now);
-            if self.confirmations >= 1 {
-                self.near = true;
-            }
-        } else {
-            self.confirmations = 0;
-            self.target = 0;
-            self.target_at = None;
         }
     }
     pub fn tick(&mut self, now: Instant, connected: bool) -> bool {
@@ -53,6 +106,8 @@ impl Proximity {
                 .is_some_and(|seen| now.duration_since(seen) > Duration::from_secs(15))
         {
             self.near = false;
+            self.confirmations = 0;
+            self.last_strong = None;
             self.target = 0;
             self.target_at = None;
             self.retry_at = None;
@@ -102,17 +157,25 @@ struct PendingAway {
 }
 
 impl AwayDeadline {
-    pub(crate) fn observe(&mut self, kind: &str, vin: &str, generation: u64, now: Instant) {
+    pub(crate) fn observe(
+        &mut self,
+        kind: PresenceEvent,
+        vin: &str,
+        generation: u64,
+        now: Instant,
+    ) {
         self.discard_other_session(vin, generation);
         match kind {
-            "presence_far" if self.pending.is_none() => {
+            PresenceEvent::Far if self.pending.is_none() => {
                 self.pending = Some(PendingAway {
                     deadline: now + Duration::from_secs(180),
                     vin: vin.into(),
                     generation,
                 });
             }
-            "presence_inside" | "presence_stopped" | "presence_restarted" => self.pending = None,
+            PresenceEvent::Inside | PresenceEvent::Stopped | PresenceEvent::Restarted => {
+                self.pending = None;
+            }
             _ => (),
         }
     }
@@ -148,6 +211,7 @@ mod tests {
         let now = Instant::now();
         let mut state = Proximity::default();
         state.advertisement(now, 1, -80);
+        state.advertisement(now, 1, -80);
         assert!(state.can_connect(now));
         assert!(!state.tick(now + Duration::from_secs(60), true));
         assert!(state.near);
@@ -162,11 +226,65 @@ mod tests {
         state.advertisement(now, 1, -100);
         assert!(!state.can_connect(now));
         state.advertisement(now, 2, -80);
+        state.advertisement(now, 2, -80);
         state.failed(now);
         assert!(!state.can_connect(now));
         assert!(state.can_connect(now + Duration::from_secs(1)));
         state.advertisement(now + Duration::from_secs(2), 3, -100);
         assert!(!state.can_connect(now + Duration::from_secs(2)));
+    }
+
+    #[test]
+    fn entering_near_needs_consecutive_strong_samples() {
+        let now = Instant::now();
+        let mut state = Proximity::default();
+        state.advertisement(now, 1, ENTER_RSSI);
+        assert!(!state.near, "one sample is not a confirmation streak");
+        // A stale first sample does not combine with a fresh one.
+        let later = now + CONFIRMATION_WINDOW + Duration::from_secs(1);
+        state.advertisement(later, 1, ENTER_RSSI);
+        assert!(!state.near);
+        // Samples in the hysteresis band neither confirm nor reset.
+        state.advertisement(later, 1, EXIT_RSSI);
+        assert!(!state.near);
+        state.advertisement(later + Duration::from_secs(1), 1, ENTER_RSSI);
+        assert!(state.near);
+        assert!(state.can_connect(later + Duration::from_secs(1)));
+        // A far sample resets a pending streak.
+        let mut state = Proximity::default();
+        state.advertisement(now, 1, ENTER_RSSI);
+        state.advertisement(now, 1, EXIT_RSSI - 1);
+        state.advertisement(now, 1, ENTER_RSSI);
+        assert!(!state.near);
+    }
+
+    #[test]
+    fn hysteresis_band_keeps_a_near_vehicle_near_until_samples_turn_far() {
+        let now = Instant::now();
+        let mut state = Proximity::default();
+        state.advertisement(now, 1, -60);
+        state.advertisement(now, 1, -60);
+        assert!(state.near);
+        // Fading into the band keeps presence and the target fresh.
+        let mut at = now;
+        for _ in 0..10 {
+            at += Duration::from_secs(5);
+            state.advertisement(at, 2, i32::midpoint(ENTER_RSSI, EXIT_RSSI));
+            assert!(!state.tick(at, false), "band samples must not depart");
+        }
+        assert!(state.can_connect(at));
+        assert_eq!(state.target, 2);
+        // Far samples do not refresh presence: departure follows the timeout.
+        for _ in 0..4 {
+            at += Duration::from_secs(5);
+            state.advertisement(at, 3, EXIT_RSSI - 1);
+        }
+        assert!(!state.can_connect(at));
+        assert!(state.tick(at, false));
+        assert!(!state.near);
+        // Re-entering needs a fresh confirmation streak.
+        state.advertisement(at, 4, ENTER_RSSI);
+        assert!(!state.near);
     }
 
     #[test]
@@ -183,8 +301,8 @@ mod tests {
     fn repeated_departures_keep_first_deadline_and_expire_only_once() {
         let now = Instant::now();
         let mut away = AwayDeadline::default();
-        away.observe("presence_far", "VIN", 1, now);
-        away.observe("presence_far", "VIN", 1, now + Duration::from_secs(120));
+        away.observe(PresenceEvent::Far, "VIN", 1, now);
+        away.observe(PresenceEvent::Far, "VIN", 1, now + Duration::from_secs(120));
         assert!(away
             .take_due(now + Duration::from_secs(179), "VIN", 1)
             .is_none());
@@ -201,11 +319,11 @@ mod tests {
     fn inside_at_deadline_cancels_and_next_departure_gets_a_fresh_timer() {
         let now = Instant::now();
         let mut away = AwayDeadline::default();
-        away.observe("presence_far", "VIN", 1, now);
+        away.observe(PresenceEvent::Far, "VIN", 1, now);
         let later = now + Duration::from_secs(180);
-        away.observe("presence_inside", "VIN", 1, later);
+        away.observe(PresenceEvent::Inside, "VIN", 1, later);
         assert!(away.take_due(later, "VIN", 1).is_none());
-        away.observe("presence_far", "VIN", 1, later);
+        away.observe(PresenceEvent::Far, "VIN", 1, later);
         assert!(away
             .take_due(later + Duration::from_secs(179), "VIN", 1)
             .is_none());
@@ -220,25 +338,25 @@ mod tests {
         let now = Instant::now();
         let later = now + Duration::from_secs(180);
         for kind in [
-            "presence_near",
-            "presence_auth_ok",
-            "presence_disconnected",
-            "presence_error",
+            PresenceEvent::Near,
+            PresenceEvent::AuthOk,
+            PresenceEvent::Disconnected,
+            PresenceEvent::Error,
         ] {
             let mut away = AwayDeadline::default();
-            away.observe("presence_far", "VIN", 1, now);
+            away.observe(PresenceEvent::Far, "VIN", 1, now);
             away.observe(kind, "VIN", 1, now);
             assert_eq!(away.take_due(later, "VIN", 1), Some("VIN".into()));
         }
-        for kind in ["presence_stopped", "presence_restarted"] {
+        for kind in [PresenceEvent::Stopped, PresenceEvent::Restarted] {
             let mut away = AwayDeadline::default();
-            away.observe("presence_far", "VIN", 1, now);
+            away.observe(PresenceEvent::Far, "VIN", 1, now);
             away.observe(kind, "VIN", 1, now);
             assert!(away.take_due(later, "VIN", 1).is_none());
         }
         for (vin, generation) in [("OTHER", 1), ("VIN", 2)] {
             let mut away = AwayDeadline::default();
-            away.observe("presence_far", "VIN", 1, now);
+            away.observe(PresenceEvent::Far, "VIN", 1, now);
             assert!(away.take_due(later, vin, generation).is_none());
             assert!(away.take_due(later, "VIN", 1).is_none());
         }

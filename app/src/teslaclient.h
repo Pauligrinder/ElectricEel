@@ -1,6 +1,7 @@
 #ifndef TESLACLIENT_H
 #define TESLACLIENT_H
 
+#include <QElapsedTimer>
 #include <QObject>
 #include <QVariantList>
 #include <QJsonObject>
@@ -12,11 +13,23 @@ struct Runtime;
 class TeslaClient : public QObject
 {
     Q_OBJECT
-    Q_PROPERTY(bool helperAvailable READ helperAvailable NOTIFY helperAvailableChanged)
     Q_PROPERTY(QString appVersion READ appVersion CONSTANT)
-    // core_version() from the in-process library; equal to APP_VERSION for a
-    // matched build, so the UI's "version mismatch" banner stays quiet.
-    Q_PROPERTY(QString helperVersion READ helperVersion NOTIFY helperVersionChanged)
+    // core_version() from the statically linked core; equal to APP_VERSION
+    // for a matched build, so the UI's "version mismatch" warning stays quiet.
+    Q_PROPERTY(QString helperVersion READ helperVersion CONSTANT)
+    // The persisted configuration, owned here so pages bind to one copy
+    // instead of each caching broadcast replies. Change signals fire only
+    // when a value actually changes; configLoaded still reports every reply.
+    Q_PROPERTY(QString vin READ vin NOTIFY vinChanged)
+    Q_PROPERTY(QString model READ model NOTIFY modelChanged)
+    Q_PROPERTY(bool hasKey READ hasKey NOTIFY hasKeyChanged)
+    Q_PROPERTY(QString publicKeyPem READ publicKeyPem NOTIFY publicKeyPemChanged)
+    // True once any configuration reply arrived. A later failed reload keeps
+    // the last good values and only sets configError.
+    Q_PROPERTY(bool configReady READ configReady NOTIFY configReadyChanged)
+    Q_PROPERTY(QString configError READ configError NOTIFY configErrorChanged)
+    Q_PROPERTY(QString coverLeftAction READ coverLeftAction NOTIFY coverActionsChanged)
+    Q_PROPERTY(QString coverRightAction READ coverRightAction NOTIFY coverActionsChanged)
     Q_PROPERTY(QString phoneKeyStatus READ phoneKeyStatus NOTIFY phoneKeyStatusChanged)
     Q_PROPERTY(bool phoneKeyActive READ phoneKeyActive NOTIFY phoneKeyActiveChanged)
     Q_PROPERTY(QString phoneKeyLink READ phoneKeyLink NOTIFY phoneKeyLinkChanged)
@@ -26,9 +39,16 @@ public:
     explicit TeslaClient(Runtime *runtime, QObject *parent = nullptr);
     ~TeslaClient() override;
 
-    bool helperAvailable() const;
     QString appVersion() const;
-    QString helperVersion() const;
+    QString helperVersion() const { return m_helperVersion; }
+    QString vin() const { return m_vin; }
+    QString model() const { return m_model; }
+    bool hasKey() const { return m_hasKey; }
+    QString publicKeyPem() const { return m_publicKeyPem; }
+    bool configReady() const { return m_configReady; }
+    QString configError() const { return m_configError; }
+    QString coverLeftAction() const { return m_coverLeftAction; }
+    QString coverRightAction() const { return m_coverRightAction; }
     QString phoneKeyStatus() const;
     bool phoneKeyActive() const { return m_phoneKeyActive; }
     QString phoneKeyLink() const { return m_phoneKeyLink; }
@@ -63,8 +83,13 @@ signals:
                       int connectTimeoutSec, int commandTimeoutSec,
                       bool hasKey, const QString &publicKeyPem,
                       const QString &coverLeftAction, const QString &coverRightAction);
-    void helperAvailableChanged();
-    void helperVersionChanged();
+    void vinChanged();
+    void modelChanged();
+    void hasKeyChanged();
+    void publicKeyPemChanged();
+    void configReadyChanged();
+    void configErrorChanged();
+    void coverActionsChanged();
     void phoneKeyStatusChanged();
     void phoneKeyActiveChanged();
     void phoneKeyLinkChanged();
@@ -86,10 +111,23 @@ private slots:
 
 private:
     void submit(const QJsonObject &request);
+    void applyConfig(const QJsonObject &event);
+    void setConfigError(const QString &error);
     static void notification(void *context, const char *json);
     Runtime *m_runtime;
-    bool m_helperAvailable = true;
     QString m_helperVersion;
+    QString m_vin;
+    QString m_model;
+    bool m_hasKey = false;
+    QString m_publicKeyPem;
+    bool m_configReady = false;
+    QString m_configError;
+    QString m_coverLeftAction = QStringLiteral("trunk-open");
+    QString m_coverRightAction = QStringLiteral("frunk-open");
+    // Detects system suspend between application-state changes: the
+    // monotonic clock stops during suspend while wall time keeps running.
+    QElapsedTimer m_monotonic;
+    qint64 m_wallMinusMonotonic = 0;
     QString m_phoneKeyStatus;
     bool m_phoneKeyActive = false;
     QString m_phoneKeyLink = QStringLiteral("stopped");

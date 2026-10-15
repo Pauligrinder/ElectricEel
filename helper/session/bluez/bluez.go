@@ -18,7 +18,7 @@ package bluez
 
 import (
 	"context"
-	"strings"
+	"errors"
 	"time"
 
 	"github.com/godbus/dbus"
@@ -77,6 +77,8 @@ type dbusBus interface {
 	// addMatch/removeMatch register/unregister a signal match rule.
 	addMatch(options ...dbus.MatchOption) error
 	removeMatch(options ...dbus.MatchOption) error
+	// logf records a diagnostic for the session that owns this bus.
+	logf(format string, args ...interface{})
 }
 
 // dbusCaller is the slice of a D-Bus object this package uses.
@@ -126,12 +128,15 @@ func variantInt16(v dbus.Variant) (int16, bool) {
 
 // godbusConn adapts a *dbus.Conn to dbusBus.
 type godbusConn struct {
-	c *dbus.Conn
+	c   *dbus.Conn
+	log Logger
 }
 
-func adaptConn(conn *dbus.Conn) *godbusConn {
-	return &godbusConn{c: conn}
+func adaptConn(conn *dbus.Conn, log Logger) *godbusConn {
+	return &godbusConn{c: conn, log: log}
 }
+
+func (g *godbusConn) logf(format string, args ...interface{}) { g.log.logf(format, args...) }
 
 func (g *godbusConn) object(dest string, path dbus.ObjectPath) dbusCaller {
 	return &godbusObject{obj: g.c.Object(dest, path)}
@@ -189,8 +194,9 @@ type Conn struct {
 	bus dbusBus
 }
 
-// Open establishes an owned system-bus connection for BlueZ access.
-func Open() (*Conn, error) {
+// Open establishes an owned system-bus connection for BlueZ access. Transport
+// diagnostics go to log (which may be nil), never to other sessions.
+func Open(log Logger) (*Conn, error) {
 	// SystemBus caches a process-wide connection, even after Close. Session
 	// teardown must not close that shared handle and poison every later retry.
 	raw, err := dbus.SystemBusPrivate()
@@ -205,18 +211,11 @@ func Open() (*Conn, error) {
 		_ = raw.Close()
 		return nil, err
 	}
-	return &Conn{raw: raw, bus: adaptConn(raw)}, nil
+	return &Conn{raw: raw, bus: adaptConn(raw, log)}, nil
 }
 
-// Scan scans for the vehicle's BLE beacon and returns as soon as a matching
-// device appears (or ctx is cancelled).
-func (c *Conn) Scan(ctx context.Context, adapterID, vin string) (*ScanResult, error) {
-	return scan(ctx, c.bus, adapterID, vin)
-}
-
-// Watch starts BLE discovery and returns a Watcher for repeated,
-// non-blocking beacon snapshots - the primitive a presence-maintenance loop
-// polls on its own schedule, as opposed to Scan's block-until-found shape.
+// Watch starts continuous BLE discovery and returns a Watcher that delivers
+// fresh vehicle advertisements.
 func (c *Conn) Watch(ctx context.Context, adapterID, vin string) (*Watcher, error) {
 	return newWatcher(ctx, c.bus, adapterID, vin)
 }
@@ -232,27 +231,23 @@ func (c *Conn) Close() error {
 	return c.raw.Close()
 }
 
+// ErrNoAdapter means BlueZ has no usable Bluetooth controller.
+var ErrNoAdapter = errors.New("bluez: no Bluetooth adapter found")
+
 // IsAdapterError reports whether err is a permanent adapter/radio-level
-// failure rather than a transient link or scan condition. It mirrors
-// upstream pkg/connector/ble.IsAdapterError for the D-Bus path: a missing
-// controller, a controller the OS refuses to use, or org.bluez itself being
-// unavailable are all conditions retrying will not fix, so callers should
+// failure rather than a transient link or scan condition: a missing
+// controller, a radio that is off (and that we may not power on), or
+// org.bluez itself being unavailable. Retrying will not fix these, so callers
 // surface them immediately instead of burning the remaining deadline.
 func IsAdapterError(err error) bool {
 	if err == nil {
 		return false
 	}
-	s := err.Error()
-	switch {
-	case strings.Contains(s, "operation not permitted"):
+	if errors.Is(err, ErrNoAdapter) || IsBluetoothOff(err) {
 		return true
-	case strings.Contains(s, "org.bluez.Error.NotReady"):
-		return true
-	case strings.Contains(s, "org.bluez.Error.NotPowered"):
-		return true
-	case strings.Contains(s, "org.freedesktop.DBus.Error.ServiceUnknown"):
-		return true
-	case strings.Contains(s, "no Bluetooth adapter found"):
+	}
+	switch DBusErrorName(err) {
+	case "org.bluez.Error.NotReady", "org.bluez.Error.NotPowered", "org.freedesktop.DBus.Error.ServiceUnknown":
 		return true
 	}
 	return false

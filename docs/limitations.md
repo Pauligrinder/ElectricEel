@@ -20,8 +20,10 @@ historically (see `git log` for history).
   drop the previous `__value` before applying state defaults, so stale
   values cannot survive across dialogs.
 - `CommandCatalog.js` argument bounds and enum values are best-effort
-  from public docs; the typed protocol adapter and vehicle firmware
-  rejects anything it dislikes.
+  from public docs and only guide the dialog (e.g. the valet PIN must be
+  4 digits). Rust's `protocol_commands::parse` is the authoritative
+  argument validator, and vehicle firmware can still reject values it
+  dislikes.
 - QML files are not compiled by `mb2`; runtime QML errors remain
   possible despite a clean C++/Qt build.
 - Only QML/JS user strings are translated; Rust/C++ diagnostics stay

@@ -4,8 +4,8 @@ use std::ffi::{c_void, CStr};
 use std::os::raw::{c_char, c_int};
 
 use crate::core::Core;
+use crate::protocol_client::ProtocolClient;
 use crate::runtime::Runtime;
-use crate::session_client::SessionClient;
 
 extern "C" {
     fn electric_eel_ui_prepare(argc: c_int, argv: *mut *mut c_char) -> *const c_char;
@@ -32,10 +32,8 @@ pub unsafe extern "C" fn electric_eel_app_main(
     let state = unsafe { CStr::from_ptr(state) }
         .to_string_lossy()
         .into_owned();
-    let bin = "/usr/share/harbour-electric-eel/lib";
-    let session =
-        SessionClient::library(format!("{bin}/libteslable.so").into(), state.clone().into());
-    let result = match Core::new(bin.to_string(), state, Some(session)) {
+    let session = ProtocolClient::new("/usr/share/harbour-electric-eel/lib/libteslable.so".into());
+    let result = match Core::new(state, Some(session)) {
         Ok(core) => {
             let mut runtime = Box::new(Runtime::new(core));
             // Rust starts all work; Qt only submits actions and receives updates.

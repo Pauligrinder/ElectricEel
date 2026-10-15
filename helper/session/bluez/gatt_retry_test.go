@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/godbus/dbus"
 )
 
 // TestConnectRetriesTransientFailures mirrors upstream ble_test.go's
@@ -76,13 +78,15 @@ func TestIsAdapterError(t *testing.T) {
 		err  error
 		want bool
 	}{
-		{errors.New("operation not permitted"), true},
-		{errors.New("org.bluez.Error.NotReady: Resource Not Ready"), true},
-		{errors.New("org.bluez.Error.NotPowered: RFKILL"), true},
-		{errors.New("org.freedesktop.DBus.Error.ServiceUnknown: name org.bluez not found"), true},
-		{errors.New("bluez: no Bluetooth adapter found (wanted \"hci9\")"), true},
-		{errors.New("org.bluez.Error.Failed: link lost"), false},
-		{errors.New("org.bluez.Error.InProgress"), false},
+		{dbus.Error{Name: "org.bluez.Error.NotReady", Body: []interface{}{"Resource Not Ready"}}, true},
+		{&dbus.Error{Name: "org.bluez.Error.NotPowered", Body: []interface{}{"RFKILL"}}, true},
+		{fmt.Errorf("bluez: enumerate objects: %w", dbus.Error{Name: "org.freedesktop.DBus.Error.ServiceUnknown"}), true},
+		{fmt.Errorf("%w (wanted \"hci9\")", ErrNoAdapter), true},
+		{&AdapterOffError{Cause: dbus.Error{Name: "org.freedesktop.DBus.Error.AccessDenied"}}, true},
+		{dbus.Error{Name: "org.bluez.Error.Failed", Body: []interface{}{"link lost"}}, false},
+		{dbus.Error{Name: "org.bluez.Error.InProgress"}, false},
+		// Prose is never parsed: only typed names and sentinels classify.
+		{errors.New("org.bluez.Error.NotReady: Resource Not Ready"), false},
 		{errors.New("bluez: device /org/bluez/hci0/dev_1 not found after scan"), false},
 		{nil, false},
 	}
@@ -210,10 +214,9 @@ func TestServicesTimeoutReportsDeviceStateBeforeDisconnect(t *testing.T) {
 	bus.deviceVisible = true
 	// Device1.Connect succeeds but BlueZ never completes service discovery.
 	var lines []string
-	SetDiagnosticLogger(func(format string, args ...interface{}) {
+	bus.log = func(format string, args ...interface{}) {
 		lines = append(lines, fmt.Sprintf(format, args...))
-	})
-	t.Cleanup(func() { SetDiagnosticLogger(nil) })
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
 	defer cancel()

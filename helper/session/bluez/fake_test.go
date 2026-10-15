@@ -46,7 +46,10 @@ type fakeBluez struct {
 	subscribers  []chan *dbus.Signal
 	matches      int
 	removedMatch bool
+	log          Logger
 }
+
+func (f *fakeBluez) logf(format string, args ...interface{}) { f.log.logf(format, args...) }
 
 type fakeDevice struct {
 	path     dbus.ObjectPath
@@ -198,7 +201,7 @@ func (fc *fakeCaller) call(ctx context.Context, method string, args ...interface
 			return nil, fc.b.startDiscoveryErr
 		}
 		if fc.b.discovering {
-			return nil, errors.New("org.bluez.Error.InProgress")
+			return nil, dbus.Error{Name: "org.bluez.Error.InProgress"}
 		}
 		fc.b.discovering = true
 		return nil, nil

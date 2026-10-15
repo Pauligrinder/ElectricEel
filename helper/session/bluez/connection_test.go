@@ -35,9 +35,6 @@ func TestAuditRXBackpressureRetiresStream(t *testing.T) {
 		c.inbox <- []byte{0}
 	}
 	c.rx([]byte{0, 1, 42})
-	if c.RXBackpressure() != 1 {
-		t.Fatalf("backpressure count = %d", c.RXBackpressure())
-	}
 	select {
 	case <-c.Dropped():
 	default:
@@ -314,13 +311,7 @@ func TestDeviceConnectedAndAutoConnect(t *testing.T) {
 	if err != nil || !connected {
 		t.Fatalf("DeviceConnected = %v, %v; want true, nil", connected, err)
 	}
-	if err := c.SetTrusted(true); err != nil {
-		t.Fatalf("SetTrusted: %v", err)
-	}
-	if !bus.trusted {
-		t.Fatal("expected Trusted=true on fake")
-	}
-	if err := c.SetAutoConnect(true); err != nil {
+	if err := c.SetAutoConnect(ctx, true); err != nil {
 		t.Fatalf("SetAutoConnect: %v", err)
 	}
 	if !bus.autoConnect {

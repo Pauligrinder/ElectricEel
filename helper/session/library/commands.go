@@ -113,23 +113,18 @@ func validateCommand(req Request) (string, error) {
 	return name, nil
 }
 
-func commandDomain(name string) uint32 {
-	return phoneprotocol.CommandDomain(name)
-}
-
 func (t *Tesla) command(ctx context.Context, req Request) Result {
 	name, err := validateCommand(req)
 	if err != nil {
 		return Result{Status: Invalid, Error: err.Error()}
 	}
-	if t.car == nil {
+	// Rust connects explicitly; a dropped link is reported, never silently
+	// re-established (presence owns reconnection and target freshness).
+	if !t.linked() {
 		return classify(protocol.ErrNotConnected)
 	}
-	domain := commandDomain(name)
-	if domain != 0 {
-		if err := t.connect(ctx, domain, 0); err != nil {
-			return classify(err)
-		}
+	if err := t.authenticate(ctx, phoneprotocol.CommandDomain(name), false); err != nil {
+		return classify(err)
 	}
 	i := func(index int) uint64 { return req.Values[index].Integer }
 	f := func(index int) float32 { return float32(req.Values[index].Number) }

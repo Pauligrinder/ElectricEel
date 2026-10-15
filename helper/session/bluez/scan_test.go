@@ -2,7 +2,6 @@ package bluez
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -232,7 +231,7 @@ func TestFindBeaconReportsMissingRSSI(t *testing.T) {
 }
 
 func TestStartDiscoveryToleratesAlreadyInProgress(t *testing.T) {
-	if !isDiscoveryInProgress(errors.New("org.bluez.Error.InProgress")) {
+	if !isDiscoveryInProgress(dbus.Error{Name: "org.bluez.Error.InProgress", Body: []interface{}{"Operation already in progress"}}) {
 		t.Fatal("expected InProgress error to be recognized")
 	}
 	bus := newFakeBluez()

@@ -1,20 +1,14 @@
-//! In-process control core for harbour-electric-eel (see `docs/architecture.md`
-//! for why it's a staticlib + C ABI instead of a D-Bus daemon).
+//! In-process control core for harbour-electric-eel (see `docs/architecture.md`).
 //!
-//! Built two ways:
-//! - As a staticlib (`crate-type = ["staticlib"]`) linked into the app,
-//!   providing the Rust application entrypoint with `app-entry`. Rust owns
-//!   the runtime and threads; Qt only submits actions and renders notifications
-//!   through the C ABI in `ffi.rs`.
-//! - As an rlib used by the daemon binary (`main.rs`), which with the `dbus`
-//!   feature adds `helper.rs`'s D-Bus surface on top of the same `Core`.
-//!
-//! The daemon-only modules (`helper`, `authorize`) are feature-gated so the
-//! app's staticlib carries the zbus MCE client but no daemon server or
-//! caller-authorization plumbing.
+//! Built as a staticlib linked into the app. With `app-entry` it provides the
+//! Rust application entrypoint: Rust owns the runtime and its threads, while
+//! Qt only submits actions and renders notifications through the small C ABI
+//! in `ffi.rs`. The rlib form exists for the crate's own tests.
 
-#[cfg(any(test, feature = "dbus"))]
-pub mod child;
+// Without `app-entry` nothing in the crate constructs the core (only tests
+// and the C ABI exist), so most items have no non-test caller there.
+#![cfg_attr(not(feature = "app-entry"), allow(dead_code))]
+
 pub mod commands;
 pub mod config;
 pub mod core;
@@ -23,12 +17,9 @@ pub mod error;
 pub mod ffi;
 pub mod keylog;
 mod keys;
-#[cfg(any(test, feature = "dbus"))]
-mod legacy_session_client;
 mod phone_key;
 mod protocol_client;
 mod protocol_commands;
-pub mod session_client;
 pub mod share;
 pub mod tesla_ble;
 
@@ -44,7 +35,5 @@ pub mod runtime;
 #[cfg(all(feature = "app-entry", not(test)))]
 mod app;
 
-#[cfg(feature = "dbus")]
-pub mod authorize;
-#[cfg(feature = "dbus")]
-pub mod helper;
+#[cfg(test)]
+mod review_round3_tests;

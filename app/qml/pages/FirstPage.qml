@@ -1,36 +1,37 @@
 import QtQuick 2.6
 import Sailfish.Silica 1.0
 import "../js/CommandCatalog.js" as Catalog
+import "../js/CommandText.js" as CommandText
 import "../js/VehicleState.js" as VState
 
 Page {
     id: page
     property var teslaClient
 
-    property string vin: ""
-    property string model: ""
-    property bool hasKey: false
+    // The configuration lives in TeslaClient; these only name it locally.
+    readonly property string vin: teslaClient ? teslaClient.vin : ""
+    readonly property string model: teslaClient ? teslaClient.model : ""
+    readonly property bool hasKey: teslaClient ? teslaClient.hasKey : false
 
-    // Live dashboard state. refreshStatus() starts with body-controller-state
-    // (VCSEC: lock/doors while the car sleeps), then chains the three
-    // Infotainment `state` categories. Sequential because each is its own
-    // BLE round-trip. statusStage tracks which leg is in flight so the UI
-    // can show a single busy indicator and refuse to stack requests.
+    // Live dashboard state. refreshStatus() runs VState.STATUS_LEGS in order
+    // (body-controller-state over VCSEC, then the infotainment categories),
+    // one BLE round-trip at a time. statusStage tracks which leg is in
+    // flight so the UI shows one busy indicator and never stacks requests.
     property var vehicleStatus: VState.emptyStatus()
     property var statusBeforeToggle: null
     property string statusStage: ""
     property string statusRequestId: ""
+    // A refresh requested while a chain runs (e.g. Rust's post-command
+    // refresh landing mid-chain) re-runs the chain once it finishes, since
+    // the running legs may have read the pre-command state.
+    property bool refreshPending: false
     // Set from stdErr when a status leg fails. Climate/charge/closures go
     // through Infotainment and fail on a sleeping vehicle; lock/unlock and
     // body-controller-state use VCSEC and still work then (see
-    // VehicleState.js). A sleeping vehicle is the expected way for the
-    // Infotainment legs to fail even with everything else configured.
+    // VehicleState.js).
     property string statusError: ""
-    // Monotonic tick bumped by statusAgeTimer below. The dashboard's "Updated
-    // Xm ago" label is computed from status.updatedAt, which only changes when
-    // a refresh returns a new BLE reading - so without re-reading a changing
-    // value here the label would freeze on "Updated just now" forever (even
-    // after navigating away and back, since both pages stay alive).
+    // Monotonic tick bumped by statusAgeTimer below, so the "Updated Xm ago"
+    // label recomputes between refreshes.
     property int statusAgeTick: 0
 
     Timer {
@@ -44,17 +45,12 @@ Page {
     // Rust schedules the post-toggle settle delay before asking this dashboard
     // to render a fresh reading. Only the label-age timer above stays in QML.
 
-    function refresh() {
-        teslaClient.refreshConfig()
-    }
-
     function refreshStatus() {
-        if (page.statusStage.length > 0)
-            return
-        if (!teslaClient.helperAvailable) {
-            page.statusError = qsTr("Control helper unavailable")
+        if (page.statusStage.length > 0) {
+            page.refreshPending = true
             return
         }
+        page.refreshPending = false
         if (!page.hasKey) {
             page.statusError = qsTr("No key: generate and pair a key first")
             return
@@ -64,7 +60,8 @@ Page {
             return
         }
         page.statusError = ""
-        runStatus("body", "body-controller-state", [])
+        var leg = VState.STATUS_LEGS[0]
+        runStatus(leg.stage, leg.command, leg.args)
     }
 
     function runStatus(stage, command, args, refresh) {
@@ -76,19 +73,11 @@ Page {
     // Sets field to an explicit value on a clone of vehicleStatus and
     // assigns it (a plain in-place mutation wouldn't trigger the QML
     // property's change notification), so the icon reflects the command
-    // we're about to send immediately rather than waiting on refreshStatus's
-    // re-fetch. That re-fetch still runs right after (see onCommandFinished)
-    // and is what's actually authoritative - this is just to stop the UI
-    // showing a stale icon for the second or so of real lag between VCSEC
-    // physically actuating (lock/unlock, climate, windows are all VCSEC
-    // commands) and Infotainment's own closures/climate telemetry catching
-    // up, which is what "closures"/"climate" reads afterward. Confirmed live:
-    // without this, each button press displayed the *previous* press's
-    // now-settled result, one step behind.
+    // we're about to send immediately rather than waiting for Rust's
+    // post-command refresh, which stays authoritative.
     //
     // Takes the intended value explicitly: flipping `!current` inverts
-    // unknown null into a confident true (`!null === true`), so the first
-    // lock tap (unknown -> sends unlock) painted the closed padlock.
+    // unknown null into a confident true (`!null === true`).
     function setOptimistic(field, value) {
         page.statusBeforeToggle = page.vehicleStatus
         var next = VState.clone(page.vehicleStatus)
@@ -99,10 +88,8 @@ Page {
     function toggleLock() {
         if (page.statusStage.length > 0)
             return
-        // The padlock icon shows locked unless we *know* the car is unlocked
-        // (`locked === false`). Match that: unknown/null used to be falsy and
-        // sent lock, so the first tap did nothing until Refresh Status filled
-        // in `locked`. Unlock unless we know the doors are already open.
+        // The padlock shows locked unless we *know* the car is unlocked
+        // (`locked === false`), so unknown sends unlock, matching the icon.
         var sendLock = page.vehicleStatus.locked === false
         setOptimistic("locked", sendLock)
         runStatus("toggle", sendLock ? "lock" : "unlock", [], true)
@@ -119,9 +106,11 @@ Page {
     function toggleWindows() {
         if (page.statusStage.length > 0)
             return
-        var wereOpen = page.vehicleStatus.windowsOpen
-        setOptimistic("windowsOpen", !wereOpen)
-        runStatus("toggle", wereOpen ? "windows-close" : "windows-vent", [], true)
+        // Unknown (null) windows close: venting is only offered when the car
+        // reported them closed.
+        var vent = page.vehicleStatus.windowsOpen === false
+        setOptimistic("windowsOpen", vent)
+        runStatus("toggle", vent ? "windows-vent" : "windows-close", [], true)
     }
 
     function openFrunk() {
@@ -136,6 +125,14 @@ Page {
         runStatus("toggle", "trunk-open", [], true)
     }
 
+    function quickAction(action) {
+        if (action === "lock") toggleLock()
+        else if (action === "climate") toggleClimate()
+        else if (action === "frunk") openFrunk()
+        else if (action === "trunk") openTrunk()
+        else if (action === "windows") toggleWindows()
+    }
+
     function batteryIconSource() {
         var level = page.vehicleStatus.batteryLevel
         if (level === null) return "../../img/icons/battery5.svg"
@@ -146,66 +143,58 @@ Page {
         return "../../img/icons/battery5.svg"
     }
 
+    // A different VIN is a different car: drop its telemetry, optimistic
+    // snapshot and pending replies (their request IDs carry the old VIN).
+    // Unchanged configuration replies change no property and so start no
+    // BLE traffic.
+    onVinChanged: {
+        page.vehicleStatus = VState.emptyStatus()
+        page.statusBeforeToggle = null
+        page.statusStage = ""
+        page.statusRequestId = ""
+        page.statusError = ""
+        page.refreshStatus()
+    }
+
+    onHasKeyChanged: {
+        if (page.statusStage.length === 0)
+            page.refreshStatus()
+    }
+
     Connections {
         target: teslaClient
-        onConfigLoaded: {
-            if (page.vin !== vin) {
-                page.vehicleStatus = VState.emptyStatus()
-                page.statusBeforeToggle = null
-                page.statusStage = ""
-                page.statusRequestId = ""
-                page.statusError = ""
-            }
-            page.vin = vin
-            page.model = model
-            page.hasKey = hasKey
-            page.refreshStatus()
-        }
-        onConfigLoadError: page.statusError = message
         onStatusRefreshRequested: page.refreshStatus()
         onCommandFinished: {
             if (requestId !== page.statusRequestId || page.statusStage.length === 0)
                 return
-            if (page.statusStage === "body") {
-                if (ok)
-                    page.vehicleStatus = VState.mergeBodyControllerState(page.vehicleStatus, stdOut)
-                else
-                    page.statusError = stdErr.length ? stdErr : ("exit code " + exitCode)
-                runStatus("closures", "state", ["closures"])
-            } else if (page.statusStage === "closures") {
-                if (ok)
-                    page.vehicleStatus = VState.mergeClosuresState(page.vehicleStatus, stdOut)
-                else if (page.statusError.length === 0)
-                    page.statusError = stdErr.length ? stdErr : ("exit code " + exitCode)
-                runStatus("climate", "state", ["climate"])
-            } else if (page.statusStage === "climate") {
-                if (ok)
-                    page.vehicleStatus = VState.mergeClimateState(page.vehicleStatus, stdOut)
-                else if (page.statusError.length === 0)
-                    page.statusError = stdErr.length ? stdErr : ("exit code " + exitCode)
-                runStatus("charge", "state", ["charge"])
-            } else if (page.statusStage === "charge") {
-                if (ok)
-                    page.vehicleStatus = VState.mergeChargeState(page.vehicleStatus, stdOut)
-                else if (page.statusError.length === 0)
-                    page.statusError = stdErr.length ? stdErr : ("exit code " + exitCode)
-                page.statusStage = ""
-                page.statusRequestId = ""
-            } else if (page.statusStage === "toggle") {
+            if (page.statusStage === "toggle") {
                 if (!ok) {
-                    page.statusError = stdErr.length ? stdErr : ("exit code " + exitCode)
+                    page.statusError = CommandText.failure(stdErr, exitCode)
                     if (page.statusBeforeToggle !== null)
                         page.vehicleStatus = page.statusBeforeToggle
                 }
                 page.statusBeforeToggle = null
-                // Whether the lock/climate/windows toggle or the frunk/trunk
-                // open succeeded or not, re-fetch so the dashboard reflects
-                // reality rather than an assumed new state (the command can
-                // "succeed" over BLE without the vehicle confirming - see
-                // protocol.MayHaveSucceeded usage elsewhere in this app).
-                // Rust waits for vehicle telemetry to settle before refresh.
+                // Success or not, Rust re-fetches after the telemetry settles
+                // (the command can "succeed" over BLE without the vehicle
+                // confirming), so the dashboard reflects reality.
                 page.statusStage = ""
                 page.statusRequestId = ""
+                return
+            }
+            var index = VState.statusLegIndex(page.statusStage)
+            var leg = VState.STATUS_LEGS[index]
+            if (ok)
+                page.vehicleStatus = leg.merge(page.vehicleStatus, stdOut)
+            else if (page.statusError.length === 0)
+                page.statusError = CommandText.failure(stdErr, exitCode)
+            var next = VState.STATUS_LEGS[index + 1]
+            if (next) {
+                runStatus(next.stage, next.command, next.args)
+            } else {
+                page.statusStage = ""
+                page.statusRequestId = ""
+                if (page.refreshPending)
+                    refreshStatus()
             }
         }
         onCommandError: {
@@ -222,21 +211,9 @@ Page {
             if (page.statusError.length === 0)
                 page.statusError = message
             // Local submission failures never reach Rust's settle scheduler.
-            if (wasToggle)
+            if (wasToggle || page.refreshPending)
                 refreshStatus()
         }
-    }
-
-    // Covers both the initial load (this page becomes Active as soon as it's
-    // pushed) and returning here later. Sailfish keeps popped/pushed pages
-    // alive on the stack rather than recreating them, so a plain
-    // Component.onCompleted would only ever fire once - saving a VIN/model in
-    // SettingsPage and navigating back would then leave page.vin/page.model
-    // stale (whatever the very first refresh() returned) until the user
-    // pulled down "Refresh" manually.
-    onStatusChanged: {
-        if (status === PageStatus.Active)
-            refresh()
     }
 
     SilicaListView {
@@ -251,40 +228,10 @@ Page {
                 title: "ElectricEel"
             }
 
-            // Warns when the helper half is missing, too old to report its
-            // own version, or a different version than this app. All three
-            // are the states that previously announced themselves as a
-            // silent "No VIN configured" (see docs/limitations.md); GetVersion
-            // + APP_VERSION make them visible up front instead.
-            Rectangle {
-                id: versionBanner
-                property bool helperProblem: !teslaClient.helperAvailable
-                        || teslaClient.helperVersion.length === 0
-                        || teslaClient.helperVersion !== teslaClient.appVersion
-                width: parent.width
-                height: helperWarning.visible ? helperWarning.height + Theme.paddingMedium * 2 : 0
-                color: Theme.rgba(Theme.highlightBackgroundColor, 0.15)
-                visible: helperProblem
+            VersionWarning { client: teslaClient }
 
-                Column {
-                    id: helperWarning
-                    anchors.centerIn: parent
-                    width: parent.width - Theme.horizontalPageMargin * 2
-                    visible: versionBanner.helperProblem
-                    spacing: Theme.paddingSmall
-
-                    Label {
-                        width: parent.width
-                        wrapMode: Text.Wrap
-                        color: Theme.highlightColor
-                        font.pixelSize: Theme.fontSizeSmall
-                        text: !teslaClient.helperAvailable
-                            ? qsTr("The control core failed to start. Reinstall the app, then pull down to refresh.")
-                            : teslaClient.helperVersion.length === 0
-                                ? qsTr("The control core is too old to report its version. Reinstall the app (%1), then pull down to refresh.").arg(teslaClient.appVersion)
-                                : qsTr("Version mismatch: app %1, core %2. Reinstall the app, then pull down to refresh.").arg(teslaClient.appVersion).arg(teslaClient.helperVersion)
-                    }
-                }
+            ConfigErrorBanner {
+                client: teslaClient
             }
 
             BackgroundItem {
@@ -313,7 +260,7 @@ Page {
 
             // Car graphic + battery / climate readouts. The icon set and
             // presentation mirror the harbour-tcarint app this project shares
-            // its icon style with (see ../harbour-tcarint/qml/pages/MainPage.qml).
+            // its icon style with.
             Rectangle {
                 width: parent.width
                 height: carColumn.height + Theme.paddingMedium * 2
@@ -330,12 +277,11 @@ Page {
                     Image {
                         id: carImage
                         width: parent.width * 0.85
-                        height: 170
+                        height: Theme.itemSizeExtraLarge * 1.5
                         anchors.horizontalCenter: parent.horizontalCenter
                         fillMode: Image.PreserveAspectFit
                         // An explicit config model override wins; otherwise
-                        // the VIN is parsed for the model. See VehicleState.js
-                        // carImageSource().
+                        // the VIN is parsed for the model.
                         source: VState.carImageSource(page.model, page.vin)
                         sourceSize: Qt.size(width * 2, height * 2)
                     }
@@ -347,7 +293,7 @@ Page {
                         Icon {
                             id: batteryIcon
                             source: page.batteryIconSource()
-                            height: 48
+                            height: Theme.iconSizeSmallPlus
                             width: height
                         }
 
@@ -368,7 +314,7 @@ Page {
                             visible: page.vehicleStatus.insideTemp !== null
                             font.pixelSize: Theme.fontSizeSmall
                             color: Theme.secondaryColor
-                            text: qsTr("• %1°C").arg(page.vehicleStatus.insideTemp.toFixed(0))
+                            text: visible ? qsTr("• %1°C").arg(page.vehicleStatus.insideTemp.toFixed(0)) : ""
                         }
                     }
 
@@ -407,13 +353,11 @@ Page {
                 }
             }
 
-            // Quick actions: small icon buttons straight on the front page -
-            // no submenu needed. Each icon always mirrors the vehicle's actual
-            // state (closed padlock when locked, open padlock when unlocked,
-            // highlighted fan/window when climate/windows are on), not the
-            // action a tap triggers, so the row can't be misread as showing
-            // the pre-tap state. Frunk/trunk have no telemetry to reflect,
-            // so those stay plain "open" actions.
+            // Quick actions straight on the front page. Each icon mirrors the
+            // vehicle's actual state (closed padlock when locked, highlighted
+            // fan/window when climate/windows are on), not the action a tap
+            // triggers. Frunk/trunk have no telemetry, so they stay plain
+            // "open" actions.
             Rectangle {
                 width: parent.width
                 height: quickRow.height + Theme.paddingMedium * 2
@@ -425,70 +369,33 @@ Page {
                     anchors.horizontalCenter: parent.horizontalCenter
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: Theme.paddingSmall
+                    readonly property real buttonSize: Math.min(Theme.itemSizeMedium,
+                        (parent.width - Theme.horizontalPageMargin * 2 - spacing * 4) / 5)
 
-                    SecondaryButton {
-                        width: 96
-                        height: 96
-                        icon.height: 48
-                        icon.width: 48
-                        icon.source: page.vehicleStatus.locked === false
-                                    ? "../../img/icons/lock_open.svg"
-                                    : "../../img/icons/lock.svg"
-                        icon.color: "#5f6368"
-                        icon.highlightColor: "white"
-                        icon.highlighted: !!page.vehicleStatus.locked
-                        enabled: page.statusStage.length === 0
-                        onClicked: page.toggleLock()
-                    }
+                    Repeater {
+                        model: [
+                            { action: "lock", highlighted: page.vehicleStatus.locked === true,
+                              icon: page.vehicleStatus.locked === false ? "../../img/icons/lock_open.svg" : "../../img/icons/lock.svg" },
+                            { action: "climate", highlighted: page.vehicleStatus.isClimateOn === true,
+                              icon: "../../img/icons/fan1.svg" },
+                            { action: "frunk", highlighted: false, icon: "../../img/icons/frunk.svg" },
+                            { action: "trunk", highlighted: false, icon: "../../img/icons/trunk.svg" },
+                            { action: "windows", highlighted: page.vehicleStatus.windowsOpen === true,
+                              icon: "../../img/icons/window.svg" }
+                        ]
 
-                    SecondaryButton {
-                        width: 96
-                        height: 96
-                        icon.height: 48
-                        icon.width: 48
-                        icon.source: "../../img/icons/fan1.svg"
-                        icon.color: "#5f6368"
-                        icon.highlightColor: "white"
-                        icon.highlighted: page.vehicleStatus.isClimateOn
-                        enabled: page.statusStage.length === 0
-                        onClicked: page.toggleClimate()
-                    }
-
-                    SecondaryButton {
-                        width: 96
-                        height: 96
-                        icon.height: 48
-                        icon.width: 48
-                        icon.source: "../../img/icons/frunk.svg"
-                        icon.color: "#5f6368"
-                        icon.highlightColor: "white"
-                        enabled: page.statusStage.length === 0
-                        onClicked: page.openFrunk()
-                    }
-
-                    SecondaryButton {
-                        width: 96
-                        height: 96
-                        icon.height: 48
-                        icon.width: 48
-                        icon.source: "../../img/icons/trunk.svg"
-                        icon.color: "#5f6368"
-                        icon.highlightColor: "white"
-                        enabled: page.statusStage.length === 0
-                        onClicked: page.openTrunk()
-                    }
-
-                    SecondaryButton {
-                        width: 96
-                        height: 96
-                        icon.height: 48
-                        icon.width: 48
-                        icon.source: "../../img/icons/window.svg"
-                        icon.color: "#5f6368"
-                        icon.highlightColor: "white"
-                        icon.highlighted: page.vehicleStatus.windowsOpen
-                        enabled: page.statusStage.length === 0
-                        onClicked: page.toggleWindows()
+                        SecondaryButton {
+                            width: quickRow.buttonSize
+                            height: quickRow.buttonSize
+                            icon.height: Theme.iconSizeSmallPlus
+                            icon.width: Theme.iconSizeSmallPlus
+                            icon.source: modelData.icon
+                            icon.color: "#5f6368"
+                            icon.highlightColor: "white"
+                            icon.highlighted: modelData.highlighted
+                            enabled: page.statusStage.length === 0
+                            onClicked: page.quickAction(modelData.action)
+                        }
                     }
                 }
             }
@@ -504,14 +411,13 @@ Page {
                 teslaClient: teslaClient,
                 categoryId: modelData.id,
                 categoryTitle: modelData.title,
-                vin: page.vin,
-                vehicleStatus: page.vehicleStatus
+                dashboard: page
             })
 
             Icon {
                 id: categoryIcon
                 source: modelData.icon
-                height: 44
+                height: Theme.iconSizeSmallPlus
                 width: height
                 color: "#5f6368"
                 anchors.verticalCenter: parent.verticalCenter
@@ -532,7 +438,7 @@ Page {
             Icon {
                 id: forwardIcon
                 source: "../../img/icons/arrow_forward.svg"
-                height: 40
+                height: Theme.iconSizeSmall
                 width: height
                 color: "#5f6368"
                 anchors.verticalCenter: parent.verticalCenter
@@ -556,7 +462,7 @@ Page {
             }
             MenuItem {
                 text: qsTr("Refresh")
-                onClicked: page.refresh()
+                onClicked: teslaClient.refreshConfig()
             }
             MenuItem {
                 text: qsTr("Refresh Status")

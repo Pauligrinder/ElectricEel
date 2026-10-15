@@ -1,0 +1,9 @@
+# Pinned toolchain for the Rust core. CI, release and helper/make-app-bundle.sh
+# all run cargo from helper/, so rustup selects (and installs) exactly this
+# toolchain everywhere. Bump deliberately: clippy pedantic runs with
+# -D warnings, so a new compiler can introduce new lint failures.
+[toolchain]
+channel = "1.99.0"
+components = ["clippy", "rustfmt"]
+targets = ["aarch64-unknown-linux-gnu"]
+profile = "minimal"

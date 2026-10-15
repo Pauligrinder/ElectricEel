@@ -39,9 +39,15 @@ pub(crate) fn export(documents: &Path) -> io::Result<PathBuf> {
     for (name, content) in FILES {
         fs::write(staging.path().join(name), content)?;
     }
-    let name = staging.path().file_name().unwrap().to_string_lossy();
-    let destination = documents.join(name.trim_start_matches('.'));
+    let name = staging
+        .path()
+        .file_name()
+        .map(|name| name.to_string_lossy().trim_start_matches('.').to_string())
+        .ok_or_else(|| io::Error::other("staging directory has no name"))?;
+    let destination = documents.join(name);
     fs::rename(staging.path(), &destination)?;
+    // Published: the staging path no longer exists, so disarm its cleanup.
+    let _ = staging.keep();
     prune_exports(documents, &destination);
     Ok(destination)
 }

@@ -1,12 +1,17 @@
 #!/bin/sh
 set -e
 
-## Local build helper — mirrors ../HomeAssistant/build.sh release logic:
-## bump the RPM release (-N) on each build, reset to 1 when VERSION changes.
+## Local build helper: bump the RPM release (-N) on each build, reset to 1
+## when VERSION changes. See docs/build.md.
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 CONTAINER="${CONTAINER:-electric-eel-build}"
 TARGET="${TARGET:-SailfishOS-5.2.0.15-aarch64}"
+# Pinned SDK image (keep in sync with .github/workflows/*.yml and
+# helper/build-go-library-sdk.sh). Exported so make-app-bundle.sh's Go
+# build uses the same image.
+SAILFISH_SDK_IMAGE="${SAILFISH_SDK_IMAGE:-coderus/sailfishos-platform-sdk-aarch64:5.2.0.15@sha256:e5f7596d14502746b308c3dde36f65fc25d7f76c45a01acaed56a1f55b76f592}"
+export SAILFISH_SDK_IMAGE SAILFISH_TARGET="$TARGET"
 STATE_FILE="$ROOT/.build-release"
 PRO_FILE="$ROOT/app/harbour-electric-eel.pro"
 SPEC_IN_CONTAINER="/home/mersdk/app/rpm/harbour-electric-eel.spec"
@@ -33,8 +38,8 @@ RPM_NAME="harbour-electric-eel-${VERSION}-${RELEASE}.aarch64.rpm"
 echo "Building $RPM_NAME"
 
 if ! docker inspect "$CONTAINER" >/dev/null 2>&1; then
-    echo "Creating SDK container $CONTAINER from coderus/sailfishos-platform-sdk-aarch64"
-    docker create --name "$CONTAINER" coderus/sailfishos-platform-sdk-aarch64 sleep infinity
+    echo "Creating SDK container $CONTAINER from $SAILFISH_SDK_IMAGE"
+    docker create --name "$CONTAINER" "$SAILFISH_SDK_IMAGE" sleep infinity
 fi
 
 docker start "$CONTAINER" >/dev/null

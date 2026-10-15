@@ -40,28 +40,30 @@ test("precondition schedule ID is not shifted into an omitted REPEAT slot", () =
     assert.equal(values[6], "false", "disabled must reach ENABLED");
 });
 
-test("QML command arity and schedule slots match the actual Go command table", () => {
-    const go = fs.readFileSync(path.join(__dirname, "../../helper/session/commands_vendor.go"), "utf8");
-    const contracts = new Map();
-    for (const match of go.matchAll(/^\t"([a-z0-9-]+)":\s*\{([\s\S]*?)^\t\},/gm)) {
-        function slots(field) {
-            const section = match[2].match(new RegExp(`^\\t\\t${field}:\\s*\\[\\]Argument\\{([\\s\\S]*?)^\\t\\t\\},`, "m"));
-            return section ? Array.from(section[1].matchAll(/name:\s*"([^"]+)"/g), (m) => m[1]) : [];
-        }
-        contracts.set(match[1], { required: slots("args"), optional: slots("optional") });
-    }
-    assert.ok(contracts.size > 40, "Go command table extraction failed");
+test("QML commands exist in the protocol library and schedule slots match the Rust parser", () => {
+    // The Go library's command table is the ABI catalog Rust mirrors (see
+    // library/protocol_test.go); every UI command must be in it.
+    const go = fs.readFileSync(path.join(__dirname, "../../helper/session/library/commands.go"), "utf8");
+    const table = go.match(/var commandNames = \[\.\.\.\]string\{([\s\S]*?)\n\}/);
+    assert.ok(table, "Go command table extraction failed");
+    const names = new Set(Array.from(table[1].matchAll(/"([a-z0-9-]+)"/g), (m) => m[1]));
+    assert.ok(names.size > 40, "Go command table extraction failed");
+    // helper/src/protocol_commands.rs parses schedule-add positionally:
+    // DAYS, TIME, LATITUDE, LONGITUDE, then optional REPEAT, ID, ENABLED.
+    const rust = fs.readFileSync(path.join(__dirname, "../../helper/src/protocol_commands.rs"), "utf8");
+    const scheduleArm = rust.match(/Command::ChargingScheduleAdd \| Command::PreconditionScheduleAdd => \{\s*arity\(args, (\d+), (\d+)\)/);
+    assert.ok(scheduleArm, "Rust schedule-add arity extraction failed");
     const context = vm.createContext({ qsTr: (s) => s });
     vm.runInContext(catalogSource.replace(/^\.pragma library\s*$/m, ""), context);
     for (const category of context.CATEGORIES) {
         for (const command of category.commands) {
-            const contract = contracts.get(command.id);
-            assert.ok(contract, `missing backend command ${command.id}`);
-            assert.equal(command.args.length, contract.required.length + contract.optional.length,
-                `${command.id} must represent every backend slot, including hidden optionals`);
+            assert.ok(names.has(command.id), `missing backend command ${command.id}`);
             if (command.id === "charging-schedule-add" || command.id === "precondition-schedule-add") {
                 assert.deepEqual(Array.from(command.args, (a) => a.name),
-                    contract.required.concat(contract.optional), `${command.id} positional contract drift`);
+                    ["DAYS", "TIME", "LATITUDE", "LONGITUDE", "REPEAT", "ID", "ENABLED"],
+                    `${command.id} positional contract drift`);
+                assert.equal(command.args.filter((a) => !a.optional).length, Number(scheduleArm[1]));
+                assert.equal(command.args.length, Number(scheduleArm[2]));
             }
         }
     }

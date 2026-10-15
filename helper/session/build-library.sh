@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Build the new in-process backend separately until the app migration is ready.
-# Cross-build callers must set GOARCH and a target-compatible CC (cgo is needed).
+# Build libteslable.so for the host (CI FFI integration tests, C smoke test,
+# docs/tesla-ble-abi.md). The shipped aarch64 library is built against the
+# Sailfish SDK by helper/build-go-library-sdk.sh. Cross-build callers must set
+# GOARCH and a target-compatible CC (cgo is needed).
 set -euo pipefail
 
 if [[ $# -ne 1 ]]; then
@@ -16,5 +18,5 @@ mkdir -p "$(dirname "$output")"
 session_dir="$(cd "$(dirname "$0")" && pwd)"
 (
     cd "$session_dir"
-    CGO_ENABLED=1 go build -trimpath -buildmode=c-shared -o "$output" ./cmd/teslable
+    CGO_ENABLED=1 go build -buildvcs=false -trimpath -buildmode=c-shared -o "$output" ./cmd/teslable
 )

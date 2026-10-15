@@ -23,6 +23,27 @@ pub(crate) enum Destination {
     Address(String),
 }
 
+/// Which [`Destination`] variant a preview describes; on the wire as
+/// `"gps"` / `"address"`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum DestinationKind {
+    Gps,
+    Address,
+}
+
+impl Destination {
+    /// The preview payload: `(Gps, lat, lon)` or `(Address, text, "")`.
+    pub(crate) fn preview(&self) -> (DestinationKind, String, String) {
+        match self {
+            Destination::LatLon { lat, lon } => {
+                (DestinationKind::Gps, lat.to_string(), lon.to_string())
+            }
+            Destination::Address(addr) => (DestinationKind::Address, addr.clone(), String::new()),
+        }
+    }
+}
+
 /// Why shared text was rejected. Surfaced to the UI verbatim-adjacent, so
 /// keep messages human-readable and free of input echo (the input can be a
 /// 2000-char URL).
@@ -58,6 +79,25 @@ pub(crate) const MAX_SHARE_TEXT_LEN: usize = 2000;
 /// bare `lat,lon` pair > address text (first non-empty line). See the spike
 /// doc §5 for the contract vectors.
 pub(crate) fn parse_shared_text(input: &str) -> Result<Destination, ShareParseError> {
+    match parse_destination(input)? {
+        // The protocol rejects control characters in destination text (a
+        // TAB in the shared line, or a decoded %0A/%09 in `q=`).
+        Destination::Address(address) => {
+            let address: String = address
+                .chars()
+                .map(|c| if c.is_control() { ' ' } else { c })
+                .collect();
+            let address = address.trim();
+            if address.is_empty() {
+                return Err(ShareParseError::Empty);
+            }
+            Ok(Destination::Address(address.to_string()))
+        }
+        point @ Destination::LatLon { .. } => Ok(point),
+    }
+}
+
+fn parse_destination(input: &str) -> Result<Destination, ShareParseError> {
     if input.chars().count() > MAX_SHARE_TEXT_LEN {
         return Err(ShareParseError::TooLong);
     }
@@ -112,10 +152,17 @@ fn parse_geo_uri(rest: &str) -> Result<Option<Destination>, ShareParseError> {
         Some(i) => (&rest[..i], Some(&rest[i + 1..])),
         None => (rest, None),
     };
-    // Strip an optional trailing `;u=` uncertainty parameter.
+    // Strip optional `;crs=`/`;u=` parameters.
     let coords_part = match coords_part.find(';') {
         Some(i) => &coords_part[..i],
         None => coords_part,
+    };
+    // RFC 5870 allows an optional third coordinate (altitude); ignore it.
+    let coords_part = match coords_part.split(',').collect::<Vec<_>>().as_slice() {
+        [lat, lon, altitude] if altitude.trim().parse::<f64>().is_ok() => {
+            &coords_part[..lat.len() + 1 + lon.len()]
+        }
+        _ => coords_part,
     };
     // Query may carry the real destination when coords are 0,0.
     let query_addr = query_part
@@ -126,8 +173,12 @@ fn parse_geo_uri(rest: &str) -> Result<Option<Destination>, ShareParseError> {
         if lat == 0.0 && lon == 0.0 {
             // `geo:0,0?q=...` is an address search, not a point in the
             // Gulf of Guinea.
+            // Android's `geo:0,0?q=lat,lng(label)` carries the point itself.
             if let Some(addr) = query_addr {
-                return Ok(Some(Destination::Address(addr)));
+                if parse_latlon_pair(&addr).is_none() && looks_like_latlon_pair(&addr) {
+                    return Err(ShareParseError::OutOfRange);
+                }
+                return Ok(Some(destination_value(&addr)));
             }
             return Err(ShareParseError::Empty);
         }
@@ -156,9 +207,8 @@ fn parse_geo_uri(rest: &str) -> Result<Option<Destination>, ShareParseError> {
 ///   arbitrary numeric query values;
 /// - `lat`+`lon` split across two params (Bing `cp` uses `~`, `OSMAnd`
 ///   `?lat=&lon=`);
-/// - path patterns `/@lat,lon`, `!3dLAT!4dLON`, and exactly-two
-///   bare-numeric slash runs (OSM `#map=z/lat/lon`, zoom excluded
-///   because `map=17` is not bare-numeric);
+/// - path patterns `/@lat,lon`, `!3dLAT!4dLON`, and map-view fragments
+///   (OSM `#map=z/lat/lon`); other numeric path segments are never used;
 /// - free text is NEVER float-scanned (house numbers would hijack it).
 ///
 /// Never errors on opaque URLs — an unparseable URL is still shareable text
@@ -245,15 +295,9 @@ fn parse_map_url(url: &str) -> Result<Option<Destination>, ShareParseError> {
     if let Some((lat, lon)) = url_path_at_coords(parsed.path())? {
         return Ok(Some(Destination::LatLon { lat, lon }));
     }
-    // Tile resources contain z/x/y indices, not geographic coordinates.
-    let is_tile = [".png", ".jpg", ".jpeg", ".webp"]
-        .iter()
-        .any(|extension| parsed.path().to_ascii_lowercase().ends_with(extension));
-    if let Some((lat, lon)) = if is_tile {
-        None
-    } else {
-        slash_run_coords(url)?
-    } {
+    // Map-view fragments (`#map=zoom/lat/lon`). Path segments are never
+    // scanned: `/forum/12/34/` or `/2024/05/` are not coordinates.
+    if let Some((lat, lon)) = map_fragment_coords(parsed.fragment().unwrap_or(""))? {
         return Ok(Some(Destination::LatLon { lat, lon }));
     }
     // A named text param (address or opaque link target) becomes the
@@ -276,39 +320,22 @@ fn destination_value(value: &str) -> Destination {
     )
 }
 
-/// Coordinates from slash-separated path/fragment segments: the last
-/// exactly-two run of bare-numeric segments (e.g. OSM `#map=17/lat/lon`
-/// — `map=17` is not bare-numeric so the zoom never leaks in; tile
-/// `z/x/y` runs fail the range check downstream in `parse_latlon_pair`
-/// semantics via [`valid_latlon`]).
-fn slash_run_coords(url: &str) -> Result<Option<(f64, f64)>, ShareParseError> {
-    let mut run: Vec<f64> = Vec::new();
-    let mut best: Option<(f64, f64)> = None;
-    let flush = |run: &mut Vec<f64>, best: &mut Option<(f64, f64)>| {
-        if run.len() == 2 {
-            let (lat, lon) = (run[0], run[1]);
-            *best = Some((lat, lon));
-        }
-        run.clear();
-    };
-    let path_and_frag = format!(
-        "{}#{}",
-        url.split(['?', '#']).next().unwrap_or(url),
-        url.split('#').nth(1).unwrap_or("")
-    );
-    for seg in path_and_frag.split('/') {
-        // Strip query/form wrappers: only truly bare segments count.
-        if seg.contains(['?', '&', '=', '@', '!']) {
-            flush(&mut run, &mut best);
+/// Coordinates from a Leaflet/OSM map-view fragment: `map=zoom/lat/lon` or a
+/// bare `zoom/lat/lon`, possibly followed by `&layers=...`. Out-of-range
+/// coordinates are an error, like a bare out-of-range pair.
+fn map_fragment_coords(fragment: &str) -> Result<Option<(f64, f64)>, ShareParseError> {
+    for part in fragment.split('&') {
+        let view = part.strip_prefix("map=").unwrap_or(part);
+        let fields: Vec<&str> = view.split('/').collect();
+        let [zoom, lat, lon] = fields.as_slice() else {
             continue;
-        }
-        match seg.trim().parse::<f64>() {
-            Ok(v) if v.is_finite() => run.push(v),
-            _ => flush(&mut run, &mut best),
+        };
+        let zoom_ok = zoom.parse::<f64>().is_ok_and(|z| (0.0..=30.0).contains(&z));
+        if let (true, Ok(lat), Ok(lon)) = (zoom_ok, lat.parse::<f64>(), lon.parse::<f64>()) {
+            return checked_path_coords(Some((lat, lon)));
         }
     }
-    flush(&mut run, &mut best);
-    checked_path_coords(best)
+    Ok(None)
 }
 
 /// Strict pair: the whole string must be exactly two finite numbers
@@ -325,6 +352,9 @@ fn numeric_pair(s: &str) -> Option<(f64, f64)> {
     let s = s
         .trim()
         .trim_matches(|c: char| c == '(' || c == ')' || c == '[' || c == ']');
+    // A trailing `(label)` names the point (`geo:0,0?q=lat,lng(label)`, Google
+    // `?q=lat,lng(label)`); the closing parenthesis may already be trimmed.
+    let s = s.split_once('(').map_or(s, |(pair, _)| pair).trim();
     if s.is_empty() {
         return None;
     }

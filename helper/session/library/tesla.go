@@ -14,9 +14,9 @@ import (
 
 	"electric-eel-session/bluez"
 	"electric-eel-session/internal/phoneprotocol"
-	"github.com/godbus/dbus"
 	"github.com/teslamotors/vehicle-command/pkg/connector"
 	"github.com/teslamotors/vehicle-command/pkg/protocol"
+	universal "github.com/teslamotors/vehicle-command/pkg/protocol/protobuf/universalmessage"
 	"github.com/teslamotors/vehicle-command/pkg/vehicle"
 	"google.golang.org/protobuf/encoding/protojson"
 )
@@ -24,29 +24,28 @@ import (
 // Tesla is accessed exclusively by Session's operation worker. It contains no
 // proximity controller, idle timer, key files, subprocesses or retry schedule.
 type Tesla struct {
-	vin                string
-	adapter            string
-	key                protocol.ECDHPrivateKey
-	bus                *bluez.Conn
-	conn               connector.Connector
-	car                *vehicle.Vehicle
-	root               context.Context
-	emit               func(Observation)
-	fault              func(string)
-	watcher            *bluez.Watcher
-	watchCancel        context.CancelFunc
-	watchDone          chan struct{}
-	linkCancel         context.CancelFunc
-	linkDone           chan struct{}
-	linkActive         atomic.Bool
-	passive            atomic.Bool
-	targetMu           sync.Mutex
-	watchControl       sync.Mutex
-	target             uint64
-	lastTarget         *bluez.ScanResult
-	targetAt           time.Time
-	targets            map[uint64]discoveryTarget
-	diagnosticAttached bool
+	vin          string
+	adapter      string
+	key          protocol.ECDHPrivateKey
+	bus          *bluez.Conn
+	conn         connector.Connector
+	car          *vehicle.Vehicle
+	root         context.Context
+	emit         func(Observation)
+	fault        func(string)
+	watcher      *bluez.Watcher
+	watchCancel  context.CancelFunc
+	watchDone    chan struct{}
+	linkCancel   context.CancelFunc
+	linkDone     chan struct{}
+	linkActive   atomic.Bool
+	passive      atomic.Bool
+	targetMu     sync.Mutex
+	watchControl sync.Mutex
+	target       uint64
+	lastTarget   *bluez.ScanResult
+	targetAt     time.Time
+	targets      map[uint64]discoveryTarget
 }
 
 type discoveryTarget struct {
@@ -86,21 +85,23 @@ func classify(err error) Result {
 		return Result{Status: OK}
 	}
 	status := Failed
-	var dbError dbus.Error
-	var dbErrorPointer *dbus.Error
-	disconnected := (errors.As(err, &dbError) && (dbError.Name == "org.bluez.Error.NotConnected" || dbError.Name == "org.freedesktop.DBus.Error.UnknownObject")) || (errors.As(err, &dbErrorPointer) && dbErrorPointer != nil && (dbErrorPointer.Name == "org.bluez.Error.NotConnected" || dbErrorPointer.Name == "org.freedesktop.DBus.Error.UnknownObject"))
-	switch {
-	case protocol.MayHaveSucceeded(err):
+	var protocolErr protocol.Error
+	var fault *protocol.RoutableMessageError
+	switch name := bluez.DBusErrorName(err); {
+	case errors.As(err, &protocolErr) && protocolErr.MayHaveSucceeded():
+		// errors.As (unlike protocol.MayHaveSucceeded) survives wrapping.
 		status = Uncertain
 	case errors.Is(err, context.Canceled):
 		status = Cancelled
 	case errors.Is(err, context.DeadlineExceeded):
 		status = TimedOut
-	case errors.Is(err, protocol.ErrNotConnected) || disconnected:
+	case errors.Is(err, protocol.ErrNotConnected) || name == "org.bluez.Error.NotConnected" || name == "org.freedesktop.DBus.Error.UnknownObject":
 		status = NotConnected
 	case bluez.IsBluetoothOff(err):
 		status = BluetoothOff
-	case errors.Is(err, protocol.ErrNoSession):
+	case errors.Is(err, protocol.ErrKeyNotPaired) || errors.Is(err, protocol.ErrNoSession) ||
+		(errors.As(err, &fault) && fault.Code == universal.MessageFault_E_MESSAGEFAULT_ERROR_INACTIVE_KEY):
+		// The vehicle rejected this key: re-pairing is needed.
 		status = AuthenticationFailed
 	}
 	return Result{Status: status, Error: err.Error()}
@@ -124,7 +125,6 @@ func (t *Tesla) disconnect() {
 }
 
 func (t *Tesla) Close() {
-	t.detachDiagnostics()
 	t.stopWatch()
 	t.disconnect()
 	if t.bus != nil {
@@ -134,13 +134,26 @@ func (t *Tesla) Close() {
 	t.key = nil
 }
 
-func (t *Tesla) connect(ctx context.Context, domain uint32, token uint64) error {
+// linked reports whether an established vehicle link is still usable. A link
+// the observer saw drop is released so nothing reuses the dead connector.
+func (t *Tesla) linked() bool {
 	if t.car != nil && !t.linkActive.Load() {
 		t.disconnect()
 	}
+	return t.car != nil
+}
+
+// authenticate establishes the session for an ABI domain (0 = none) on the
+// current link. A link created for this operation is released on failure.
+// A reused link is kept unless the failure says the transport is gone or in
+// an uncertain state: a vehicle that rejects or does not answer one domain's
+// handshake (infotainment asleep, INVALID_DOMAINS) must not cost the live
+// VCSEC/passive-entry session.
+func (t *Tesla) authenticate(ctx context.Context, domain uint32, fresh bool) error {
 	var domains []protocol.Domain
 	switch domain {
 	case 0: // Explicit unauthenticated enrollment connection.
+		return nil
 	case 1:
 		domains = []protocol.Domain{protocol.DomainVCSEC}
 	case 2:
@@ -148,9 +161,23 @@ func (t *Tesla) connect(ctx context.Context, domain uint32, token uint64) error 
 	default:
 		return errors.New("invalid authentication domain")
 	}
-	if t.car == nil {
+	err := t.car.StartSession(ctx, domains)
+	if err != nil {
+		if status := classify(err).Status; fresh || status == NotConnected || status == Uncertain {
+			t.disconnect()
+		}
+	}
+	return err
+}
+
+func (t *Tesla) connect(ctx context.Context, domain uint32, token uint64) error {
+	if domain > 2 {
+		return errors.New("invalid authentication domain")
+	}
+	fresh := !t.linked()
+	if fresh {
 		if t.bus == nil {
-			bus, err := bluez.Open()
+			bus, err := bluez.Open(t.diagnostic)
 			if err != nil {
 				return err
 			}
@@ -196,27 +223,17 @@ func (t *Tesla) connect(ctx context.Context, domain uint32, token uint64) error 
 		}
 		t.startLinkObserver()
 		if bz, ok := conn.(*bluez.Connection); ok {
-			_ = bz.SetTrusted(true)
-			_ = bz.SetAutoConnect(false)
+			_ = bz.SetAutoConnect(ctx, false)
 		}
 	}
-	if len(domains) > 0 {
-		if err := t.car.StartSession(ctx, domains); err != nil {
-			t.disconnect()
-			return err
-		}
-	}
-	return nil
+	return t.authenticate(ctx, domain, fresh)
 }
 
 func (t *Tesla) Execute(ctx context.Context, req Request) Result {
-	if !t.diagnosticAttached {
-		t.attachDiagnostics()
-		t.diagnosticAttached = true
-	}
 	if err := ctx.Err(); err != nil {
 		return classify(err)
 	}
+	t.reapWatch()
 	switch req.Operation {
 	case PublicKey:
 		return Result{Status: OK, Payload: append([]byte(nil), t.key.PublicBytes()...)}
@@ -261,15 +278,14 @@ func (t *Tesla) Execute(ctx context.Context, req Request) Result {
 	default:
 		return Result{Status: Invalid, Error: "unsupported operation"}
 	}
-	if t.car == nil {
+	if !t.linked() {
 		return Result{Status: NotConnected, Error: "connect before executing a vehicle operation"}
 	}
 	var result Result
 	switch req.Operation {
 	case BodyControllerState:
-		if err := t.car.StartSession(ctx, []protocol.Domain{protocol.DomainVCSEC}); err != nil {
-			result = classify(err)
-			break
+		if err := t.authenticate(ctx, 1, false); err != nil {
+			return classify(err)
 		}
 		state, err := t.car.BodyControllerState(ctx)
 		result = classify(err)
@@ -279,14 +295,13 @@ func (t *Tesla) Execute(ctx context.Context, req Request) Result {
 			result.Payload = payload
 		}
 	case NavigateGPS, NavigateAddress:
-		if err := t.car.StartSession(ctx, []protocol.Domain{protocol.DomainInfotainment}); err != nil {
-			result = classify(err)
-			break
+		if err := t.authenticate(ctx, 2, false); err != nil {
+			return classify(err)
 		}
 		if req.Operation == NavigateGPS {
 			result = classify(t.car.NavigateToGPS(ctx, req.Latitude, req.Longitude, 0))
 		} else {
-			result = classify(t.car.NavigateToDestination(ctx, req.Text))
+			result = classify(t.car.NavigateToDestination(ctx, strings.TrimSpace(req.Text)))
 		}
 	}
 	if result.Status == Uncertain || result.Status == Cancelled || result.Status == TimedOut || result.Status == NotConnected {

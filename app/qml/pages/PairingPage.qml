@@ -1,23 +1,26 @@
 import QtQuick 2.6
 import Sailfish.Silica 1.0
+import "../js/CommandText.js" as CommandText
 import "../js/PhoneKeyState.js" as PhoneKey
 
 Page {
     id: page
     property var teslaClient
 
-    property string publicKeyPem: ""
+    // Configuration comes from TeslaClient. configReady gates Generate Key:
+    // clicking it before the load finished would run with no knowledge of
+    // an already-enrolled key.
+    readonly property string publicKeyPem: teslaClient ? teslaClient.publicKeyPem : ""
+    readonly property string vin: teslaClient ? teslaClient.vin : ""
+    readonly property bool hasVin: vin.length > 0
+    readonly property bool configReady: teslaClient ? teslaClient.configReady : false
     property bool generating: false
     property bool pairing: false
+    // Set after a failed generation: an unreadable or mismatched key can only
+    // be recovered by replacing it (generateKey(true)).
+    property bool keyFailed: false
     property string pairStatus: ""
     property string keysListOutput: ""
-    property string vin: ""
-    property bool hasVin: false
-    // False until the first GetConfig reply lands (onConfigLoaded below).
-    // Gates the Generate Key button: clicking it before the load finished
-    // would run with no knowledge of an already-enrolled key.
-    property bool configReady: false
-    property string configError: ""
     // Per-page list-keys id so two PairingPages never consume each other's
     // replies.
     property string pendingListKeysId: ""
@@ -26,8 +29,10 @@ Page {
         target: teslaClient
         onKeyGenerated: {
             page.generating = false
+            page.keyFailed = !ok
+            // TeslaClient republishes hasKey/publicKeyPem from the new config.
+            teslaClient.refreshConfig()
             if (ok) {
-                page.publicKeyPem = publicKeyPem
                 page.pairStatus = qsTr("Key generated. Tap \"Pair with Vehicle\", then tap your NFC card on the center console when prompted on the car's screen.")
             } else {
                 page.pairStatus = qsTr("Key generation failed: %1").arg(errorMessage)
@@ -45,7 +50,7 @@ Page {
             page.pendingListKeysId = ""
             page.keysListOutput = ok
                 ? (stdOut.length > 0 ? stdOut : qsTr("No keys listed"))
-                : stdErr
+                : CommandText.failure(stdErr, exitCode)
         }
         onCommandError: {
             if (requestId !== page.pendingListKeysId)
@@ -53,27 +58,21 @@ Page {
             page.pendingListKeysId = ""
             page.keysListOutput = message
         }
-        onConfigLoaded: {
-            if (page.vin !== vin) {
-                page.pendingListKeysId = ""
-                page.keysListOutput = ""
-            }
-            page.configError = ""
-            page.configReady = true
-            page.vin = vin
-            page.hasVin = vin.length > 0
-            if (hasKey)
-                page.publicKeyPem = publicKeyPem
-            else
-                page.publicKeyPem = ""
-        }
-        onConfigLoadError: {
-            page.configReady = false
-            page.configError = message
-        }
     }
 
-    Component.onCompleted: teslaClient.refreshConfig()
+    // A pending list belongs to the previous car (its ID carries that VIN).
+    onVinChanged: {
+        page.pendingListKeysId = ""
+        page.keysListOutput = ""
+    }
+
+    function generate(force) {
+        page.generating = true
+        page.keyFailed = false
+        teslaClient.generateKey(force)
+    }
+
+    RemorsePopup { id: replaceRemorse }
 
     SilicaFlickable {
         anchors.fill: parent
@@ -86,20 +85,7 @@ Page {
 
             PageHeader { title: qsTr("Pairing & Keys") }
 
-            Label {
-                width: parent.width - Theme.horizontalPageMargin * 2
-                anchors.horizontalCenter: parent.horizontalCenter
-                visible: page.configError.length > 0
-                wrapMode: Text.Wrap
-                text: page.configError
-                color: Theme.highlightColor
-            }
-            Button {
-                anchors.horizontalCenter: parent.horizontalCenter
-                visible: page.configError.length > 0
-                text: qsTr("Retry")
-                onClicked: teslaClient.refreshConfig()
-            }
+            ConfigErrorBanner { client: teslaClient }
 
             Label {
                 anchors.left: parent.left
@@ -130,7 +116,7 @@ Page {
                 anchors.right: parent.right
                 anchors.margins: Theme.horizontalPageMargin
                 wrapMode: Text.Wrap
-                text: "Phone-key logs: Documents/ElectricEel/phone-key-YYYY-MM-DD.log"
+                text: qsTr("Phone-key logs: %1").arg("Documents/ElectricEel/phone-key-YYYY-MM-DD.log")
                 font.pixelSize: Theme.fontSizeExtraSmall
                 color: Theme.secondaryColor
             }
@@ -140,7 +126,7 @@ Page {
                 // Spins until the first GetConfig reply lands (configReady
                 // gates the Generate Key button) so the disabled button reads
                 // as "still loading" rather than "broken".
-                running: !page.configReady && page.configError.length === 0
+                running: !page.configReady && teslaClient.configError.length === 0
                 visible: running
             }
 
@@ -153,10 +139,18 @@ Page {
                 // in-flight add-key-request would invalidate the session
                 // mid-pairing.
                 enabled: page.configReady && !page.generating && !page.pairing && page.pendingListKeysId.length === 0
-                onClicked: {
-                    page.generating = true
-                    teslaClient.generateKey(false)
-                }
+                onClicked: page.generate(false)
+            }
+
+            // Recovery for a key the core refused to reuse (unreadable or
+            // mismatched files). Replacing unpairs this phone, so it is
+            // confirmed with a cancellable remorse timer.
+            Button {
+                anchors.horizontalCenter: parent.horizontalCenter
+                visible: page.keyFailed
+                text: qsTr("Replace Key")
+                enabled: page.configReady && !page.generating && !page.pairing && page.pendingListKeysId.length === 0
+                onClicked: replaceRemorse.execute(qsTr("Replacing key"), function() { page.generate(true) })
             }
 
             Label {

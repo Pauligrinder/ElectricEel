@@ -3,18 +3,18 @@
   <context>
     <name>ArgumentDialog</name>
     <message>
-      <location filename="../qml/pages/ArgumentDialog.qml" line="83" />
+      <location filename="../qml/pages/ArgumentDialog.qml" line="87" />
       <source>Run</source>
       <translation>ਚਲਾਓ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/ArgumentDialog.qml" line="151" />
-      <location filename="../qml/pages/ArgumentDialog.qml" line="232" />
+      <location filename="../qml/pages/ArgumentDialog.qml" line="157" />
+      <location filename="../qml/pages/ArgumentDialog.qml" line="239" />
       <source> (optional)</source>
       <translation> (ਵਿਕਲਪਿਕ)</translation>
     </message>
     <message>
-      <location filename="../qml/pages/ArgumentDialog.qml" line="155" />
+      <location filename="../qml/pages/ArgumentDialog.qml" line="161" />
       <source>(not set)</source>
       <translation>(ਸੈੱਟ ਨਹੀਂ)</translation>
     </message>
@@ -22,57 +22,47 @@
   <context>
     <name>CategoryPage</name>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="47" />
+      <location filename="../qml/pages/CategoryPage.qml" line="43" />
       <source>%1 • %2°C inside</source>
       <translation>%1 • ਅੰਦਰ %2 °C</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="48" />
+      <location filename="../qml/pages/CategoryPage.qml" line="44" />
       <source>Climate on</source>
       <translation>ਜਲਵਾਯੂ ਚਾਲੂ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="48" />
+      <location filename="../qml/pages/CategoryPage.qml" line="44" />
       <source>Climate off</source>
       <translation>ਜਲਵਾਯੂ ਬੰਦ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="54" />
+      <location filename="../qml/pages/CategoryPage.qml" line="50" />
       <source>%1% battery%2</source>
       <translation>%1% ਬੈਟਰੀ%2</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="57" />
+      <location filename="../qml/pages/CategoryPage.qml" line="53" />
       <source> • Charging</source>
       <translation> • ਚਾਰਜ ਹੋ ਰਿਹਾ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="62" />
+      <location filename="../qml/pages/CategoryPage.qml" line="58" />
       <source>Doors locked</source>
       <translation>ਦਰਵਾਜ਼ੇ ਬੰਦ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="62" />
+      <location filename="../qml/pages/CategoryPage.qml" line="58" />
       <source>Doors unlocked</source>
       <translation>ਦਰਵਾਜ਼ੇ ਖੁੱਲ੍ਹੇ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="89" />
+      <location filename="../qml/pages/CategoryPage.qml" line="77" />
       <source>OK</source>
       <translation>ਠੀਕ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="89" />
-      <source>exit code %1</source>
-      <translation>ਐਗਜ਼ਿਟ ਕੋਡ %1</translation>
-    </message>
-    <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="170" />
-      <source>Retry</source>
-      <translation>ਮੁੜ ਕੋਸ਼ਿਸ਼ ਕਰੋ</translation>
-    </message>
-    <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="208" />
+      <location filename="../qml/pages/CategoryPage.qml" line="181" />
       <source>Running %1...</source>
       <translation>%1 ਚੱਲ ਰਿਹਾ...</translation>
     </message>
@@ -80,344 +70,361 @@
   <context>
     <name>CommandCatalog</name>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="33" />
+      <location filename="../qml/js/CommandCatalog.js" line="34" />
       <source>Attention</source>
       <translation>ਧਿਆਨ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="36" />
+      <location filename="../qml/js/CommandCatalog.js" line="37" />
       <source>Honk Horn</source>
       <translation>ਹਾਰਨ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="37" />
+      <location filename="../qml/js/CommandCatalog.js" line="38" />
       <source>Flash Lights</source>
       <translation>ਲਾਈਟ ਫਲੈਸ਼</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="38" />
+      <location filename="../qml/js/CommandCatalog.js" line="39" />
       <source>Wake Vehicle</source>
       <translation>ਵਾਹਨ ਜਗਾਓ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="43" />
+      <location filename="../qml/js/CommandCatalog.js" line="44" />
       <source>Climate</source>
       <translation>ਜਲਵਾਯੂ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="46" />
+      <location filename="../qml/js/CommandCatalog.js" line="47" />
       <source>Climate On</source>
       <translation>ਜਲਵਾਯੂ ਚਾਲੂ ਕਰੋ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="47" />
+      <location filename="../qml/js/CommandCatalog.js" line="48" />
       <source>Climate Off</source>
       <translation>ਜਲਵਾਯੂ ਬੰਦ ਕਰੋ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="51" />
+      <location filename="../qml/js/CommandCatalog.js" line="52" />
       <source>Set Temperature</source>
       <translation>ਤਾਪਮਾਨ ਸੈੱਟ ਕਰੋ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="58" />
+      <location filename="../qml/js/CommandCatalog.js" line="59" />
       <source>Seat Heater</source>
       <translation>ਸੀਟ ਹੀਟਰ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="62" />
+      <location filename="../qml/js/CommandCatalog.js" line="63" />
       <source>Steering Wheel Heater</source>
       <translation>ਸਟੀਅਰਿੰਗ ਹੀਟਰ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="67" />
+      <location filename="../qml/js/CommandCatalog.js" line="68" />
       <source>Auto Seat &amp; Climate</source>
       <translation>ਆਟੋ ਸੀਟ ਅਤੇ ਜਲਵਾਯੂ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="71" />
+      <location filename="../qml/js/CommandCatalog.js" line="72" />
       <source>Add Preconditioning Schedule</source>
       <translation>ਪ੍ਰੀਕੰਡੀਸ਼ਨਿੰਗ ਸਮਾਂ-ਸਾਰਣੀ ਜੋੜੋ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="72" />
+      <location filename="../qml/js/CommandCatalog.js" line="73" />
       <source>Remove Preconditioning Schedule</source>
       <translation>ਪ੍ਰੀਕੰਡੀਸ਼ਨਿੰਗ ਸਮਾਂ-ਸਾਰਣੀ ਹਟਾਓ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="77" />
+      <location filename="../qml/js/CommandCatalog.js" line="78" />
       <source>Charging</source>
       <translation>ਚਾਰਜਿੰਗ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="80" />
+      <location filename="../qml/js/CommandCatalog.js" line="81" />
       <source>Start Charging</source>
       <translation>ਚਾਰਜਿੰਗ ਸ਼ੁਰੂ ਕਰੋ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="81" />
+      <location filename="../qml/js/CommandCatalog.js" line="82" />
       <source>Stop Charging</source>
       <translation>ਚਾਰਜਿੰਗ ਰੋਕੋ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="82" />
+      <location filename="../qml/js/CommandCatalog.js" line="83" />
       <source>Open Charge Port</source>
       <translation>ਚਾਰਜ ਪੋਰਟ ਖੋਲ੍ਹੋ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="83" />
+      <location filename="../qml/js/CommandCatalog.js" line="84" />
       <source>Close Charge Port</source>
       <translation>ਚਾਰਜ ਪੋਰਟ ਬੰਦ ਕਰੋ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="84" />
+      <location filename="../qml/js/CommandCatalog.js" line="85" />
       <source>Set Charge Limit</source>
       <translation>ਚਾਰਜ ਸੀਮਾ ਸੈੱਟ ਕਰੋ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="87" />
+      <location filename="../qml/js/CommandCatalog.js" line="88" />
       <source>Set Charge Current</source>
       <translation>ਚਾਰਜ ਕਰੰਟ ਸੈੱਟ ਕਰੋ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="90" />
+      <location filename="../qml/js/CommandCatalog.js" line="91" />
       <source>Schedule Charging</source>
       <translation>ਚਾਰਜਿੰਗ ਸਮਾਂ-ਸਾਰਣੀ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="93" />
+      <location filename="../qml/js/CommandCatalog.js" line="94" />
       <source>Cancel Scheduled Charging</source>
       <translation>ਤਹਿ ਚਾਰਜਿੰਗ ਰੱਦ ਕਰੋ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="94" />
+      <location filename="../qml/js/CommandCatalog.js" line="95" />
       <source>Add Charge Schedule</source>
       <translation>ਚਾਰਜ ਸਮਾਂ-ਸਾਰਣੀ ਜੋੜੋ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="95" />
+      <location filename="../qml/js/CommandCatalog.js" line="96" />
       <source>Remove Charge Schedule</source>
       <translation>ਚਾਰਜ ਸਮਾਂ-ਸਾਰਣੀ ਹਟਾਓ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="100" />
+      <location filename="../qml/js/CommandCatalog.js" line="101" />
       <source>Locks &amp; Security</source>
       <translation>ਲਾਕ ਅਤੇ ਸੁਰੱਖਿਆ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="103" />
+      <location filename="../qml/js/CommandCatalog.js" line="104" />
       <source>Lock</source>
       <translation>ਲਾਕ ਕਰੋ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="104" />
+      <location filename="../qml/js/CommandCatalog.js" line="105" />
       <source>Unlock</source>
       <translation>ਅਨਲਾਕ ਕਰੋ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="110" />
+      <location filename="../qml/js/CommandCatalog.js" line="111" />
       <source>Remote Start (Keyless Drive)</source>
       <translation>ਰਿਮੋਟ ਸਟਾਰਟ (ਚਾਬੀ ਤੋਂ ਬਿਨਾਂ ਡਰਾਈਵ)</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="111" />
+      <location filename="../qml/js/CommandCatalog.js" line="112" />
       <source>Sentry Mode</source>
       <translation>ਸੈਂਟਰੀ ਮੋਡ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="112" />
+      <location filename="../qml/js/CommandCatalog.js" line="114" />
       <source>Valet Mode On</source>
       <translation>ਵੈਲੇ ਮੋਡ ਚਾਲੂ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="113" />
+      <location filename="../qml/js/CommandCatalog.js" line="115" />
       <source>Valet Mode Off</source>
       <translation>ਵੈਲੇ ਮੋਡ ਬੰਦ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="114" />
+      <location filename="../qml/js/CommandCatalog.js" line="116" />
       <source>Guest Mode On</source>
       <translation>ਮਹਿਮਾਨ ਮੋਡ ਚਾਲੂ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="115" />
+      <location filename="../qml/js/CommandCatalog.js" line="117" />
       <source>Guest Mode Off</source>
       <translation>ਮਹਿਮਾਨ ਮੋਡ ਬੰਦ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="116" />
+      <location filename="../qml/js/CommandCatalog.js" line="118" />
       <source>Erase Guest Data</source>
       <translation>ਮਹਿਮਾਨ ਡੇਟਾ ਮਿਟਾਓ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="117" />
+      <location filename="../qml/js/CommandCatalog.js" line="119" />
       <source>Auto-Secure (Model X)</source>
       <translation>ਆਟੋ-ਸੁਰੱਖਿਆ (Model X)</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="127" />
+      <location filename="../qml/js/CommandCatalog.js" line="129" />
       <source>Trunk, Frunk &amp; Windows</source>
       <translation>ਡਿੱਕੀਆਂ ਅਤੇ ਖਿੜਕੀਆਂ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="130" />
+      <location filename="../qml/js/CommandCatalog.js" line="132" />
       <source>Open Rear Trunk</source>
       <translation>ਪਿਛਲੀ ਡਿੱਕੀ ਖੋਲ੍ਹੋ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="131" />
+      <location filename="../qml/js/CommandCatalog.js" line="133" />
       <source>Move Rear Trunk</source>
       <translation>ਪਿਛਲੀ ਡਿੱਕੀ ਚਲਾਓ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="132" />
+      <location filename="../qml/js/CommandCatalog.js" line="134" />
       <source>Close Rear Trunk</source>
       <translation>ਪਿਛਲੀ ਡਿੱਕੀ ਬੰਦ ਕਰੋ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="133" />
+      <location filename="../qml/js/CommandCatalog.js" line="135" />
       <source>Open Front Trunk</source>
       <translation>ਅਗਲੀ ਡਿੱਕੀ ਖੋਲ੍ਹੋ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="134" />
+      <location filename="../qml/js/CommandCatalog.js" line="136" />
       <source>Open Tonneau (Cybertruck)</source>
       <translation>ਟੋਨੋ ਖੋਲ੍ਹੋ (Cybertruck)</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="135" />
+      <location filename="../qml/js/CommandCatalog.js" line="137" />
       <source>Close Tonneau (Cybertruck)</source>
       <translation>ਟੋਨੋ ਬੰਦ ਕਰੋ (Cybertruck)</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="136" />
+      <location filename="../qml/js/CommandCatalog.js" line="138" />
       <source>Stop Tonneau (Cybertruck)</source>
       <translation>ਟੋਨੋ ਰੋਕੋ (Cybertruck)</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="137" />
+      <location filename="../qml/js/CommandCatalog.js" line="139" />
       <source>Vent Windows</source>
       <translation>ਖਿੜਕੀਆਂ ਖੋਲ੍ਹੋ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="138" />
+      <location filename="../qml/js/CommandCatalog.js" line="140" />
       <source>Close Windows</source>
       <translation>ਖਿੜਕੀਆਂ ਬੰਦ ਕਰੋ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="143" />
+      <location filename="../qml/js/CommandCatalog.js" line="145" />
       <source>Media</source>
       <translation>ਮੀਡੀਆ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="146" />
+      <location filename="../qml/js/CommandCatalog.js" line="148" />
       <source>Play / Pause</source>
       <translation>ਚਲਾਓ / ਰੋਕੋ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="147" />
+      <location filename="../qml/js/CommandCatalog.js" line="149" />
       <source>Next Track</source>
       <translation>ਅਗਲਾ ਟਰੈਕ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="148" />
+      <location filename="../qml/js/CommandCatalog.js" line="150" />
       <source>Previous Track</source>
       <translation>ਪਿਛਲਾ ਟਰੈਕ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="149" />
+      <location filename="../qml/js/CommandCatalog.js" line="151" />
       <source>Next Favorite</source>
       <translation>ਅਗਲਾ ਪਸੰਦੀਦਾ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="150" />
+      <location filename="../qml/js/CommandCatalog.js" line="152" />
       <source>Previous Favorite</source>
       <translation>ਪਿਛਲਾ ਪਸੰਦੀਦਾ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="151" />
+      <location filename="../qml/js/CommandCatalog.js" line="153" />
       <source>Volume Up</source>
       <translation>ਆਵਾਜ਼ ਵਧਾਓ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="152" />
+      <location filename="../qml/js/CommandCatalog.js" line="154" />
       <source>Volume Down</source>
       <translation>ਆਵਾਜ਼ ਘਟਾਓ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="153" />
+      <location filename="../qml/js/CommandCatalog.js" line="155" />
       <source>Set Volume</source>
       <translation>ਆਵਾਜ਼ ਸੈੱਟ ਕਰੋ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="160" />
+      <location filename="../qml/js/CommandCatalog.js" line="162" />
       <source>Software</source>
       <translation>ਸਾਫਟਵੇਅਰ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="167" />
+      <location filename="../qml/js/CommandCatalog.js" line="169" />
       <source>Start Software Update</source>
       <translation>ਸਾਫਟਵੇਅਰ ਅੱਪਡੇਟ ਸ਼ੁਰੂ ਕਰੋ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="170" />
+      <location filename="../qml/js/CommandCatalog.js" line="172" />
       <source>Cancel Software Update</source>
       <translation>ਸਾਫਟਵੇਅਰ ਅੱਪਡੇਟ ਰੱਦ ਕਰੋ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="175" />
+      <location filename="../qml/js/CommandCatalog.js" line="177" />
       <source>Keys</source>
       <translation>ਚਾਬੀਆਂ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="178" />
+      <location filename="../qml/js/CommandCatalog.js" line="180" />
       <source>List Enrolled Keys</source>
       <translation>ਰਜਿਸਟਰਡ ਚਾਬੀਆਂ ਸੂਚੀਬੱਧ ਕਰੋ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="185" />
+      <location filename="../qml/js/CommandCatalog.js" line="187" />
       <source>Add Key</source>
       <translation>ਚਾਬੀ ਜੋੜੋ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="190" />
+      <location filename="../qml/js/CommandCatalog.js" line="192" />
       <source>Remove Key</source>
       <translation>ਚਾਬੀ ਹਟਾਓ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="197" />
+      <location filename="../qml/js/CommandCatalog.js" line="199" />
       <source>Session Info</source>
       <translation>ਸੈਸ਼ਨ ਜਾਣਕਾਰੀ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="205" />
+      <location filename="../qml/js/CommandCatalog.js" line="207" />
       <source>Diagnostics</source>
       <translation>ਡਾਇਗਨੌਸਟਿਕਸ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="208" />
+      <location filename="../qml/js/CommandCatalog.js" line="210" />
       <source>Ping Vehicle</source>
       <translation>ਵਾਹਨ ਪਿੰਗ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="216" />
+      <location filename="../qml/js/CommandCatalog.js" line="218" />
       <source>Get Vehicle State</source>
       <translation>ਵਾਹਨ ਸਥਿਤੀ ਪੜ੍ਹੋ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="219" />
+      <location filename="../qml/js/CommandCatalog.js" line="221" />
       <source>Body Controller State</source>
       <translation>ਬਾਡੀ ਕੰਟਰੋਲਰ ਸਥਿਤੀ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="223" />
+      <location filename="../qml/js/CommandCatalog.js" line="225" />
       <source>Keep Accessory Power</source>
       <translation>ਸਹਾਇਕ ਪਾਵਰ ਬਣਾਈ ਰੱਖੋ</translation>
     </message>
     <message>
-      <location filename="../qml/js/CommandCatalog.js" line="224" />
+      <location filename="../qml/js/CommandCatalog.js" line="226" />
       <source>Low Power Mode</source>
       <translation>ਘੱਟ ਪਾਵਰ ਮੋਡ</translation>
+    </message>
+  </context>
+  <context>
+    <name>CommandText</name>
+    <message>
+      <location filename="../qml/js/CommandText.js" line="6" />
+      <source>exit code %1</source>
+      <translation>ਐਗਜ਼ਿਟ ਕੋਡ %1</translation>
+    </message>
+  </context>
+  <context>
+    <name>ConfigErrorBanner</name>
+    <message>
+      <location filename="../qml/cover/CoverPage.qml" line="134" />
+      <location filename="../qml/pages/ConfigErrorBanner.qml" line="22" />
+      <source>Retry</source>
+      <translation>ਮੁੜ ਕੋਸ਼ਿਸ਼ ਕਰੋ</translation>
     </message>
   </context>
   <context>
@@ -454,119 +461,91 @@
     </message>
   </context>
   <context>
-    <name>CoverPage</name>
-    <message>
-      <location filename="../qml/cover/CoverPage.qml" line="121" />
-      <source>Retry</source>
-      <translation>ਮੁੜ ਕੋਸ਼ਿਸ਼ ਕਰੋ</translation>
-    </message>
-  </context>
-  <context>
     <name>FirstPage</name>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="282" />
-      <source>The control core failed to start. Reinstall the app, then pull down to refresh.</source>
-      <translation>ਕੰਟਰੋਲ ਕੋਰ ਸ਼ੁਰੂ ਨਹੀਂ ਹੋ ਸਕਿਆ। ਐਪ ਮੁੜ ਇੰਸਟਾਲ ਕਰੋ, ਫਿਰ ਰਿਫਰੈਸ਼ ਲਈ ਹੇਠਾਂ ਖਿੱਚੋ।</translation>
-    </message>
-    <message>
-      <location filename="../qml/pages/FirstPage.qml" line="284" />
-      <source>The control core is too old to report its version. Reinstall the app (%1), then pull down to refresh.</source>
-      <translation>ਕੰਟਰੋਲ ਕੋਰ ਵਰਜ਼ਨ ਦੱਸਣ ਲਈ ਬਹੁਤ ਪੁਰਾਣਾ ਹੈ। ਐਪ (%1) ਮੁੜ ਇੰਸਟਾਲ ਕਰੋ, ਫਿਰ ਰਿਫਰੈਸ਼ ਲਈ ਹੇਠਾਂ ਖਿੱਚੋ।</translation>
-    </message>
-    <message>
-      <location filename="../qml/pages/FirstPage.qml" line="285" />
-      <source>Version mismatch: app %1, core %2. Reinstall the app, then pull down to refresh.</source>
-      <translation>ਵਰਜ਼ਨ ਮੇਲ ਨਹੀਂ ਖਾਂਦਾ: ਐਪ %1, ਕੋਰ %2। ਐਪ ਮੁੜ ਇੰਸਟਾਲ ਕਰੋ, ਫਿਰ ਰਿਫਰੈਸ਼ ਲਈ ਹੇਠਾਂ ਖਿੱਚੋ।</translation>
-    </message>
-    <message>
-      <location filename="../qml/pages/FirstPage.qml" line="63" />
-      <location filename="../qml/pages/FirstPage.qml" line="303" />
+      <location filename="../qml/pages/FirstPage.qml" line="59" />
+      <location filename="../qml/pages/FirstPage.qml" line="250" />
       <source>No VIN configured</source>
       <translation>VIN ਸੰਰਚਿਤ ਨਹੀਂ</translation>
     </message>
     <message>
       <location filename="../qml/pages/FirstPage.qml" line="55" />
-      <source>Control helper unavailable</source>
-      <translation>ਕੰਟਰੋਲ ਸੇਵਾ ਉਪਲਬਧ ਨਹੀਂ ਹੈ</translation>
-    </message>
-    <message>
-      <location filename="../qml/pages/FirstPage.qml" line="59" />
       <source>No key: generate and pair a key first</source>
       <translation>ਕੋਈ ਕੁੰਜੀ ਨਹੀਂ: ਪਹਿਲਾਂ ਕੁੰਜੀ ਬਣਾਓ ਅਤੇ ਪੇਅਰ ਕਰੋ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="307" />
+      <location filename="../qml/pages/FirstPage.qml" line="254" />
       <source>Key ready</source>
       <translation>ਚਾਬੀ ਤਿਆਰ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="307" />
+      <location filename="../qml/pages/FirstPage.qml" line="254" />
       <source>No key - tap for Settings / Pairing</source>
       <translation>ਚਾਬੀ ਨਹੀਂ - ਸੈਟਿੰਗਾਂ / ਜੋੜਨ ਲਈ ਟੈਪ ਕਰੋ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="362" />
+      <location filename="../qml/pages/FirstPage.qml" line="308" />
       <source> • charging</source>
       <translation> • ਚਾਰਜ ਹੋ ਰਿਹਾ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="371" />
+      <location filename="../qml/pages/FirstPage.qml" line="317" />
       <source>• %1°C</source>
       <translation>• %1 °C</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="396" />
+      <location filename="../qml/pages/FirstPage.qml" line="342" />
       <source>Updating...</source>
       <translation>ਅੱਪਡੇਟ ਹੋ ਰਿਹਾ...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="398" />
+      <location filename="../qml/pages/FirstPage.qml" line="344" />
       <source>Status unavailable (%1). Vehicle may be asleep - try Wake Vehicle (Attention), then Refresh Status.</source>
       <translation>ਸਥਿਤੀ ਉਪਲਬਧ ਨਹੀਂ (%1)। ਵਾਹਨ ਸੁੱਤਾ ਹੋ ਸਕਦਾ ਹੈ - ਵਾਹਨ ਜਗਾਓ (ਧਿਆਨ) ਅਜ਼ਮਾਓ, ਫਿਰ ਸਥਿਤੀ ਰਿਫਰੈਸ਼ ਕਰੋ।</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="400" />
+      <location filename="../qml/pages/FirstPage.qml" line="346" />
       <source>Pull down to refresh status</source>
       <translation>ਸਥਿਤੀ ਰਿਫਰੈਸ਼ ਲਈ ਹੇਠਾਂ ਖਿੱਚੋ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="402" />
+      <location filename="../qml/pages/FirstPage.qml" line="348" />
       <source>Updated just now</source>
       <translation>ਹੁਣੇ ਅੱਪਡੇਟ ਹੋਇਆ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="403" />
+      <location filename="../qml/pages/FirstPage.qml" line="349" />
       <source>Updated %1m ago</source>
       <translation>%1 ਮਿੰਟ ਪਹਿਲਾਂ ਅੱਪਡੇਟ ਹੋਇਆ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="496" />
+      <location filename="../qml/pages/FirstPage.qml" line="403" />
       <source>Categories</source>
       <translation>ਸ਼੍ਰੇਣੀਆਂ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="546" />
+      <location filename="../qml/pages/FirstPage.qml" line="452" />
       <source>Send Destination</source>
       <translation>ਮੰਜ਼ਿਲ ਭੇਜੋ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="550" />
+      <location filename="../qml/pages/FirstPage.qml" line="456" />
       <source>Pair Vehicle</source>
       <translation>ਵਾਹਨ ਜੋੜੋ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="554" />
+      <location filename="../qml/pages/FirstPage.qml" line="460" />
       <source>Settings</source>
       <translation>ਸੈਟਿੰਗਾਂ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="558" />
-      <location filename="../qml/pages/SettingsPage.qml" line="199" />
+      <location filename="../qml/pages/FirstPage.qml" line="464" />
+      <location filename="../qml/pages/SettingsPage.qml" line="204" />
       <source>Refresh</source>
       <translation>ਰਿਫਰੈਸ਼</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="562" />
+      <location filename="../qml/pages/FirstPage.qml" line="468" />
       <source>Refresh Status</source>
       <translation>ਸਥਿਤੀ ਰਿਫਰੈਸ਼ ਕਰੋ</translation>
     </message>
@@ -574,82 +553,77 @@
   <context>
     <name>NavigationPage</name>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="53" />
+      <location filename="../qml/pages/NavigationPage.qml" line="51" />
       <source>Paste or type a destination first.</source>
       <translation>ਪਹਿਲਾਂ ਮੰਜ਼ਿਲ ਪੇਸਟ ਕਰੋ ਜਾਂ ਲਿਖੋ।</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="57" />
+      <location filename="../qml/pages/NavigationPage.qml" line="55" />
       <source>Checking...</source>
       <translation>ਜਾਂਚ ਹੋ ਰਹੀ...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="67" />
+      <location filename="../qml/pages/NavigationPage.qml" line="65" />
       <source>Nothing to send.</source>
       <translation>ਭੇਜਣ ਲਈ ਕੁਝ ਨਹੀਂ।</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="105" />
+      <location filename="../qml/pages/NavigationPage.qml" line="92" />
       <source>Cannot use this: %1</source>
       <translation>ਵਰਤੋਂ ਯੋਗ ਨਹੀਂ: %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="109" />
+      <location filename="../qml/pages/NavigationPage.qml" line="96" />
       <source>Coordinates %1, %2 — navigation will start there.</source>
       <translation>ਨਿਰਦੇਸ਼ਾਂਕ %1, %2 — ਨੈਵੀਗੇਸ਼ਨ ਉੱਥੇ ਸ਼ੁਰੂ ਹੋਵੇਗਾ।</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="112" />
+      <location filename="../qml/pages/NavigationPage.qml" line="99" />
       <source>Address "%1" — the car will look it up.</source>
       <translation>ਪਤਾ “%1” — ਗੱਡੀ ਆਪ ਲੱਭੇਗੀ।</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="119" />
+      <location filename="../qml/pages/NavigationPage.qml" line="106" />
       <source>Send failed: %1</source>
       <translation>ਭੇਜਣਾ ਅਸਫਲ: %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="119" />
+      <location filename="../qml/pages/NavigationPage.qml" line="106" />
       <source>OK</source>
       <translation>ਠੀਕ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="139" />
+      <location filename="../qml/pages/NavigationPage.qml" line="127" />
       <source>Car Navigation</source>
       <translation>ਗੱਡੀ ਨੈਵੀਗੇਸ਼ਨ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="152" />
-      <source>Retry</source>
-      <translation>ਮੁੜ ਕੋਸ਼ਿਸ਼ ਕਰੋ</translation>
-    </message>
-    <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="159" />
+      <location filename="../qml/pages/NavigationPage.qml" line="134" />
       <source>Destination</source>
       <translation>ਮੰਜ਼ਿਲ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="160" />
+      <location filename="../qml/pages/NavigationPage.qml" line="135" />
       <source>Paste address, coordinates, or map link</source>
       <translation>ਪਤਾ, ਨਿਰਦੇਸ਼ਾਂਕ ਜਾਂ ਨਕਸ਼ਾ ਲਿੰਕ ਪੇਸਟ ਕਰੋ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="168" />
+      <location filename="../qml/pages/NavigationPage.qml" line="143" />
       <source>Preview</source>
       <translation>ਝਲਕ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="186" />
+      <location filename="../qml/pages/NavigationPage.qml" line="161" />
       <source>Send to Car</source>
       <translation>ਗੱਡੀ ਨੂੰ ਭੇਜੋ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="208" />
+      <location filename="../qml/pages/NavigationPage.qml" line="183" />
       <source>Notes</source>
       <translation>ਨੋਟਸ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="217" />
+      <location filename="../qml/pages/NavigationPage.qml" line="192" />
       <source>This uses Bluetooth, like lock/unlock — the car must be in range, no internet needed on either side. Coordinates are sent exactly; addresses and links are looked up by the car itself, so unusual spellings may resolve differently than on your phone. From Android apps: copy the address or link, then paste it above.</source>
       <translation>ਲਾਕ/ਅਨਲਾਕ ਵਾਂਗ ਬਲੂਟੁੱਥ ਵਰਤਦਾ ਹੈ — ਗੱਡੀ ਰੇਂਜ ਵਿੱਚ ਹੋਣੀ ਚਾਹੀਦੀ ਹੈ, ਇੰਟਰਨੈੱਟ ਜ਼ਰੂਰੀ ਨਹੀਂ। ਨਿਰਦੇਸ਼ਾਂਕ ਬਿਲਕੁਲ ਭੇਜੇ ਜਾਂਦੇ ਹਨ; ਪਤੇ ਅਤੇ ਲਿੰਕ ਗੱਡੀ ਆਪ ਲੱਭਦੀ ਹੈ, ਇਸ ਲਈ ਅਸਾਧਾਰਨ ਸਪੈਲਿੰਗ ਫ਼ੋਨ ਨਾਲੋਂ ਵੱਖਰੀ ਸਮਝੀ ਜਾ ਸਕਦੀ ਹੈ। Android ਐਪਾਂ ਤੋਂ: ਪਤਾ ਜਾਂ ਲਿੰਕ ਕਾਪੀ ਕਰਕੇ ਉੱਪਰ ਪੇਸਟ ਕਰੋ।</translation>
     </message>
@@ -657,82 +631,92 @@
   <context>
     <name>PairingPage</name>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="31" />
+      <location filename="../qml/pages/PairingPage.qml" line="36" />
       <source>Key generated. Tap "Pair with Vehicle", then tap your NFC card on the center console when prompted on the car's screen.</source>
       <translation>ਚਾਬੀ ਬਣ ਗਈ। “ਵਾਹਨ ਜੋੜੋ” ਟੈਪ ਕਰੋ, ਫਿਰ ਗੱਡੀ ਦੀ ਸਕ੍ਰੀਨ ਕਹੇ ਤਾਂ NFC ਕਾਰਡ ਸੈਂਟਰ ਕਨਸੋਲ ’ਤੇ ਟੈਪ ਕਰੋ।</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="33" />
+      <location filename="../qml/pages/PairingPage.qml" line="38" />
       <source>Key generation failed: %1</source>
       <translation>ਚਾਬੀ ਬਣਾਉਣੀ ਅਸਫਲ: %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="38" />
+      <location filename="../qml/pages/PairingPage.qml" line="43" />
       <source>Paired.</source>
       <translation>ਜੋੜਿਆ ਗਿਆ।</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="38" />
+      <location filename="../qml/pages/PairingPage.qml" line="43" />
       <source>Pairing failed: %1</source>
       <translation>ਜੋੜਨਾ ਅਸਫਲ: %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="47" />
+      <location filename="../qml/pages/PairingPage.qml" line="52" />
       <source>No keys listed</source>
       <translation>ਕੋਈ ਕੁੰਜੀ ਸੂਚੀਬੱਧ ਨਹੀਂ ਹੈ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="87" />
+      <location filename="../qml/pages/PairingPage.qml" line="86" />
       <source>Pairing &amp; Keys</source>
       <translation>ਜੋੜਨਾ ਅਤੇ ਚਾਬੀਆਂ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="100" />
-      <source>Retry</source>
-      <translation>ਮੁੜ ਕੋਸ਼ਿਸ਼ ਕਰੋ</translation>
-    </message>
-    <message>
-      <location filename="../qml/pages/PairingPage.qml" line="109" />
+      <location filename="../qml/pages/PairingPage.qml" line="95" />
       <source>Set the VIN in Settings first. Then generate a key, then pair it with the car over BLE - you'll need to be next to the vehicle and tap the NFC card on the center console to approve.</source>
       <translation>ਪਹਿਲਾਂ ਸੈਟਿੰਗਾਂ ਵਿੱਚ VIN ਪਾਓ। ਫਿਰ ਚਾਬੀ ਬਣਾਓ ਅਤੇ BLE ਨਾਲ ਗੱਡੀ ਨਾਲ ਜੋੜੋ – ਗੱਡੀ ਕੋਲ ਖੜ੍ਹੇ ਹੋਵੋ ਅਤੇ ਮਨਜ਼ੂਰੀ ਲਈ NFC ਕਾਰਡ ਸੈਂਟਰ ਕਨਸੋਲ ’ਤੇ ਟੈਪ ਕਰੋ।</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="121" />
+      <location filename="../qml/pages/PairingPage.qml" line="107" />
       <source>Phone key starting...</source>
       <translation>ਫ਼ੋਨ ਚਾਬੀ ਸ਼ੁਰੂ ਹੋ ਰਹੀ...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="149" />
+      <location filename="../qml/pages/PairingPage.qml" line="119" />
+      <source>Phone-key logs: %1</source>
+      <translation>ਫ਼ੋਨ ਚਾਬੀ ਲੌਗ: %1</translation>
+    </message>
+    <message>
+      <location filename="../qml/pages/PairingPage.qml" line="135" />
       <source>Generating...</source>
       <translation>ਬਣ ਰਹੀ...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="149" />
+      <location filename="../qml/pages/PairingPage.qml" line="135" />
       <source>Generate Key</source>
       <translation>ਚਾਬੀ ਬਣਾਓ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="175" />
+      <location filename="../qml/pages/PairingPage.qml" line="151" />
+      <source>Replace Key</source>
+      <translation>ਚਾਬੀ ਬਦਲੋ</translation>
+    </message>
+    <message>
+      <location filename="../qml/pages/PairingPage.qml" line="153" />
+      <source>Replacing key</source>
+      <translation>ਚਾਬੀ ਬਦਲੀ ਜਾ ਰਹੀ ਹੈ</translation>
+    </message>
+    <message>
+      <location filename="../qml/pages/PairingPage.qml" line="169" />
       <source>Waiting for NFC tap...</source>
       <translation>NFC ਟੈਪ ਦੀ ਉਡੀਕ...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="175" />
+      <location filename="../qml/pages/PairingPage.qml" line="169" />
       <source>Pair with Vehicle</source>
       <translation>ਵਾਹਨ ਜੋੜੋ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="181" />
+      <location filename="../qml/pages/PairingPage.qml" line="175" />
       <source>Requesting pairing over BLE - approve on the car's touchscreen / NFC card now.</source>
       <translation>BLE ਜੋੜਨ ਦੀ ਬੇਨਤੀ – ਟੱਚਸਕ੍ਰੀਨ / NFC ਕਾਰਡ ’ਤੇ ਹੁਣੇ ਮਨਜ਼ੂਰੀ ਦਿਓ।</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="201" />
+      <location filename="../qml/pages/PairingPage.qml" line="195" />
       <source>Enrolled Keys</source>
       <translation>ਰਜਿਸਟਰਡ ਚਾਬੀਆਂ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="205" />
+      <location filename="../qml/pages/PairingPage.qml" line="199" />
       <source>List Enrolled Keys</source>
       <translation>ਰਜਿਸਟਰਡ ਚਾਬੀਆਂ ਸੂਚੀਬੱਧ ਕਰੋ</translation>
     </message>
@@ -745,138 +729,138 @@
       <translation>ਸੰਰਚਨਾ ਲੋਡ ਹੋ ਰਹੀ...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="58" />
+      <location filename="../qml/pages/SettingsPage.qml" line="56" />
       <source>Key on file</source>
       <translation>ਚਾਬੀ ਹੈ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="58" />
+      <location filename="../qml/pages/SettingsPage.qml" line="56" />
       <source>No key yet - use Pair Vehicle from the main menu</source>
       <translation>ਅਜੇ ਚਾਬੀ ਨਹੀਂ – ਮੁੱਖ ਮੈਨੂ ਵਿੱਚੋਂ ਵਾਹਨ ਜੋੜੋ ਵਰਤੋ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="66" />
+      <location filename="../qml/pages/SettingsPage.qml" line="64" />
       <source>Saved</source>
       <translation>ਸੇਵ ਹੋ ਗਿਆ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="66" />
+      <location filename="../qml/pages/SettingsPage.qml" line="64" />
       <source>Save failed: %1</source>
       <translation>ਸੇਵ ਅਸਫਲ: %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="70" />
+      <location filename="../qml/pages/SettingsPage.qml" line="81" />
       <source>Exported to %1. In Automagic, use States → Import to select this folder, then Reload Daemon.</source>
       <translation>%1 ਵਿੱਚ ਨਿਰਯਾਤ ਕੀਤਾ ਗਿਆ। Automagic ਵਿੱਚ ਇਹ ਫੋਲਡਰ ਚੁਣਨ ਲਈ States → Import ਵਰਤੋ, ਫਿਰ Reload Daemon ਚੁਣੋ।</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="71" />
+      <location filename="../qml/pages/SettingsPage.qml" line="82" />
       <source>Automagic export failed: %1</source>
       <translation>Automagic ਨਿਰਯਾਤ ਅਸਫਲ: %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="86" />
+      <location filename="../qml/pages/SettingsPage.qml" line="97" />
       <source>Settings</source>
       <translation>ਸੈਟਿੰਗਾਂ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="110" />
+      <location filename="../qml/pages/SettingsPage.qml" line="121" />
       <source>Vehicle VIN</source>
       <translation>ਵਾਹਨ VIN</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="115" />
+      <location filename="../qml/pages/SettingsPage.qml" line="126" />
       <source>17-character VIN</source>
       <translation>17-ਅੱਖਰ VIN</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="141" />
+      <location filename="../qml/pages/SettingsPage.qml" line="146" />
       <source>Front-page car model</source>
       <translation>ਪਹਿਲੇ ਪੇਜ ’ਤੇ ਕਾਰ ਮਾਡਲ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="142" />
+      <location filename="../qml/pages/SettingsPage.qml" line="147" />
       <source>Auto selects the model from the VIN</source>
       <translation>VIN ਤੋਂ ਮਾਡਲ ਆਟੋ ਚੁਣਦਾ ਹੈ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="158" />
+      <location filename="../qml/pages/SettingsPage.qml" line="163" />
       <source>Key name</source>
       <translation>ਚਾਬੀ ਦਾ ਨਾਮ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="159" />
+      <location filename="../qml/pages/SettingsPage.qml" line="164" />
       <source>harbour-electric-eel</source>
       <translation>harbour-electric-eel</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="169" />
+      <location filename="../qml/pages/SettingsPage.qml" line="174" />
       <source>Connect timeout</source>
       <translation>ਕਨੈਕਟ ਸਮਾਂ-ਸੀਮਾ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="176" />
-      <location filename="../qml/pages/SettingsPage.qml" line="190" />
+      <location filename="../qml/pages/SettingsPage.qml" line="181" />
+      <location filename="../qml/pages/SettingsPage.qml" line="195" />
       <source>%1 s</source>
       <translation>%1 ਸਕਿੰਟ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="186" />
+      <location filename="../qml/pages/SettingsPage.qml" line="191" />
       <source>Command timeout</source>
       <translation>ਕਮਾਂਡ ਸਮਾਂ-ਸੀਮਾ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="207" />
+      <location filename="../qml/pages/SettingsPage.qml" line="212" />
       <source>Cover actions</source>
       <translation>ਕਵਰ ਕਾਰਵਾਈਆਂ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="212" />
+      <location filename="../qml/pages/SettingsPage.qml" line="217" />
       <source>Left action</source>
       <translation>ਖੱਬੀ ਕਾਰਵਾਈ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="230" />
+      <location filename="../qml/pages/SettingsPage.qml" line="235" />
       <source>Right action</source>
       <translation>ਸੱਜੀ ਕਾਰਵਾਈ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="245" />
+      <location filename="../qml/pages/SettingsPage.qml" line="250" />
       <source>Automagic</source>
       <translation>Automagic</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="254" />
+      <location filename="../qml/pages/SettingsPage.qml" line="259" />
       <source>Export hotspot flows to Documents, then import them in Automagic. Automagic turns the hotspot on for presence_inside and off for presence_away_confirmed. ElectricEel emits the latter 3 minutes after presence_far unless presence_inside arrives first; repeated presence_far events do not restart the timer. ElectricEel must stay running.</source>
       <translation>ਹੌਟਸਪੌਟ ਫਲੋ ਦਸਤਾਵੇਜ਼ਾਂ ਵਿੱਚ ਨਿਰਯਾਤ ਕਰੋ, ਫਿਰ ਉਹਨਾਂ ਨੂੰ Automagic ਵਿੱਚ ਆਯਾਤ ਕਰੋ। Automagic, presence_inside ਉੱਤੇ ਹੌਟਸਪੌਟ ਚਾਲੂ ਕਰਦਾ ਹੈ ਅਤੇ presence_away_confirmed ਉੱਤੇ ਬੰਦ ਕਰਦਾ ਹੈ। ਜੇ presence_inside ਪਹਿਲਾਂ ਨਾ ਆਵੇ ਤਾਂ ElectricEel, presence_far ਤੋਂ 3 ਮਿੰਟ ਬਾਅਦ ਦੂਜੀ ਘਟਨਾ ਭੇਜਦਾ ਹੈ; ਵਾਰ-ਵਾਰ ਆਉਣ ਵਾਲੀਆਂ presence_far ਘਟਨਾਵਾਂ ਟਾਈਮਰ ਮੁੜ ਸ਼ੁਰੂ ਨਹੀਂ ਕਰਦੀਆਂ। ElectricEel ਚੱਲਦਾ ਰਹਿਣਾ ਚਾਹੀਦਾ ਹੈ।</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="259" />
+      <location filename="../qml/pages/SettingsPage.qml" line="264" />
       <source>Export Automagic flows</source>
       <translation>Automagic ਫਲੋ ਨਿਰਯਾਤ ਕਰੋ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="262" />
+      <location filename="../qml/pages/SettingsPage.qml" line="267" />
       <source>Exporting Automagic flows...</source>
       <translation>Automagic ਫਲੋ ਨਿਰਯਾਤ ਕੀਤੇ ਜਾ ਰਹੇ ਹਨ...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="274" />
+      <location filename="../qml/pages/SettingsPage.qml" line="279" />
       <source>If you used Add Automagic flows in an earlier version, disable its old hotspot flows before importing this preset. Automagic lets you resolve matching IDs during import. Extra triggers are included for your own flows, such as launching an app.</source>
       <translation>ਜੇ ਤੁਸੀਂ ਪਿਛਲੇ ਵਰਜਨ ਵਿੱਚ Automagic ਫਲੋ ਸ਼ਾਮਲ ਕਰੋ ਵਰਤਿਆ ਸੀ, ਤਾਂ ਇਹ ਪ੍ਰੀਸੈੱਟ ਆਯਾਤ ਕਰਨ ਤੋਂ ਪਹਿਲਾਂ ਉਸ ਦੇ ਪੁਰਾਣੇ ਹੌਟਸਪੌਟ ਫਲੋ ਅਯੋਗ ਕਰੋ। Automagic ਆਯਾਤ ਦੌਰਾਨ ਇੱਕੋ ਜਿਹੇ ID ਦੇ ਟਕਰਾਅ ਹੱਲ ਕਰਨ ਦਿੰਦਾ ਹੈ। ਤੁਹਾਡੇ ਆਪਣੇ ਫਲੋ ਲਈ ਵਾਧੂ ਟ੍ਰਿਗਰ ਵੀ ਸ਼ਾਮਲ ਹਨ, ਜਿਵੇਂ ਕੋਈ ਐਪ ਚਲਾਉਣਾ।</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="279" />
+      <location filename="../qml/pages/SettingsPage.qml" line="284" />
       <source>Save</source>
       <translation>ਸੇਵ ਕਰੋ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="293" />
+      <location filename="../qml/pages/SettingsPage.qml" line="298" />
       <source>Pairing &amp; Keys</source>
       <translation>ਜੋੜਨਾ ਅਤੇ ਚਾਬੀਆਂ</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="297" />
+      <location filename="../qml/pages/SettingsPage.qml" line="302" />
       <source>About</source>
       <translation>ਬਾਰੇ</translation>
     </message>
@@ -884,21 +868,6 @@
       <location filename="../qml/pages/SettingsPage.qml" line="311" />
       <source>App: ElectricEel %1   |   core: %2</source>
       <translation>ਐਪ: ElectricEel %1   |   ਕੋਰ: %2</translation>
-    </message>
-    <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="315" />
-      <source>(too old / unknown)</source>
-      <translation>(ਬਹੁਤ ਪੁਰਾਣਾ / ਅਣਜਾਣ)</translation>
-    </message>
-    <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="328" />
-      <source>The control core is too old to report a version - reinstall the app.</source>
-      <translation>ਕੰਟਰੋਲ ਕੋਰ ਵਰਜ਼ਨ ਦੱਸਣ ਲਈ ਬਹੁਤ ਪੁਰਾਣਾ ਹੈ – ਐਪ ਮੁੜ ਇੰਸਟਾਲ ਕਰੋ।</translation>
-    </message>
-    <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="329" />
-      <source>Version mismatch: core %1 vs app %2 - reinstall the app.</source>
-      <translation>ਮੇਲ ਨਹੀਂ ਖਾਂਦਾ: ਕੋਰ %1 ਬਨਾਮ ਐਪ %2 – ਐਪ ਮੁੜ ਇੰਸਟਾਲ ਕਰੋ।</translation>
     </message>
   </context>
   <context>
@@ -910,7 +879,6 @@
     </message>
     <message>
       <location filename="../qml/js/VehicleState.js" line="47" />
-      <location filename="../qml/js/VehicleState.js" line="75" />
       <source>Model 3</source>
       <translation>Model 3</translation>
     </message>
@@ -933,6 +901,14 @@
       <location filename="../qml/js/VehicleState.js" line="51" />
       <source>Cybertruck</source>
       <translation>Cybertruck</translation>
+    </message>
+  </context>
+  <context>
+    <name>VersionWarning</name>
+    <message>
+      <location filename="../qml/pages/VersionWarning.qml" line="16" />
+      <source>Version mismatch: core %1 vs app %2 - reinstall the app.</source>
+      <translation>ਮੇਲ ਨਹੀਂ ਖਾਂਦਾ: ਕੋਰ %1 ਬਨਾਮ ਐਪ %2 – ਐਪ ਮੁੜ ਇੰਸਟਾਲ ਕਰੋ।</translation>
     </message>
   </context>
 </TS>

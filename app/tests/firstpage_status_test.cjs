@@ -3,7 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
 const vm = require("node:vm");
-const { loadFunctions, runHandler } = require("./qml_helpers.cjs");
+const { loadFunctions, runHandler, runRootHandler } = require("./qml_helpers.cjs");
 
 const root = path.join(__dirname, "../qml");
 const source = fs.readFileSync(path.join(root, "pages/FirstPage.qml"), "utf8");
@@ -58,10 +58,9 @@ test("late success and failure for a previous VIN cannot modify a new refresh", 
     const { context, requests } = dashboard();
     context.refreshStatus();
     const oldId = context.page.statusRequestId;
-    context.vin = "VIN B";
-    context.model = "modely";
-    context.hasKey = true;
-    runHandler(source, "onConfigLoaded", context);
+    // The page's vin binds to TeslaClient.vin; a new value runs onVinChanged.
+    context.page.vin = "VIN B";
+    runRootHandler(source, "onVinChanged", context);
     const newId = context.page.statusRequestId;
     assert.notEqual(newId, oldId);
     context.requestId = oldId;

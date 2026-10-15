@@ -3,25 +3,26 @@ const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
 const vm = require("node:vm");
-const { loadFunctions, runHandler } = require("./qml_helpers.cjs");
+const { loadFunctions, runHandler, runRootHandler } = require("./qml_helpers.cjs");
 const source = (file) => fs.readFileSync(path.join(__dirname, "../qml", file), "utf8");
 
-test("category VIN changes invalidate both pending replies and vehicle snapshots", () => {
+test("category VIN changes invalidate pending replies", () => {
+    // vehicleStatus is the dashboard's live reading, which the dashboard
+    // itself clears on a VIN change (production_vehicle_switch_test).
     const qml = source("pages/CategoryPage.qml");
-    const page = { vin: "VIN-A", pendingCmd: "lock:VIN-A", pendingLabel: "Lock", lastResult: "old", vehicleStatus: { locked: true } };
-    const context = vm.createContext({ page, vin: "VIN-B", requestId: page.pendingCmd, ok: true, stdOut: "stale", stdErr: "", qsTr: (s) => s });
-    runHandler(qml, "onConfigLoaded", context);
+    const page = { vin: "VIN-B", pendingCmd: "lock:VIN-A", pendingLabel: "Lock", lastResult: "old" };
+    const context = vm.createContext({ page, requestId: page.pendingCmd, ok: true, stdOut: "stale", stdErr: "", qsTr: (s) => s });
+    runRootHandler(qml, "onVinChanged", context);
     runHandler(qml, "onCommandFinished", context);
     assert.equal(page.pendingCmd, "");
     assert.equal(page.lastResult, "");
-    assert.equal(page.vehicleStatus, null);
 });
 
 test("navigation VIN changes invalidate preview and send replies", () => {
     const qml = source("pages/NavigationPage.qml");
-    const page = { vin: "VIN-A", configReady: true, pendingPreviewId: "preview:VIN-A", pendingSendId: "send:VIN-A", previewing: true, sending: true, previewText: "old", resultText: "old" };
-    const context = vm.createContext({ page, vin: "VIN-B", requestId: page.pendingPreviewId });
-    runHandler(qml, "onConfigLoaded", context);
+    const page = { vin: "VIN-B", pendingPreviewId: "preview:VIN-A", pendingSendId: "send:VIN-A", previewing: true, sending: true, previewText: "old", resultText: "old" };
+    const context = vm.createContext({ page, requestId: page.pendingPreviewId });
+    runRootHandler(qml, "onVinChanged", context);
     runHandler(qml, "onDestinationPreviewed", context);
     context.requestId = "send:VIN-A";
     runHandler(qml, "onShareFinished", context);
@@ -36,7 +37,7 @@ test("navigation VIN changes invalidate preview and send replies", () => {
 test("a duplicate cover reply cannot clear the next command's busy state", () => {
     const qml = source("cover/CoverPage.qml");
     const cover = { vin: "VIN-A", canCommand: true, commandBusy: false, requestSeq: 0 };
-    const context = vm.createContext({ cover, teslaClient: { runCommand: () => {} } });
+    const context = vm.createContext({ cover, ok: true, teslaClient: { runCommand: () => {} } });
     loadFunctions(qml, ["runCoverCommand"], context);
     context.runCoverCommand("lock");
     const first = cover.pendingCmd;

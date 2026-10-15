@@ -3,6 +3,7 @@ package library
 import (
 	"bytes"
 	"context"
+	"sync/atomic"
 	"time"
 
 	"crypto/ecdh"
@@ -11,42 +12,41 @@ import (
 	"github.com/teslamotors/vehicle-command/pkg/protocol"
 	"github.com/teslamotors/vehicle-command/pkg/protocol/protobuf/signatures"
 	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/encoding/protowire"
 )
-
-// Find a length-delimited field while rejecting malformed protobuf data.
-func field(data []byte, wanted protowire.Number) ([]byte, bool) {
-	var result []byte
-	found := false
-	for len(data) > 0 {
-		num, kind, n := protowire.ConsumeTag(data)
-		if n < 0 {
-			return nil, false
-		}
-		data = data[n:]
-		if num == wanted && kind == protowire.BytesType {
-			value, n := protowire.ConsumeBytes(data)
-			if n < 0 {
-				return nil, false
-			}
-			result = value
-			found = true
-			data = data[n:]
-			continue
-		}
-		n = protowire.ConsumeFieldValue(num, kind, data)
-		if n < 0 {
-			return nil, false
-		}
-		data = data[n:]
-	}
-	return result, found
-}
 
 func authenticationLevel(data []byte) (int, bool) {
 	request, ok := phoneprotocol.ParseAuthenticationRequest(data)
 	level := request.RequestedLevel
 	return level, ok && (level == phoneprotocol.AuthLevelUnlock || level == phoneprotocol.AuthLevelDrive)
+}
+
+// authTap returns the GATT inbound observer for passive entry. It runs on the
+// RX loop, so it never blocks: ordinary command responses are discarded
+// here, and only the newest real AuthenticationRequest level is queued (the
+// vehicle repeats requests, so an older pending one is obsolete). A replaced
+// request is a diagnostic, not a session fault.
+func authTap(ctx context.Context, passive *atomic.Bool, requests chan int, logf func(string, ...interface{})) bluez.InboundObserver {
+	return func(data []byte) {
+		if ctx.Err() != nil || !passive.Load() {
+			return
+		}
+		level, ok := authenticationLevel(data)
+		if !ok {
+			return
+		}
+		for {
+			select {
+			case requests <- level:
+				return
+			default:
+			}
+			select {
+			case <-requests:
+				logf("passive entry replaced an unanswered authentication request")
+			default:
+			}
+		}
+	}
 }
 
 func (t *Tesla) startLinkObserver() {
@@ -61,19 +61,8 @@ func (t *Tesla) startLinkObserver() {
 	ctx, cancel := context.WithCancel(root)
 	t.linkCancel, t.linkDone = cancel, make(chan struct{})
 	done, car := t.linkDone, t.car
-	inbox := make(chan []byte, 64)
-	bz.SetInboundObserver(func(data []byte) {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
-		select {
-		case inbox <- data:
-		default:
-			t.observe(Observation{Kind: 4, Status: InternalBug, Error: "authentication inbox overflow"})
-		}
-	})
+	requests := make(chan int, 1)
+	bz.SetInboundObserver(authTap(ctx, &t.passive, requests, t.diagnostic))
 	go func() {
 		defer close(done)
 		defer t.backgroundGuard()
@@ -108,9 +97,8 @@ func (t *Tesla) startLinkObserver() {
 					t.observe(Observation{Kind: 2, Status: NotConnected, Error: "BlueZ reports disconnected"})
 					return
 				}
-			case data := <-inbox:
-				level, ok := authenticationLevel(data)
-				if !ok || !t.passive.Load() {
+			case level := <-requests:
+				if !t.passive.Load() {
 					continue
 				}
 				sendCtx, sendCancel := context.WithTimeout(ctx, 5*time.Second)

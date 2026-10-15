@@ -3,8 +3,8 @@
 Public header: `helper/session/abi/tesla_ble.h`.
 
 The production Harbour application uses the private Go library through the Rust
-wrapper. ABI v2 covers operations, observations and diagnostics. The standalone
-daemon retains its legacy transport separately, excluded from the app build.
+wrapper. ABI v2 covers operations, observations and diagnostics. The former
+standalone daemon and its legacy transport have been removed.
 
 ## Current operations
 
@@ -26,7 +26,8 @@ P-256 private scalar. Go copies and validates those inputs before create returns
 
 Rust's `protocol_client.rs` owns the controller/retry/idle threads and pairing
 orchestration. `phone_key.rs` holds pure proximity/inside policy;
-`protocol_commands.rs` parses input, schedules and key paths; `keys.rs` owns
+`protocol_commands.rs` is the single command-argument validator (ranges, arity,
+units) and builds the typed operations; `keys.rs` owns
 RustCrypto P-256 and compatible SEC1/PKCS8 persistence. Go's passive responder
 attaches before authentication and is independent of foreground operations.
 
@@ -42,8 +43,12 @@ attaches before authentication and is independent of foreground operations.
 - Callbacks are serialized per session and run on Go-managed threads. They copy
   data into Rust channels; they do not perform file I/O, call Qt, block or re-enter
   the library. Buffers are borrowed only until the callback returns.
-- Operation results distinguish cancellation, timeout, not-connected, internal
-  bugs and uncertain success. Cancellation cannot undo a sent vehicle command.
+- Operation results distinguish cancellation, timeout, not-connected, Bluetooth
+  off, authentication failure (including `ErrKeyNotPaired` and inactive-key
+  faults), internal bugs and uncertain success. Radio-off and adapter errors are
+  permanent and not retried. A command on a dropped link reports not-connected
+  and never reconnects silently. Cancellation cannot undo a sent vehicle
+  command.
 - Dropping the Rust operation future requests cancellation. The completion still
   drains even if that future's receiver has gone away.
 - Stop is asynchronous and idempotent. It rejects new work and cancels active work.
@@ -66,8 +71,10 @@ does not accept further operations on faulted state. Teardown panics are logged
 without claiming resources were released. This does not contain fatal Go runtime
 errors or all dependency-owned goroutine panics.
 
-Go/BlueZ diagnostics use a bounded Rust channel. Rust maintenance writes them
-to the daily logger; overflow is counted/reported. Logger detachment waits for
+Each session opens BlueZ with its own diagnostics logger (`bluez.Open(log)`);
+there is no process-global Go logger, and Go writes no log files. Diagnostics
+arrive as observations of kind 6 on a bounded Rust channel. Rust maintenance
+writes them to the daily logger; overflow is counted/reported. Logger detachment waits for
 borrowed callbacks before releasing their context.
 
 Advertisements coalesce. Other raw observation overflow faults the session
@@ -77,24 +84,25 @@ completions and stop/destroy ownership barriers are never lossy queues.
 
 ## Host verification
 
-From the repository root (choose an existing temporary output directory):
+CI runs these on every push (`ffi` job in `.github/workflows/ci.yml`). From the
+repository root, with any scratch directory:
 
 ```sh
-CC=gcc GOEXPERIMENT=cgocheck2 bash helper/session/build-library.sh /tmp/opencode/libteslable.so
-TESLA_BLE_TEST_LIBRARY=/tmp/opencode/libteslable.so \
-  cargo test --manifest-path helper/Cargo.toml --lib --features runtime -- --include-ignored
-cargo test --manifest-path helper/Cargo.toml --lib --features runtime
-cargo clippy --manifest-path helper/Cargo.toml --lib --features app-entry -- -D warnings
+out="$(mktemp -d)"
+CC=gcc GOEXPERIMENT=cgocheck2 bash helper/session/build-library.sh "$out/libteslable.so"
+TESLA_BLE_TEST_LIBRARY="$out/libteslable.so" \
+  cargo test --locked --manifest-path helper/Cargo.toml --lib --features runtime -- --include-ignored
+cargo clippy --locked --manifest-path helper/Cargo.toml --lib --features app-entry -- -D warnings
 ```
 
-From `helper/session`:
+From `helper/session` (same `$out`):
 
 ```sh
 CC=gcc go test -race ./...
 gcc -Wall -Wextra -Werror -I abi abi/smoke.c \
-  -L /tmp/opencode -lteslable -Wl,-rpath,/tmp/opencode \
-  -pthread -o /tmp/opencode/teslable-smoke
-/tmp/opencode/teslable-smoke
+  -L "$out" -lteslable -Wl,-rpath,"$out" \
+  -pthread -o "$out/teslable-smoke"
+"$out/teslable-smoke"
 ```
 
 The C smoke test and Rust integration test call the real Go library without
@@ -125,8 +133,9 @@ GOOS=linux GOARCH=arm64 CGO_ENABLED=1 \
 The source, Go installation/module cache, build output and `TMPDIR` must be
 accessible under paths visible to both the host tools and sb2 (paths under
 `/home/mersdk` worked). Running the host Go executable itself inside sb2 did not.
-Read-only checkouts mounted with a different owner may need `-buildvcs=false`
-for this isolated proof build; ordinary release builds should retain VCS metadata.
+Read-only checkouts mounted with a different owner need `-buildvcs=false`;
+both `helper/build-go-library-sdk.sh` and `helper/session/build-library.sh`
+build with `-buildvcs=false -trimpath`.
 
 ELF inspection found AArch64 shared-object output, `NODELETE`, dependencies on
 `libc.so.6` and `libresolv.so.2`, and required GLIBC versions through 2.34. That
@@ -143,4 +152,5 @@ ELF files and installs the private library as 0644. Narrow private-library metad
 exclusions retain allowed Qt/system dependencies; explicit Qt package requirements
 and versioned runtime requirements are removed.
 
-See `docs/go-c-abi-migration-plan.md` for verification and outstanding field checks.
+Hardware verification and outstanding field checks are tracked in
+[ble-field-test.md](ble-field-test.md) and [limitations.md](limitations.md).

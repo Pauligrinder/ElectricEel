@@ -22,7 +22,12 @@ ApplicationWindow
         target: DisplayBlanking
         onStatusChanged: teslaClientInstance.logPowerState("display status=" + DisplayBlanking.status)
     }
-    Component.onCompleted: teslaClientInstance.logPowerState("display status=" + DisplayBlanking.status)
+    Component.onCompleted: {
+        teslaClientInstance.logPowerState("display status=" + DisplayBlanking.status)
+        // The single startup configuration read. TeslaClient publishes the
+        // result as properties; pages bind to them instead of re-reading.
+        teslaClientInstance.refreshConfig()
+    }
 
     PhoneKeyEvents { client: teslaClientInstance }
 

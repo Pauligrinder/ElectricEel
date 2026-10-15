@@ -3,7 +3,8 @@
 set -euo pipefail
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 target="${SAILFISH_TARGET:-SailfishOS-5.2.0.15-aarch64}"
-image="${SAILFISH_SDK_IMAGE:-coderus/sailfishos-platform-sdk-aarch64}"
+# Pinned SDK image (keep in sync with .github/workflows/*.yml and build.sh).
+image="${SAILFISH_SDK_IMAGE:-coderus/sailfishos-platform-sdk-aarch64:5.2.0.15@sha256:e5f7596d14502746b308c3dde36f65fc25d7f76c45a01acaed56a1f55b76f592}"
 container="electric-eel-go-build-$$"
 go_root="$(go env GOROOT)"
 module_cache="$(go env GOMODCACHE)"

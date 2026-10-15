@@ -1,7 +1,7 @@
 use std::fmt;
 use std::fs;
 use std::io::{self, Write};
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::Path;
 use std::sync::LazyLock;
 
@@ -13,22 +13,49 @@ use tempfile::NamedTempFile;
 pub(crate) const MAX_TIMEOUT_SEC: i32 = 300;
 pub(crate) const MAX_KEY_NAME_LEN: usize = 64;
 
-/// The accepted values of Config.model. "" is "Auto (from VIN)": the QML
-/// client guesses the model from the VIN's WMI prefix and nothing is forced.
-/// Every other entry doubles as a `Model` id in the client-side MODELS list
-/// (app/qml/js/VehicleState.js) and a key into the model images the front
-/// page shows. Keep this, VehicleState.js's MODELS, and that file's
+/// The accepted values of Config.model. `Auto` ("") is "Auto (from VIN)":
+/// the QML client guesses the model from the VIN's WMI prefix and nothing is
+/// forced. Every other name doubles as a `Model` id in the client-side MODELS
+/// list (app/qml/js/VehicleState.js) and a key into the model images the
+/// front page shows. Keep this, VehicleState.js's MODELS, and that file's
 /// VIN-prefix `guessModel()` table in sync when adding/removing models.
-pub(crate) const VALID_MODELS: [&str; 6] =
-    ["", "model3", "models", "modelx", "modely", "cybertruck"];
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Default,
+    PartialEq,
+    Eq,
+    Serialize,
+    strum::EnumString,
+    strum::IntoStaticStr,
+    strum::VariantArray,
+)]
+#[serde(rename_all = "lowercase")]
+#[strum(serialize_all = "lowercase", ascii_case_insensitive)]
+pub(crate) enum Model {
+    #[default]
+    #[serde(rename = "")]
+    #[strum(serialize = "")]
+    Auto,
+    Model3,
+    Models,
+    Modelx,
+    Modely,
+    Cybertruck,
+}
+
+impl Model {
+    /// Parses a user/file value, ignoring surrounding whitespace and case.
+    pub(crate) fn parse(text: &str) -> Result<Self, ConfigError> {
+        text.trim().parse().map_err(|_| ConfigError::InvalidModel)
+    }
+}
 
 static VIN_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-HJ-NPR-Z0-9]{17}$").unwrap());
-// key_name is functionally near-inert (tesla-control only consults it for
-// an OS-keyring-backed key, and this app always passes -keyring-type file,
-// which loads by -key-file and never reaches the keyring lookup) - this
-// isn't guarding against it doing anything dangerous, just against an
-// unbounded/control-character string sitting in config.json and getting
-// echoed into SetConfig's journal log line on every call.
+// key_name is a display-only label (the protocol library never uses it) -
+// this only keeps an unbounded/control-character string out of config.json
+// and the set_config log line.
 static KEY_NAME_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Za-z0-9 ._-]*$").unwrap());
 
 /// Validation failure for a `SetConfig` payload.
@@ -56,9 +83,10 @@ impl fmt::Display for ConfigError {
             ConfigError::InvalidModel => write!(
                 f,
                 "model must be one of {}",
-                VALID_MODELS
-                    .into_iter()
-                    .filter(|m| !m.is_empty())
+                <Model as strum::VariantArray>::VARIANTS
+                    .iter()
+                    .filter(|m| **m != Model::Auto)
+                    .map(|m| <&str>::from(*m))
                     .collect::<Vec<_>>()
                     .join(", ")
             ),
@@ -140,11 +168,11 @@ pub(crate) struct Config {
     // (anything pre-0.1.6) have no "model" key. Without a default, serde
     // treats that as a missing required field and Config::load() rejects
     // the whole file, silently falling back to Config::default() - which
-    // wipes the already-configured VIN from the running daemon too, not
+    // wipes the already-configured VIN too, not
     // just the model. sanitize() still normalizes/validates whatever comes
     // out of this either way.
     #[serde(default)]
-    pub model: String,
+    pub model: Model,
     pub key_name: String,
     pub connect_timeout_sec: i32,
     pub command_timeout_sec: i32,
@@ -162,7 +190,7 @@ impl Default for Config {
         Config {
             version: ConfigVersion::CURRENT,
             vin: String::new(),
-            model: String::new(),
+            model: Model::Auto,
             key_name: "harbour-electric-eel".to_string(),
             connect_timeout_sec: 20,
             command_timeout_sec: 5,
@@ -239,7 +267,10 @@ impl<'de> Deserialize<'de> for Config {
         Ok(Config {
             version,
             vin: raw.vin,
-            model: raw.model,
+            model: Model::parse(&raw.model).unwrap_or_else(|_| {
+                eprintln!("electric-eel: config.json model fails validation, resetting to default");
+                Model::default()
+            }),
             key_name: raw.key_name,
             connect_timeout_sec: raw.connect_timeout_sec,
             command_timeout_sec: raw.command_timeout_sec,
@@ -329,13 +360,6 @@ impl Config {
         } else {
             self.vin = vin_trimmed;
         }
-        let model = self.model.trim().to_ascii_lowercase();
-        if VALID_MODELS.contains(&model.as_str()) {
-            self.model = model;
-        } else {
-            eprintln!("electric-eel: config.json model fails validation, resetting to default");
-            self.model = default.model;
-        }
         let key_name_trimmed = self.key_name.trim().to_string();
         if key_name_trimmed.len() > MAX_KEY_NAME_LEN || !KEY_NAME_RE.is_match(&key_name_trimmed) {
             eprintln!("electric-eel: config.json key_name fails validation, resetting to default");
@@ -369,7 +393,12 @@ impl Config {
 
 /// Durable owner-only replacement shared by configuration and public-key writes.
 pub(crate) fn write_atomic(path: &Path, data: &[u8]) -> io::Result<()> {
-    let dir = path.parent().unwrap_or_else(|| Path::new("."));
+    // A bare file name has the empty parent "", which can't be opened for the
+    // directory fsync; it means the current directory.
+    let dir = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
     let mut tmp = NamedTempFile::new_in(dir)?;
     tmp.as_file()
         .set_permissions(fs::Permissions::from_mode(0o600))?;
@@ -395,47 +424,19 @@ fn backup_corrupt_config(path: &Path, data: &[u8]) {
     ));
     // Create with 0600 atomically (no world-readable window) and fail if the
     // name exists instead of overwriting.
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
-        match std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
-            .open(&backup)
-        {
-            Ok(mut f) => {
-                if let Err(e) = f.write_all(data) {
-                    eprintln!(
-                        "electric-eel: could not back up corrupt config {}: {}",
-                        backup.display(),
-                        e
-                    );
-                    return;
-                }
-            }
-            Err(e) => {
-                eprintln!(
-                    "electric-eel: could not back up corrupt config {}: {}",
-                    backup.display(),
-                    e
-                );
-                return;
-            }
-        }
-        // Defense in depth: ensure mode even if the platform ignored it.
-        let _ = std::fs::set_permissions(&backup, std::fs::Permissions::from_mode(0o600));
-    }
-    #[cfg(not(unix))]
-    {
-        if let Err(e) = fs::write(&backup, data) {
-            eprintln!(
-                "electric-eel: could not back up corrupt config {}: {}",
-                backup.display(),
-                e
-            );
-            return;
-        }
+    let written = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(&backup)
+        .and_then(|mut file| file.write_all(data));
+    if let Err(e) = written {
+        eprintln!(
+            "electric-eel: could not back up corrupt config {}: {}",
+            backup.display(),
+            e
+        );
+        return;
     }
     eprintln!(
         "electric-eel: backed up unparseable config to {}",
@@ -494,16 +495,16 @@ fn prune_corrupt_backups(path: &Path) {
     }
 }
 
-/// Returns `Ok(())` if the inputs are acceptable, else a human-readable error.
-/// Shared by `SetConfig` and unit tests so the bounds can be verified without a
-/// live D-Bus connection.
+/// Returns the parsed model if the inputs are acceptable, else a
+/// human-readable error. Shared by `Core::set_config_with_cover_actions` and
+/// unit tests.
 pub(crate) fn validate_config(
     vin: &str,
     model: &str,
     key_name: &str,
     connect_timeout: i32,
     command_timeout: i32,
-) -> Result<(), ConfigError> {
+) -> Result<Model, ConfigError> {
     if connect_timeout <= 0 || command_timeout <= 0 {
         return Err(ConfigError::PositiveTimeout);
     }
@@ -514,19 +515,30 @@ pub(crate) fn validate_config(
     if !vin.is_empty() && !VIN_RE.is_match(vin) {
         return Err(ConfigError::InvalidVin);
     }
-    if !VALID_MODELS.contains(&model.trim().to_ascii_lowercase().as_str()) {
-        return Err(ConfigError::InvalidModel);
-    }
+    let model = Model::parse(model)?;
     let key_name = key_name.trim();
     if key_name.len() > MAX_KEY_NAME_LEN || !KEY_NAME_RE.is_match(key_name) {
         return Err(ConfigError::InvalidKeyName);
     }
-    Ok(())
+    Ok(model)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn model_parses_case_insensitively_and_serializes_lowercase() {
+        assert_eq!(Model::parse(" ModelY ").unwrap(), Model::Modely);
+        assert_eq!(Model::parse("").unwrap(), Model::Auto);
+        assert_eq!(Model::parse("roadster"), Err(ConfigError::InvalidModel));
+        assert_eq!(serde_json::to_value(Model::Auto).unwrap(), "");
+        assert_eq!(serde_json::to_value(Model::Model3).unwrap(), "model3");
+        assert_eq!(
+            ConfigError::InvalidModel.to_string(),
+            "model must be one of model3, models, modelx, modely, cybertruck"
+        );
+    }
 
     #[test]
     fn explicit_null_enrollment_is_not_misclassified_as_legacy_v0() {
@@ -781,7 +793,7 @@ mod tests {
         let cfg = Config {
             version: ConfigVersion::CURRENT,
             vin: "5YJ3E1EA0PF000000".to_string(),
-            model: String::new(),
+            model: Model::Auto,
             key_name: "harbour-electric-eel".to_string(),
             connect_timeout_sec: 20,
             command_timeout_sec: 5,
@@ -874,7 +886,8 @@ mod tests {
             "pre-existing VIN must survive loading an old config.json"
         );
         assert_eq!(
-            cfg.model, "",
+            cfg.model,
+            Model::Auto,
             "missing model field should default to Auto, not reject the file"
         );
         assert_eq!(cfg.key_name, "harbour-electric-eel");

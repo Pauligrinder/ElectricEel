@@ -2,6 +2,7 @@ package bluez
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -13,6 +14,11 @@ import (
 const (
 	connectRetryInitial = 500 * time.Millisecond
 	connectRetryMax     = 3 * time.Second
+	// discoveryStopGrace bounds the wait for Adapter1.Discovering to drop.
+	// The property is adapter-wide: another client's discovery session (the
+	// Bluetooth settings page, another BLE app) keeps it true no matter what
+	// we do, so after the grace period Device1.Connect is attempted anyway.
+	discoveryStopGrace = time.Second
 )
 
 // connect connects to the vehicle and returns a live connector. If target is
@@ -29,21 +35,22 @@ func connect(ctx context.Context, bus dbusBus, adapterID, vin string, target *Sc
 		attemptStart := time.Now()
 		cc, retry, err := tryConnect(ctx, bus, adapterID, vin, target)
 		if err == nil {
-			diagnostic("connect ready attempts=%d elapsed=%s", attempts, time.Since(started).Round(time.Millisecond))
+			bus.logf("connect ready attempts=%d elapsed=%s", attempts, time.Since(started).Round(time.Millisecond))
 			return cc, nil
 		}
-		diagnostic("connect attempt=%d duration=%s retry=%v: %s", attempts, time.Since(attemptStart).Round(time.Millisecond), retry, dbusDetail(err))
+		bus.logf("connect attempt=%d duration=%s retry=%v: %s", attempts, time.Since(attemptStart).Round(time.Millisecond), retry, dbusDetail(err))
 		if !retry || IsAdapterError(err) {
 			return nil, err
 		}
 		lastErr = err
 		select {
 		case <-ctx.Done():
-			diagnostic("connect deadline attempts=%d elapsed=%s", attempts, time.Since(started).Round(time.Millisecond))
-			if lastErr != nil {
-				return nil, fmt.Errorf("%v: %w", lastErr, ctx.Err())
+			bus.logf("connect deadline attempts=%d elapsed=%s", attempts, time.Since(started).Round(time.Millisecond))
+			if lastErr == nil || errors.Is(lastErr, ctx.Err()) {
+				return nil, ctx.Err()
 			}
-			return nil, ctx.Err()
+			// Keep both causes typed for classification.
+			return nil, fmt.Errorf("%w: %w", lastErr, ctx.Err())
 		case <-time.After(backoff):
 			// Exponential backoff so a persistently-failing connect can't
 			// hammer bluetoothd (observed to crash Sailfish BT when retried
@@ -77,9 +84,9 @@ func tryConnect(ctx context.Context, bus dbusBus, adapterID, vin string, target 
 	// le-connection-abort-by-local: the adapter cancels the LE create-
 	// connection when the scanner is still running. Presence's Watcher
 	// restarts discovery on the next Peek if this attempt fails.
-	diagnostic("connect stopping discovery before Device1.Connect")
+	bus.logf("connect stopping discovery before Device1.Connect")
 	stopDiscovery(ctx, bus, adapterPath)
-	if err := waitDiscoveryStopped(ctx, bus, adapterPath); err != nil {
+	if err := waitDiscoveryStopped(ctx, bus, adapterPath, discoveryStopGrace); err != nil {
 		return nil, true, err
 	}
 	// Do not let completion of an old Disconnect tear down the new link.
@@ -95,12 +102,12 @@ func tryConnect(ctx context.Context, bus dbusBus, adapterID, vin string, target 
 		return nil, true, ctx.Err()
 	case <-time.After(150 * time.Millisecond):
 	}
-	diagnostic("connect Device1.Connect begin")
+	bus.logf("connect Device1.Connect begin")
 	if err := connectDevice(ctx, bus, devPath); err != nil {
 		abortDeviceConnect(bus, devPath)
 		return nil, true, err
 	}
-	diagnostic("connect Device1.Connect ok; waiting for ServicesResolved")
+	bus.logf("connect Device1.Connect ok; waiting for ServicesResolved")
 	// GATT objects only materialize once the remote services are resolved.
 	if err := waitServicesResolved(ctx, bus, devPath); err != nil {
 		// The connect deadline has usually expired here. Probe with a fresh,
@@ -110,7 +117,7 @@ func tryConnect(ctx context.Context, bus dbusBus, adapterID, vin string, target 
 		abortDeviceConnect(bus, devPath)
 		return nil, true, err
 	}
-	diagnostic("connect services resolved; finding GATT characteristics")
+	bus.logf("connect services resolved; finding GATT characteristics")
 	svcPath, txPath, rxPath, err := discoverGATT(ctx, bus, devPath)
 	if err != nil {
 		abortDeviceConnect(bus, devPath)
@@ -201,11 +208,19 @@ func waitDeviceDisconnected(ctx context.Context, bus dbusBus, path dbus.ObjectPa
 	}
 }
 
-func waitDiscoveryStopped(ctx context.Context, bus dbusBus, path dbus.ObjectPath) error {
+// waitDiscoveryStopped waits up to grace for the adapter to stop scanning.
+// Only cancellation of ctx is an error; a scan that outlives grace belongs to
+// another client and is logged, not waited for.
+func waitDiscoveryStopped(ctx context.Context, bus dbusBus, path dbus.ObjectPath, grace time.Duration) error {
+	deadline := time.Now().Add(grace)
 	for {
 		discovering, err := adapterIsDiscovering(ctx, bus, path)
 		if err != nil || !discovering {
 			return err
+		}
+		if time.Now().After(deadline) {
+			bus.logf("connect proceeding while another client keeps discovery active")
+			return nil
 		}
 		select {
 		case <-ctx.Done():
@@ -246,7 +261,7 @@ func abortDeviceConnect(bus dbusBus, devPath dbus.ObjectPath) {
 	defer cancel()
 	started := time.Now()
 	_, err := bus.object(bluezService, devPath).call(ctx, deviceIface+".Disconnect")
-	diagnostic("connect cleanup Disconnect duration=%s error=%s", time.Since(started).Round(time.Millisecond), dbusDetail(err))
+	bus.logf("connect cleanup Disconnect duration=%s error=%s", time.Since(started).Round(time.Millisecond), dbusDetail(err))
 }
 
 // waitServicesResolved polls Device1.ServicesResolved until the remote GATT
@@ -259,27 +274,27 @@ func waitServicesResolved(ctx context.Context, bus dbusBus, devPath dbus.ObjectP
 	for {
 		v, err := obj.getProp(ctx, deviceIface, "ServicesResolved")
 		if err != nil {
-			diagnostic("connect services read failed elapsed=%s polls=%d error=%s", time.Since(started).Round(time.Millisecond), polls, dbusDetail(err))
+			bus.logf("connect services read failed elapsed=%s polls=%d error=%s", time.Since(started).Round(time.Millisecond), polls, dbusDetail(err))
 			return fmt.Errorf("bluez: read ServicesResolved: %w", err)
 		}
 		polls++
 		if resolved, ok := variantBool(v); ok && resolved {
-			diagnostic("connect services wait complete elapsed=%s polls=%d", time.Since(started).Round(time.Millisecond), polls)
+			bus.logf("connect services wait complete elapsed=%s polls=%d", time.Since(started).Round(time.Millisecond), polls)
 			return nil
 		}
 		if time.Since(lastProgress) >= 3*time.Second {
 			lastProgress = time.Now()
 			connected, err := obj.getProp(ctx, deviceIface, "Connected")
 			if err != nil {
-				diagnostic("connect services pending elapsed=%s polls=%d connectedError=%s", time.Since(started).Round(time.Millisecond), polls, dbusDetail(err))
+				bus.logf("connect services pending elapsed=%s polls=%d connectedError=%s", time.Since(started).Round(time.Millisecond), polls, dbusDetail(err))
 			} else {
 				value, ok := variantBool(connected)
-				diagnostic("connect services pending elapsed=%s polls=%d connected=%v valid=%v", time.Since(started).Round(time.Millisecond), polls, value, ok)
+				bus.logf("connect services pending elapsed=%s polls=%d connected=%v valid=%v", time.Since(started).Round(time.Millisecond), polls, value, ok)
 			}
 		}
 		select {
 		case <-ctx.Done():
-			diagnostic("connect services wait timeout elapsed=%s polls=%d", time.Since(started).Round(time.Millisecond), polls)
+			bus.logf("connect services wait timeout elapsed=%s polls=%d", time.Since(started).Round(time.Millisecond), polls)
 			return ctx.Err()
 		case <-time.After(pollInterval):
 		}
@@ -296,11 +311,11 @@ func logDeviceState(bus dbusBus, devPath dbus.ObjectPath, phase string) {
 	for _, property := range []string{"Connected", "ServicesResolved"} {
 		v, err := obj.getProp(ctx, deviceIface, property)
 		if err != nil {
-			diagnostic("connect %s %s error=%s", phase, property, dbusDetail(err))
+			bus.logf("connect %s %s error=%s", phase, property, dbusDetail(err))
 			continue
 		}
 		value, ok := variantBool(v)
-		diagnostic("connect %s %s=%v valid=%v", phase, property, value, ok)
+		bus.logf("connect %s %s=%v valid=%v", phase, property, value, ok)
 	}
 }
 

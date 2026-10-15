@@ -3,7 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
 const vm = require("node:vm");
-const { loadFunctions, runHandler } = require("./qml_helpers.cjs");
+const { loadFunctions, runHandler, runRootHandler } = require("./qml_helpers.cjs");
 
 // Production review round 2: each test encodes the DESIRED behavior.
 // All tests FAIL on the current code and PASS once the fix lands.
@@ -101,17 +101,14 @@ test("PairingPage VIN change invalidates a pending list-keys reply", () => {
     // never touches pendingListKeysId. Switching VIN while list-keys is in
     // flight lets the old VIN's reply render as the new VIN's keys.
     // Desired: pendingListKeysId cleared on VIN change.
+    // page.vin binds to TeslaClient.vin; a new value runs onVinChanged.
     const page = {
-        configReady: true, vin: "VIN-A", hasVin: true,
+        configReady: true, vin: "VIN-B", hasVin: true,
         publicKeyPem: "", pendingListKeysId: "list-keys#1:VIN-A",
         keysListOutput: "old",
     };
-    const context = vm.createContext({
-        page, vin: "VIN-B", model: "", hasKey: true, publicKeyPem: "",
-        qsTr: (s) => s,
-    });
-    runHandler(pairingSource, "onConfigLoaded", context);
-    assert.equal(page.vin, "VIN-B");
+    const context = vm.createContext({ page, qsTr: (s) => s });
+    runRootHandler(pairingSource, "onVinChanged", context);
     assert.equal(page.pendingListKeysId, "", `stale list-keys ${JSON.stringify(page.pendingListKeysId)} survives VIN switch and can render old VIN keys`);
 });
 
@@ -130,23 +127,27 @@ test("PairingPage List Enrolled Keys is single-flight", () => {
 });
 
 test("every command surface handles a failed config load", () => {
-    // Bug: only FirstPage and SettingsPage handle onConfigLoadError (queue-full
-    // get_config emits configLoadError, not configLoaded). CategoryPage,
-    // NavigationPage, PairingPage and CoverPage have no handler, so their
-    // configReady stays false forever: delegates disabled, Pairing spinner
-    // spins, no message, no retry. Desired: each surface reports the failure.
+    // Bug: only FirstPage and SettingsPage handled a failed get_config
+    // (queue full), so other surfaces stayed disabled/spinning with no
+    // message or retry. TeslaClient now publishes configError; every
+    // command surface must render it (pages via the shared banner).
+    const firstPageSource = fs.readFileSync(path.join(qmlRoot, "pages/FirstPage.qml"), "utf8");
     for (const [name, source] of [
+        ["FirstPage", firstPageSource],
         ["CategoryPage", categorySource],
         ["NavigationPage", navigationSource],
         ["PairingPage", pairingSource],
-        ["CoverPage", coverSource],
     ]) {
         assert.match(
             source,
-            /onConfigLoadError/,
-            `${name} has no onConfigLoadError; a queue-full get_config leaves it disabled/spinning with no message`,
+            /ConfigErrorBanner\s*\{\s*client:\s*teslaClient\s*\}/,
+            `${name} does not show the configuration error; a queue-full get_config leaves it disabled with no message`,
         );
     }
+    assert.match(coverSource, /teslaClient\.configError/, "CoverPage does not show the configuration error");
+    const banner = fs.readFileSync(path.join(qmlRoot, "pages/ConfigErrorBanner.qml"), "utf8");
+    assert.match(banner, /client\.configError/);
+    assert.match(banner, /refreshConfig\(\)/, "the banner must offer a retry");
 });
 
 test("ArgumentDialog rejects whitespace-only and non-numeric required input", () => {
@@ -185,25 +186,29 @@ test("VehicleState.guessModel ignores surrounding whitespace", () => {
     );
 });
 
-test("Rust preview ABI clears output slots on parse failure", () => {
-    // Bug: core_preview_destination's Err arm sets only ok=false +
-    // error_message, leaving kind/value1/value2 untouched (same stale-slot
-    // class as the already-fixed core_run/core_pair). A caller reusing slots
-    // reads the previous preview's kind/values after a failure.
-    // core_run's hard-error path clears to ""/-1; preview must do the same.
-    const ffi = fs.readFileSync(path.join(__dirname, "../../helper/src/ffi.rs"), "utf8");
-    const errArm = ffi.match(/pub unsafe extern "C" fn core_preview_destination[\s\S]*?Err\(e\) => \{([\s\S]*?)\n        \}/);
-    assert.ok(errArm, "core_preview_destination Err arm must be discoverable");
-    assert.match(errArm[1], /kind/, "preview failure leaves kind slot untouched; stale kind leaks into next preview");
-    assert.match(errArm[1], /value1/, "preview failure leaves value1 slot untouched");
+test("Rust preview notification clears every value on parse failure", () => {
+    // The UI receives previews only as runtime notifications (runtime_submit
+    // -> dispatch -> DestinationPreviewed); the synchronous core_* slot ABI is
+    // gone. A failed preview must still publish empty kind/value1/value2, never
+    // values left over from an earlier preview. Behaviour is executed by the
+    // Rust test runtime::tests::preview_and_share_failures_publish_empty_results.
+    const runtime = fs.readFileSync(path.join(__dirname, "../../helper/src/runtime.rs"), "utf8");
+    const arm = runtime.match(/Request::PreviewDestination \{ request_id, text \} => \{[\s\S]*?Err\(e\) => \(([\s\S]*?)\n\s*\),\n/);
+    assert.ok(arm, "PreviewDestination failure arm must be discoverable");
+    const fields = arm[1].split(",").map((field) => field.trim()).filter(Boolean);
+    assert.deepEqual(
+        fields.slice(0, 4),
+        // kind is an Option<DestinationKind>; None serializes as "".
+        ["false", "None", "String::new()", "String::new()"],
+        "preview failure must publish ok=false with empty kind/value1/value2",
+    );
 });
 
-test("Rust share ABI clears stdout on transport failure", () => {
-    // Same stale-slot shape for core_share_destination's Err arm:
-    // core_pair's Err arm clears stdout_out to "", but share leaves it
-    // untouched so a caller reusing slots reads the previous share's output.
-    const ffi = fs.readFileSync(path.join(__dirname, "../../helper/src/ffi.rs"), "utf8");
-    const errArm = ffi.match(/pub unsafe extern "C" fn core_share_destination[\s\S]*?Err\(e\) => \{([\s\S]*?)\n        \}/);
-    assert.ok(errArm, "core_share_destination Err arm must be discoverable");
-    assert.match(errArm[1], /stdout_out/, "share failure leaves stdout_out untouched; stale output leaks into next share");
+test("Rust share notification clears output on failure", () => {
+    // ShareFinished is the runtime-path equivalent of core_share_destination's
+    // stdout slot: a failed share must publish an empty output.
+    const runtime = fs.readFileSync(path.join(__dirname, "../../helper/src/runtime.rs"), "utf8");
+    const arm = runtime.match(/Request::ShareDestination \{ request_id, text \} => \{[\s\S]*?unwrap_or_else\(\|e\| \((.*)\)\);/);
+    assert.ok(arm, "ShareDestination failure arm must be discoverable");
+    assert.match(arm[1], /^false, String::new\(\), e\.to_string\(\)$/, "share failure must publish an empty output");
 });

@@ -2,6 +2,7 @@
 name = "electric-eel-core"
 version = "0.3.5"
 edition = "2021"
+rust-version = "1.99"
 description = "In-process BLE control core for harbour-electric-eel"
 
 [lib]
@@ -9,17 +10,11 @@ name = "electriceelcore"
 crate-type = ["staticlib", "rlib"]
 path = "src/lib.rs"
 
-# The app uses zbus only as an MCE client; daemon authorization stays optional.
+# The app uses zbus only as an MCE (CPU keepalive) client.
 [features]
 default = []
 app-entry = ["runtime"]
 runtime = ["dep:zbus"]
-dbus = ["dep:zbus", "dep:procfs"]
-
-[[bin]]
-name = "electric-eel-daemon"
-path = "src/main.rs"
-required-features = ["dbus"]
 
 [lints.clippy]
 pedantic = "warn"
@@ -28,9 +23,7 @@ pedantic = "warn"
 async-channel = "2"
 async-io = "2"
 async-lock = "3"
-async-global-executor = "2"
 futures-lite = "2"
-procfs = { version = "0.18.0", default-features = false, optional = true }
 regex = "1"
 url = "2"
 serde = { version = "1", features = ["derive"] }
@@ -38,7 +31,6 @@ serde_json = "1"
 strum = { version = "0.27", features = ["derive"] }
 tempfile = "3.27.0"
 thiserror = "2"
-wait-timeout = "0.2"
 libc = "0.2"
 p256 = { version = "0.13", features = ["pem", "pkcs8"] }
 rand_core = { version = "0.6", features = ["getrandom"] }

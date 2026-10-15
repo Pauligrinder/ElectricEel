@@ -35,15 +35,18 @@ no "preview on screen" mode for these actions.
 One parser (`helper/src/share.rs`): shared text (max 2000 chars) becomes
 `LatLon` or `Address`.
 
-- `geo:lat,lon[?q=...]` (RFC 5870): coordinates win;
-  `geo:0,0?q=...` is an address search.
+- `geo:lat,lon[,alt][?q=...]` (RFC 5870): coordinates win and an altitude
+  is ignored; `geo:0,0?q=...` is an address search, unless `q` itself is a
+  coordinate pair (Android's `geo:0,0?q=lat,lng(label)`).
 - Map URLs, host-agnostic: structural rules extract coordinates from
   any map link — `pll` wins outright (portal over map center), then the
   first query/fragment value that strictly parses as a pair (exactly
   two in-range numbers, any of `,` `;` `~` `|` whitespace separators —
   singles like `z=17` can never match), then `lat`+`lon` split across
-  two params, then path patterns (`/@lat,lon`, `!3dLAT!4dLON`,
-  exactly-two bare-numeric slash runs like OSM `#map=z/lat/lon`).
+  two params, then path patterns (`/@lat,lon`, `!3dLAT!4dLON`), then a
+  map-view fragment `#map=zoom/lat/lon` (OSM/Leaflet). Numeric path
+  segments are never read as coordinates: `/forum/12/34/` or `/2024/05/`
+  stay opaque.
   A bare "first two floats" scan is deliberately NOT used: OSM leads
   with the zoom, `ll` precedes portal `pll`, viewports precede
   destinations, and addresses contain small numbers. Free text is never
@@ -53,8 +56,12 @@ One parser (`helper/src/share.rs`): shared text (max 2000 chars) becomes
 - Bare `lat,lon` / `lat lon` / `lat;lon` (lat −90..90, lon −180..180).
   Out-of-range pairs are rejected, never auto-swapped and never treated
   as addresses.
-- Anything else non-empty is address text. Empty/oversize input is
-  rejected before any radio use.
+- A trailing `(label)` after a coordinate pair is ignored, in `geo:` and
+  Google `q=` values as well as in bare text (`45.1,9.2(Home)`).
+- Anything else non-empty is address text. Control characters in address
+  text (a TAB, or a decoded `%0A`/`%09`) become spaces, because the car
+  protocol rejects them. Empty/oversize input is rejected before any radio
+  use.
 
 `LatLon` sends field 53, `Address` sends field 21. The Navigation page
 previews which one will be sent before confirming.
@@ -112,3 +119,10 @@ surfaces as a tap-to-send notification.
 | `https://www.waze.com/ul?z=10&ll=48.8584,2.2945` | LatLon(48.8584, 2.2945) |
 | `https://tile.openstreetmap.org/17/65535/48351.png` | Address (full URL, opaque) |
 | `Via Roma 45, 09125 Cagliari` | Address (same text, never hijacked) |
+| `geo:48.2010,16.3695,183` | LatLon(48.201, 16.3695) (altitude ignored) |
+| `geo:0,0?q=37.423,-122.084(Google)` | LatLon(37.423, -122.084) |
+| `https://maps.google.com/?q=45.1,9.2(Home)` | LatLon(45.1, 9.2) |
+| `https://example.com/forum/12/34/thread` | Address (full URL, opaque) |
+| `https://example.com/news/2024/05/new-supercharger` | Address (full URL, opaque) |
+| `Via Roma 1<TAB>Milano` | Address("Via Roma 1 Milano") |
+| `https://maps.google.com/?q=Via+Roma%0AMilano` | Address("Via Roma Milano") |

@@ -1,7 +1,8 @@
 //! Daily phone-key log files under Documents/ElectricEel (or
 //! `$ELECTRIC_EEL_LOG_DIR`). Rust is the application's sole file writer;
 //! Go/BlueZ diagnostics arrive through queued callbacks and share this trail.
-//! File locking retains compatibility with the optional standalone daemon.
+//! Appends hold an advisory `flock`, so concurrent instances cannot exceed
+//! the daily cap.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
@@ -12,7 +13,7 @@ use std::sync::Mutex;
 
 const ENV_DIR: &str = "ELECTRIC_EEL_LOG_DIR";
 const KEEP_DAYS: i64 = 7;
-// Shared with Go's keyLogMaxBytes. Both writers lock the same daily file.
+// Daily file cap. Appends lock the file around the size check.
 const MAX_LOG_BYTES: u64 = 10 * 1024 * 1024;
 
 static DAILY_LOG: Mutex<DailyLog> = Mutex::new(DailyLog {
@@ -38,7 +39,7 @@ impl DailyLog {
             let mut file = options.open(&path)?;
             file.set_permissions(fs::Permissions::from_mode(0o600))?;
             if file.metadata()?.len() == 0 {
-                write_capped(&mut file, format!("# ElectricEel phone-key log {day}\n# tags: session presence connect auth link core keepalive ui\n").as_bytes())?;
+                write_capped(&mut file, format!("# ElectricEel phone-key log {day}\n# tags: core go presence keepalive runtime ui\n").as_bytes())?;
             }
             self.path = Some(path);
             self.file = Some(file);
@@ -62,8 +63,8 @@ impl Drop for FileLock {
 
 fn write_capped(file: &mut File, bytes: &[u8]) -> io::Result<()> {
     let fd = file.as_raw_fd();
-    // SAFETY: fd belongs to the open file. Go uses flock on the same inode,
-    // making the size check + append atomic between the two processes.
+    // SAFETY: fd belongs to the open file. Every writer uses flock on this inode,
+    // making the size check + append atomic between writers.
     if unsafe { libc::flock(fd, libc::LOCK_EX) } != 0 {
         return Err(io::Error::last_os_error());
     }
@@ -75,8 +76,14 @@ fn write_capped(file: &mut File, bytes: &[u8]) -> io::Result<()> {
 }
 
 /// Directory for phone-key logs: env override, else `$HOME/Documents/ElectricEel`.
+/// Resolved once: Qt sets the override before any Rust thread starts.
 #[must_use]
-pub(crate) fn log_dir() -> PathBuf {
+pub(crate) fn log_dir() -> &'static Path {
+    static DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    DIR.get_or_init(resolve_log_dir)
+}
+
+fn resolve_log_dir() -> PathBuf {
     if let Ok(dir) = std::env::var(ENV_DIR) {
         if !dir.is_empty() {
             return PathBuf::from(dir);
@@ -94,7 +101,7 @@ pub(crate) fn log(tag: &str, message: &str) {
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let day = local_day_string();
     let line = format!("{}  {tag:<10}  {message}\n", local_stamp());
-    let _ = log.append(&dir, &day, line.as_bytes());
+    let _ = log.append(dir, &day, line.as_bytes());
     drop(log);
     eprintln!("phone-key: {tag}  {message}");
 }
@@ -123,18 +130,17 @@ pub(crate) fn utc_stamp() -> String {
 }
 
 fn local_stamp() -> String {
-    // SAFETY: libc time/localtime_r/gettimeofday are process-global but we
-    // only format into a stack buffer here; DAILY_LOG serializes file writes.
+    // SAFETY: libc writes only into these stack-owned time structures. One
+    // gettimeofday supplies both the seconds and the milliseconds, so a stamp
+    // can never combine one second with the next second's milliseconds.
     unsafe {
-        let mut ts: libc::time_t = 0;
-        libc::time(&raw mut ts);
-        let mut tm: libc::tm = std::mem::zeroed();
-        libc::localtime_r(&raw const ts, &raw mut tm);
         let mut tv = libc::timeval {
             tv_sec: 0,
             tv_usec: 0,
         };
         libc::gettimeofday(&raw mut tv, std::ptr::null_mut());
+        let mut tm: libc::tm = std::mem::zeroed();
+        libc::localtime_r(&raw const tv.tv_sec, &raw mut tm);
         let ms = u32::try_from(tv.tv_usec / 1000).unwrap_or(0);
         format!(
             "{:02}:{:02}:{:02}.{:03}",

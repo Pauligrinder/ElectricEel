@@ -26,7 +26,7 @@ pub(crate) enum Notification {
         generation: u64,
     },
     PhoneKeyEvent {
-        kind: String,
+        kind: crate::phone_key::PresenceEvent,
         vin: String,
         time: String,
         error: String,
@@ -67,7 +67,7 @@ pub(crate) enum Notification {
     },
     ConfigLoaded {
         vin: String,
-        model: String,
+        model: crate::config::Model,
         key_name: String,
         connect_timeout_sec: i32,
         command_timeout_sec: i32,
@@ -79,7 +79,9 @@ pub(crate) enum Notification {
     DestinationPreviewed {
         request_id: String,
         ok: bool,
-        kind: String,
+        /// `""` when `ok` is false.
+        #[serde(serialize_with = "kind_or_empty")]
+        kind: Option<crate::share::DestinationKind>,
         value1: String,
         value2: String,
         error: String,
@@ -92,6 +94,17 @@ pub(crate) enum Notification {
     },
 }
 
+#[allow(clippy::ref_option, clippy::trivially_copy_pass_by_ref)] // serde `serialize_with` signature.
+fn kind_or_empty<S: serde::Serializer>(
+    kind: &Option<crate::share::DestinationKind>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    match kind {
+        Some(kind) => kind.serialize(serializer),
+        None => serializer.serialize_str(""),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -100,7 +113,7 @@ mod tests {
     #[test]
     fn wire_tags_fields_and_private_metadata_match_qt_contract() {
         let event = Notification::PhoneKeyEvent {
-            kind: "presence_away_confirmed".into(),
+            kind: crate::phone_key::PresenceEvent::AwayConfirmed,
             vin: "VIN".into(),
             time: "TIME".into(),
             error: String::new(),

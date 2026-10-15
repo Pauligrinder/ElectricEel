@@ -88,8 +88,7 @@ processed for the current VIN/session. Repeated far events do not extend the
 deadline. Inside events cancel it, including those already queued at expiry;
 near/authentication events alone do not. Stopping/restarting presence, changing
 the VIN/session generation, or exiting the app discards it. There is no timer
-restore on restart and no replay. The optional standalone daemon does not
-produce this runtime-derived event. Its timestamp is the time of emission.
+restore on restart and no replay. Its timestamp is the time of emission.
 
 Consumers can start an integration on `presence_inside` and reset it on
 `presence_disconnected` / `presence_far`. These are live notifications without
@@ -121,11 +120,18 @@ session-bus name and does not require an additional ElectricEel permission.
 
 The Qt test in `app/tests/phonekeyevents.pro` loads the real QML publisher and
 checks introspection and signal delivery, including duplicate events and
-string argument types. Build with Qt 5 Core/Qml/DBus/Test and the Nemo.DBus
-plugin, then run on an isolated bus:
+string argument types. It needs Qt 5 Core/Qml/DBus/Test and the Nemo.DBus QML
+plugin, which the Sailfish SDK target provides; CI's `harbour` job builds and
+runs it there on an isolated session bus. Locally, with `app/` copied into the
+SDK container as in [build.md](build.md):
 
 ```sh
-qmake app/tests/phonekeyevents.pro
-make
-dbus-run-session -- ./phonekeyevents-test
+docker exec electric-eel-build \
+  sb2 -t SailfishOS-5.2.0.15-aarch64 -m sdk-install -R zypper --non-interactive in qt5-qttest-devel
+docker exec -w /home/mersdk/app/tests electric-eel-build \
+  sb2 -t SailfishOS-5.2.0.15-aarch64 qmake phonekeyevents.pro
+docker exec -w /home/mersdk/app/tests electric-eel-build \
+  sb2 -t SailfishOS-5.2.0.15-aarch64 make
+docker exec -w /home/mersdk/app/tests electric-eel-build \
+  sb2 -t SailfishOS-5.2.0.15-aarch64 dbus-run-session -- ./phonekeyevents-test
 ```

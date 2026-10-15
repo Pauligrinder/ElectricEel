@@ -13,12 +13,27 @@ func (t *Tesla) observe(event Observation) {
 	}
 }
 
+// reapWatch releases a watcher whose goroutine exited after reporting a
+// failure, so WatchStart can install a working one and connect does not
+// wait for targets a dead watcher can never deliver.
+func (t *Tesla) reapWatch() {
+	if t.watchDone == nil {
+		return
+	}
+	select {
+	case <-t.watchDone:
+		t.stopWatch()
+	default:
+	}
+}
+
 func (t *Tesla) startWatch(ctx context.Context) error {
+	t.reapWatch()
 	if t.watcher != nil {
 		return nil
 	}
 	if t.bus == nil {
-		bus, err := bluez.Open()
+		bus, err := bluez.Open(t.diagnostic)
 		if err != nil {
 			return err
 		}
@@ -96,10 +111,12 @@ func (t *Tesla) stopWatch() {
 	}
 	t.watchCancel()
 	<-t.watchDone
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	t.watcher.Stop(ctx)
-	cancel()
-	t.watchCancel, t.watcher = nil, nil
+	if t.watcher != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		t.watcher.Stop(ctx)
+		cancel()
+	}
+	t.watchCancel, t.watchDone, t.watcher = nil, nil, nil
 	t.targetMu.Lock()
 	t.lastTarget = nil
 	t.target++

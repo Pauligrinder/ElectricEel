@@ -21,14 +21,17 @@ func TestCommandIDsMatchRustAndEverySchemaRejectsWrongTypes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	catalog := strings.SplitN(strings.SplitN(string(data), "pub(crate) const COMMAND_CATALOG", 2)[1], "];", 2)[0]
-	names := regexp.MustCompile(`"([a-z0-9-]+)"`).FindAllStringSubmatch(catalog, -1)
-	if len(names) != len(commandNames) {
-		t.Fatalf("Rust=%d Go=%d", len(names), len(commandNames))
+	// Rust names commands by kebab-casing the `Command` enum variants.
+	catalog := strings.SplitN(strings.SplitN(string(data), "pub(crate) enum Command {", 2)[1], "}", 2)[0]
+	variants := regexp.MustCompile(`(?m)^\s*([A-Z][A-Za-z0-9]*)(?: = \d+)?,$`).FindAllStringSubmatch(catalog, -1)
+	if len(variants) != len(commandNames) {
+		t.Fatalf("Rust=%d Go=%d", len(variants), len(commandNames))
 	}
+	kebab := regexp.MustCompile(`([a-z0-9])([A-Z])`)
 	for index, name := range commandNames {
-		if names[index][1] != name {
-			t.Fatalf("ID %d: Rust=%s Go=%s", index+1, names[index][1], name)
+		rust := strings.ToLower(kebab.ReplaceAllString(variants[index][1], "$1-$2"))
+		if rust != name {
+			t.Fatalf("ID %d: Rust=%s Go=%s", index+1, rust, name)
 		}
 		values := make([]Value, len(commandSchema[index]))
 		for i := range values {

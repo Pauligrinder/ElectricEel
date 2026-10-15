@@ -18,21 +18,13 @@ const pairingSource = fs.readFileSync(path.join(qmlRoot, "pages/PairingPage.qml"
 const coverSource = fs.readFileSync(path.join(qmlRoot, "cover/CoverPage.qml"), "utf8");
 const settingsSource = fs.readFileSync(path.join(qmlRoot, "pages/SettingsPage.qml"), "utf8");
 
-test("PairingPage clears a stale PEM when the config reports hasKey=false", () => {
-    // Bug: onConfigLoaded only assigns when hasKey is true, so a previously
-    // shown PEM stays visible and keeps "Pair with Vehicle" enabled after the
-    // key was deleted. Desired: hasKey=false clears publicKeyPem.
-    const page = {
-        configReady: false, vin: "OLD", hasVin: true,
-        publicKeyPem: "-----BEGIN PUBLIC KEY-----\nOLD\n-----END PUBLIC KEY-----",
-    };
-    const context = vm.createContext({
-        page,
-        vin: "5YJ3E1EA0PF000000", hasKey: false, publicKeyPem: "",
-        qsTr: (s) => s,
-    });
-    runHandler(pairingSource, "onConfigLoaded", context);
-    assert.equal(page.publicKeyPem, "", "stale PEM survived hasKey=false; Pair stays enabled with a non-existent key");
+test("PairingPage shows the configured key instead of a cached PEM", () => {
+    // Bug (original): onConfigLoaded only assigned the PEM when hasKey was
+    // true, so a deleted key stayed visible and kept Pair enabled. The PEM
+    // now comes from TeslaClient.publicKeyPem, which configload_test.cpp
+    // verifies is cleared for has_key=false; the page must bind to it.
+    assert.match(pairingSource, /property string publicKeyPem:\s*teslaClient \? teslaClient\.publicKeyPem/);
+    assert.doesNotMatch(pairingSource, /page\.publicKeyPem\s*=/, "PairingPage must not cache its own PEM copy");
 });
 
 test("CoverPage uses unique correlation IDs per invocation", () => {

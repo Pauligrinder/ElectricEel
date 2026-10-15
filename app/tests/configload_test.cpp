@@ -31,6 +31,9 @@ int main(int argc, char **argv)
     client.refreshConfig();
     assert(loaded == 0);
     assert(failures == 1);
+    // A rejected read publishes the error without fabricating configuration.
+    assert(!client.configError().isEmpty());
+    assert(!client.configReady());
 
     int exports = 0;
     QObject::connect(&client, &TeslaClient::automagicExportFinished,
@@ -64,4 +67,43 @@ int main(int argc, char **argv)
     assert(loaded == 1);
     assert(leftAction == "flash-lights");
     assert(rightAction == "honk");
+
+    // Configuration properties: published from the reply, error cleared.
+    assert(client.configReady());
+    assert(client.configError().isEmpty());
+    assert(client.coverLeftAction() == "flash-lights");
+
+    int vinChanges = 0, keyChanges = 0, pemChanges = 0;
+    QObject::connect(&client, &TeslaClient::vinChanged, [&] { ++vinChanges; });
+    QObject::connect(&client, &TeslaClient::hasKeyChanged, [&] { ++keyChanges; });
+    QObject::connect(&client, &TeslaClient::publicKeyPemChanged, [&] { ++pemChanges; });
+    auto deliver = [&](const QByteArray &json) {
+        const bool ok = QMetaObject::invokeMethod(&client, "deliverNotification",
+            Qt::DirectConnection, Q_ARG(QByteArray, json));
+        assert(ok);
+    };
+    const QByteArray paired = R"({"type":"config_loaded","vin":"5YJ3E1EA0PF000000","has_key":true,"pem":"PEM"})";
+    deliver(paired);
+    assert(client.vin() == "5YJ3E1EA0PF000000");
+    assert(client.hasKey());
+    assert(client.publicKeyPem() == "PEM");
+    assert(vinChanges == 1 && keyChanges == 1 && pemChanges == 1);
+    // An identical configuration reply changes no property, so bound pages
+    // (e.g. the dashboard's status refresh) do not react to it.
+    deliver(paired);
+    assert(vinChanges == 1 && keyChanges == 1 && pemChanges == 1);
+    assert(loaded == 3); // configLoaded itself still reports every reply.
+
+    // A deleted key must not leave a stale PEM on display.
+    deliver(R"({"type":"config_loaded","vin":"5YJ3E1EA0PF000000","has_key":false,"pem":"PEM"})");
+    assert(!client.hasKey());
+    assert(client.publicKeyPem().isEmpty());
+    assert(vinChanges == 1);
+
+    // A later failed reload keeps the last good values.
+    acceptRequests = false;
+    client.refreshConfig();
+    assert(client.configReady());
+    assert(client.vin() == "5YJ3E1EA0PF000000");
+    assert(!client.configError().isEmpty());
 }

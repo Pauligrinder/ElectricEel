@@ -2,10 +2,8 @@ package phoneprotocol
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
-	"github.com/godbus/dbus"
 	"github.com/teslamotors/vehicle-command/pkg/connector"
 	"github.com/teslamotors/vehicle-command/pkg/protocol"
 	universal "github.com/teslamotors/vehicle-command/pkg/protocol/protobuf/universalmessage"
@@ -24,19 +22,6 @@ const (
 	AuthLevelUnlock = 1
 	AuthLevelDrive  = 2
 )
-
-func AuthLevelName(level int) string {
-	switch level {
-	case AuthLevelNone:
-		return "NONE"
-	case AuthLevelUnlock:
-		return "UNLOCK"
-	case AuthLevelDrive:
-		return "DRIVE"
-	default:
-		return fmt.Sprintf("LEVEL_%d", level)
-	}
-}
 
 // authenticationRequest is the subset of VCSEC.AuthenticationRequest we need
 // for passive entry: the level the vehicle is asking the phone key to grant.
@@ -220,30 +205,4 @@ func SendAuthenticationResponse(ctx context.Context, car *vehicle.Vehicle, level
 	payload := EncodeAuthenticationResponse(level)
 	_, err := car.Send(ctx, universal.Domain_DOMAIN_VEHICLE_SECURITY, payload, connector.AuthMethodGCM)
 	return err
-}
-
-// sessionDroppedError reports whether err indicates the live BLE/session
-// should be torn down so presence mode can reconnect on the next near tick.
-// context.Canceled is deliberately NOT a drop: it means our own presence-stop
-// cancelled an in-flight RPC, not that the link died. Tearing down (and
-// emitting presence_disconnected) on cancel would spuriously flap presence
-// on every intentional stop.
-func SessionDroppedError(err error) bool {
-	if err == nil {
-		return false
-	}
-	var dbErr dbus.Error
-	var dbErrPtr *dbus.Error
-	if errors.As(err, &dbErr) {
-		if dbErr.Name == "org.bluez.Error.NotConnected" || dbErr.Name == "org.freedesktop.DBus.Error.UnknownObject" {
-			return true
-		}
-	}
-	if errors.As(err, &dbErrPtr) && dbErrPtr != nil {
-		if dbErrPtr.Name == "org.bluez.Error.NotConnected" || dbErrPtr.Name == "org.freedesktop.DBus.Error.UnknownObject" {
-			return true
-		}
-	}
-	return errors.Is(err, protocol.ErrNotConnected) ||
-		errors.Is(err, protocol.ErrNoSession)
 }

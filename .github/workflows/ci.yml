@@ -1,25 +1,37 @@
 name: CI
 
 # Runs the real quality gates on every push and pull request, independent of
-# the release packaging workflow (release.yml builds/checks/publishes the RPM and
-# never exercised the test suites - see the old KNOWN gap where "CI green" did
-# not mean "tests pass"). Gates mirror the local dev commands:
-#   Rust: cargo fmt --check, cargo clippy -- -D warnings, cargo test --all-features
-#   Go  : enforce gofmt, go vet ./..., go test -race ./...
-#   QML : qmllint syntax over app/qml
-#   i18n: tools/build-qm.sh --check (catalogs in sync)
-#   RPM : mb2 build, mb2 check --suites harbour (Sailfish SDK, aarch64)
+# the release packaging workflow (release.yml builds/checks/publishes the RPM).
+# Gates mirror the local dev commands:
+#   Rust : cargo fmt --check, clippy -D warnings (all targets AND the shipped
+#          `app-entry` feature set), cargo test, committed C header in sync
+#   FFI  : host-built Go libteslable.so + ignored Rust<->Go integration tests
+#          + C ABI smoke test
+#   Go   : gofmt, go vet, go test -race (session + patched vehicle-command)
+#   QML  : qmllint syntax over app/qml, Qt C++ regression tests, node tests
+#   i18n : tools/build-qm.sh --check (catalogs in sync)
+#   RPM  : mb2 build, mb2 check --suites harbour, Qt tests under the SDK target
 #
-# The slower SDK packaging gate runs independently of the fast host checks.
+# Toolchains are pinned: Rust by helper/rust-toolchain.toml, Go by
+# helper/session/go.mod, the Sailfish SDK image by digest, actions by SHA.
 
 on:
   push:
     branches: ['**']
   pull_request:
 
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
+
+env:
+  # Single pin for this workflow; keep in sync with release.yml, build.sh and
+  # helper/build-go-library-sdk.sh (tag 5.2.0.15 == the mb2 target below).
+  SAILFISH_SDK_IMAGE: coderus/sailfishos-platform-sdk-aarch64:5.2.0.15@sha256:e5f7596d14502746b308c3dde36f65fc25d7f76c45a01acaed56a1f55b76f592
+  SAILFISH_TARGET: SailfishOS-5.2.0.15-aarch64
 
 jobs:
   rust:
@@ -29,13 +41,46 @@ jobs:
       run:
         working-directory: helper
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy, rustfmt
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install the pinned Rust toolchain (helper/rust-toolchain.toml)
+        run: rustup toolchain install
       - run: cargo fmt --check
-      - run: cargo clippy --all-targets --all-features -- -D warnings
-      - run: cargo test --all-features
+      - run: cargo clippy --locked --all-targets --all-features -- -D warnings
+      - name: Clippy on the shipped feature set (what make-app-bundle.sh builds)
+        run: cargo clippy --locked --lib --features app-entry -- -D warnings
+      - run: cargo test --locked --all-features
+      - name: Committed C header matches the cbindgen output
+        # build.rs regenerates helper/electriceelcore.h on every build; the
+        # committed copy is what the app compiles against.
+        run: git diff --exit-code -- electriceelcore.h
+
+  ffi:
+    name: Rust/Go FFI integration (host libteslable.so, C smoke)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: helper/session/go.mod
+          cache-dependency-path: helper/session/go.sum
+      - name: Install the pinned Rust toolchain (helper/rust-toolchain.toml)
+        working-directory: helper
+        run: rustup toolchain install
+      - name: Build the Go protocol library for the host
+        run: |
+          mkdir -p "$RUNNER_TEMP/teslable"
+          CC=gcc GOEXPERIMENT=cgocheck2 bash helper/session/build-library.sh "$RUNNER_TEMP/teslable/libteslable.so"
+      - name: Rust integration tests against the real Go library
+        env:
+          TESLA_BLE_TEST_LIBRARY: ${{ runner.temp }}/teslable/libteslable.so
+        run: cargo test --locked --manifest-path helper/Cargo.toml --lib --features runtime -- --include-ignored
+      - name: C ABI smoke test
+        working-directory: helper/session
+        run: |
+          gcc -Wall -Wextra -Werror -I abi abi/smoke.c \
+            -L "$RUNNER_TEMP/teslable" -lteslable -Wl,-rpath,"$RUNNER_TEMP/teslable" \
+            -pthread -o "$RUNNER_TEMP/teslable-smoke"
+          "$RUNNER_TEMP/teslable-smoke"
 
   go:
     name: Go session (gofmt, vet, test)
@@ -44,11 +89,13 @@ jobs:
       run:
         working-directory: helper/session
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
-          # matches helper/session/go.mod
-          go-version: '1.26.5'
+          go-version-file: helper/session/go.mod
+          cache-dependency-path: |
+            helper/session/go.sum
+            helper/session/thirdparty/vehicle-command/go.sum
       - name: Enforce Go formatting
         run: |
           unformatted=$(gofmt -l .)
@@ -58,12 +105,18 @@ jobs:
           fi
       - run: go vet ./...
       - run: go test -race ./...
+      - name: Patched vendored vehicle-command module
+        # Separate Go module (own go.mod), so `go test ./...` above never
+        # enters it; this covers the local patches (navigation_ee.go etc.,
+        # docs/vehicle-command-patch.md).
+        working-directory: helper/session/thirdparty/vehicle-command
+        run: go test ./...
 
   qml:
-    name: QML lint (qmllint syntax)
+    name: QML lint and Qt C++ host tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install Qt QML tools
         run: sudo apt-get update && sudo apt-get install -y qtdeclarative5-dev-tools qtbase5-dev
       - name: qmllint syntax check
@@ -74,7 +127,7 @@ jobs:
         run: |
           export PATH="$PATH:/usr/lib/qt5/bin:/usr/lib/x86_64-linux-gnu/qt5/bin"
           command -v qmllint
-          qmllint app/qml/harbour-electric-eel.qml app/qml/cover/*.qml app/qml/pages/*.qml
+          qmllint app/qml/harbour-electric-eel.qml app/qml/PhoneKeyEvents.qml app/qml/cover/*.qml app/qml/pages/*.qml
       - name: Qt command argument regression tests
         run: |
           g++ -std=c++11 -fPIC $(pkg-config --cflags Qt5Core) \
@@ -91,11 +144,11 @@ jobs:
           "$RUNNER_TEMP/configload_test"
 
   qml-logic:
-    name: QML JavaScript logic regressions
+    name: QML JavaScript logic and repository hygiene
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
       - run: node --test app/tests/*_test.cjs
@@ -104,25 +157,23 @@ jobs:
     name: Translations freshness (lupdate/lrelease)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.12'
       - name: Rebuild catalogs and fail on drift
-        # tools/build-qm.sh bootstraps Qt linguist tools from the PySide6
-        # wheel (no system Qt needed) and fails when the committed
-        # app/translations/*.ts/*.qm differ from a fresh extraction — so UI
-        # string changes can never ship without updated catalogs.
+        # tools/build-qm.sh bootstraps pinned Qt linguist tools from the
+        # PySide6-Essentials wheel (no system Qt needed) and fails when the
+        # committed app/translations/*.ts/*.qm differ from a fresh
+        # extraction, so UI string changes can never ship without catalogs.
         run: bash tools/build-qm.sh --check
 
   harbour:
-    name: RPM build and Harbour validation (aarch64)
+    name: RPM build, Harbour validation and SDK Qt tests (aarch64)
     runs-on: ubuntu-latest
     timeout-minutes: 120
-    permissions:
-      contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Free disk space for the Sailfish SDK image
         run: |
@@ -130,30 +181,50 @@ jobs:
           sudo apt-get clean
           df -h
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
-          go-version: '1.26.5'
+          go-version-file: helper/session/go.mod
+          cache-dependency-path: helper/session/go.sum
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-unknown-linux-gnu
+      - name: Install the pinned Rust toolchain (helper/rust-toolchain.toml)
+        working-directory: helper
+        run: rustup toolchain install
 
       - name: Pull Sailfish Platform SDK
-        run: docker pull coderus/sailfishos-platform-sdk-aarch64
+        run: docker pull "$SAILFISH_SDK_IMAGE"
 
       - name: Stage the in-app core bundle (staticlib + Go protocol library)
         run: ./helper/make-app-bundle.sh
 
-      - name: Build RPM and run Harbour validation
+      - name: Build RPM, run Harbour validation and the SDK-target Qt tests
         run: |
           set -euxo pipefail
-          docker create --name electric-eel-build coderus/sailfishos-platform-sdk-aarch64 sleep infinity
+          docker create --name electric-eel-build "$SAILFISH_SDK_IMAGE" sleep infinity
           trap 'docker rm -f electric-eel-build >/dev/null 2>&1 || true' EXIT
           docker start electric-eel-build
 
           docker cp app electric-eel-build:/home/mersdk/app
-          docker exec -u root electric-eel-build chown -R mersdk:mersdk /home/mersdk/app
+          # rustruntime.pro includes ../../helper/session/abi
+          docker exec electric-eel-build mkdir -p /home/mersdk/helper/session
+          docker cp helper/session/abi electric-eel-build:/home/mersdk/helper/session/abi
+          docker exec -u root electric-eel-build chown -R mersdk:mersdk /home/mersdk/app /home/mersdk/helper
           docker exec -w /home/mersdk/app electric-eel-build \
-            mb2 --target SailfishOS-5.2.0.15-aarch64 build
+            mb2 --target "$SAILFISH_TARGET" build
           docker exec -w /home/mersdk/app electric-eel-build \
-            mb2 --target SailfishOS-5.2.0.15-aarch64 check --suites harbour
+            mb2 --target "$SAILFISH_TARGET" check --suites harbour
+
+          # Test-only dependency (QtTest headers), never an RPM requirement.
+          docker exec electric-eel-build \
+            sb2 -t "$SAILFISH_TARGET" -m sdk-install -R zypper --non-interactive in qt5-qttest-devel
+          for test in phonekeyevents rustruntime; do
+            docker exec -w /home/mersdk/app/tests electric-eel-build \
+              sb2 -t "$SAILFISH_TARGET" qmake "$test.pro"
+            docker exec -w /home/mersdk/app/tests electric-eel-build \
+              sb2 -t "$SAILFISH_TARGET" make
+            # Private session bus: phonekeyevents_test.cpp registers the
+            # app's D-Bus name (Nemo.DBus publisher in PhoneKeyEvents.qml).
+            docker exec -w /home/mersdk/app/tests electric-eel-build \
+              sb2 -t "$SAILFISH_TARGET" dbus-run-session -- "./$test-test"
+            docker exec -w /home/mersdk/app/tests electric-eel-build \
+              sb2 -t "$SAILFISH_TARGET" make distclean
+          done

@@ -9,7 +9,8 @@
 // reject anything it doesn't like. If `tesla-control help <cmd>` on-device
 // disagrees with something here, trust the device and fix this file.
 //
-// arg.type: "none" | "int" | "float" | "string" | "pin" | "enum"
+// arg.type: "int" | "float" | "string" | "pin" | "enum"; optional
+// arg.pattern (RegExp) and arg.input: "text" (no slider) refine the form.
 //
 // arg.stateDefault (optional): name of a VehicleState.js status field whose
 // current value should pre-fill this arg's `def` when the dialog opens (the
@@ -19,8 +20,8 @@
 //
 // Toggle pairs (start/stop charging, open/close charge port, climate on/off,
 // lock/unlock, vent/close windows, open/close trunk) carry a `visibleWhen`
-// predicate that CategoryPage evaluates against the dashboard status
-// snapshot: only the action matching the current vehicle state is listed,
+// predicate that CategoryPage evaluates against the live dashboard
+// reading: only the action matching the current vehicle state is listed,
 // mirroring the front-page quick actions rule that the UI always reflects
 // reality rather than the state a tap would produce. Commands without a
 // predicate are always listed.
@@ -109,7 +110,8 @@ var CATEGORIES = [
       // Locks & Security as it's a drive-authorization action.
       cmd("drive", qsTr("Remote Start (Keyless Drive)"), []),
       cmd("sentry-mode", qsTr("Sentry Mode"), [ arg("STATE", "enum", { values: ["on","off"] }) ]),
-      cmd("valet-mode-on", qsTr("Valet Mode On"), [ arg("PIN", "pin", {}) ]),
+      // The vehicle only accepts a four-digit valet PIN.
+      cmd("valet-mode-on", qsTr("Valet Mode On"), [ arg("PIN", "pin", { pattern: /^\d{4}$/, placeholder: "4 digits" }) ]),
       cmd("valet-mode-off", qsTr("Valet Mode Off")),
       cmd("guest-mode-on", qsTr("Guest Mode On")),
       cmd("guest-mode-off", qsTr("Guest Mode Off")),
@@ -237,11 +239,11 @@ function arg(name, type, opts) {
   return opts
 }
 
-// visibleWhen predicates. Each receives the status snapshot object that
-// CategoryPage was opened with and returns whether its command row should be
-// listed. Unknown states (null/"") deliberately fall to the "not active"
-// reading so the forward action (climate on, start charging, ...) stays
-// reachable instead of leaving a category empty. See VehicleState.js for the
+// visibleWhen predicates. Each receives the dashboard's status object and
+// returns whether its command row should be listed. Unknown states
+// (null/"") deliberately fall to the "not active" reading so the forward
+// action (climate on, start charging, ...) stays reachable instead of
+// leaving a category empty; unknown windows offer Close, the safe action. See VehicleState.js for the
 // exact field names (protojson camelCase of vehicle.proto's fields, and
 // chargingState is a oneof VARIANT name - e.g. "Charging" - not a plain string).
 function climateOn(s)  { return !!s.isClimateOn }
@@ -253,8 +255,9 @@ function portOpen(s)   { return !!s.chargePortOpen }
 function portClosed(s) { return !s.chargePortOpen }
 function lockedState(s)  { return s.locked !== false }
 function unlockedState(s){ return s.locked === false }
-function windowsOpen(s)  { return !!s.windowsOpen }
-function windowsClosed(s){ return !s.windowsOpen }
+// windowsOpen is null while unknown: offer Close (the safe action) then.
+function windowsOpen(s)  { return s.windowsOpen !== false }
+function windowsClosed(s){ return s.windowsOpen === false }
 function trunkOpen(s)  { return !!s.trunkRearOpen }
 function trunkClosed(s){ return !s.trunkRearOpen }
 
@@ -263,21 +266,18 @@ function trunkClosed(s){ return !s.trunkRearOpen }
 // not "Tue"/"Thu".
 // Optional values retain their backend positions. Empty slots mean omitted;
 // only trailing empty slots can be removed from the wire argument list.
-// Note: unlike precondition-schedule-add, charging-schedule-add does NOT
-// honor an ID argument - commands_vendor.go's handler stamps the schedule's
-// Id from time.Now().Unix() and never reads args["ID"] (upstream v0.4.1
-// behavior, commands_vendor.go "charging-schedule-add"). A hidden empty ID
-// slot preserves the wire layout; preconditionScheduleAddArgs() exposes it because its handler
-// does read it. Use charging-schedule-remove with TYPE "id" to target an
-// existing schedule instead.
+// Both *-schedule-add commands honor ID (helper/src/protocol_commands.rs
+// reads args[5]): blank creates a new schedule, an existing ID replaces it.
+// Coordinates are typed (input: "text"): a slider over +-90/+-180 degrees
+// cannot hit a real location.
 function chargeScheduleAddArgs() {
   return [
     arg("DAYS", "string", { placeholder: "Mon,Tues,Wed" }),
     arg("TIME", "string", { placeholder: "22:00-06:00 (start or end may be blank)" }),
-    arg("LATITUDE", "float", { min: -90, max: 90, step: 0.000001, def: 0 }),
-    arg("LONGITUDE", "float", { min: -180, max: 180, step: 0.000001, def: 0 }),
+    coordinateArg("LATITUDE", 90, "45.464211"),
+    coordinateArg("LONGITUDE", 180, "9.191383"),
     arg("REPEAT", "enum", { values: ["once"], optional: true }),
-    arg("ID", "none", { optional: true, hidden: true }),
+    scheduleIdArg(),
     arg("ENABLED", "enum", { values: ["true","false"], optional: true }),
   ]
 }
@@ -288,12 +288,21 @@ function preconditionScheduleAddArgs() {
   return [
     arg("DAYS", "string", { placeholder: "Mon,Tues,Wed" }),
     arg("TIME", "string", { placeholder: "22:00" }),
-    arg("LATITUDE", "float", { min: -90, max: 90, step: 0.000001, def: 0 }),
-    arg("LONGITUDE", "float", { min: -180, max: 180, step: 0.000001, def: 0 }),
+    coordinateArg("LATITUDE", 90, "45.464211"),
+    coordinateArg("LONGITUDE", 180, "9.191383"),
     arg("REPEAT", "enum", { values: ["once"], optional: true }),
-    arg("ID", "int", { placeholder: "leave blank for a new schedule", optional: true }),
+    scheduleIdArg(),
     arg("ENABLED", "enum", { values: ["true","false"], optional: true }),
   ]
+}
+
+function coordinateArg(name, limit, placeholder) {
+  return arg(name, "float", { min: -limit, max: limit, input: "text", placeholder: placeholder })
+}
+
+// Schedule IDs are unsigned on the wire (protocol_commands.rs unsigned()).
+function scheduleIdArg() {
+  return arg("ID", "int", { min: 0, placeholder: "leave blank for a new schedule", optional: true })
 }
 
 function scheduleRemoveArgs() {
@@ -302,8 +311,23 @@ function scheduleRemoveArgs() {
     // its numeric ID (see list-keys-style ID from the *-add commands'
     // output). "favorite" was never a real TYPE value.
     arg("TYPE", "enum", { values: ["home","work","other","id"] }),
-    arg("ID", "int", { placeholder: "required when TYPE is id", optional: true }),
+    arg("ID", "int", { min: 0, placeholder: "required when TYPE is id", optional: true }),
   ]
+}
+
+// Commands whose effect shows on the dashboard (lock, climate, closures,
+// charge readings, or a woken infotainment). Only these ask Rust for the
+// delayed post-command status refresh; honk, media, keys and diagnostics
+// would just occupy the serial BLE queue with four status reads.
+var STATUS_COMMANDS = [
+  "wake", "climate-on", "climate-off", "climate-set-temp", "auto-seat-and-climate",
+  "charging-start", "charging-stop", "charge-port-open", "charge-port-close",
+  "charging-set-limit", "charging-set-amps", "lock", "unlock",
+  "trunk-open", "trunk-move", "trunk-close", "frunk-open", "windows-vent", "windows-close",
+]
+
+function refreshesStatus(commandId) {
+  return STATUS_COMMANDS.indexOf(commandId) >= 0
 }
 
 function findCategory(categoryId) {
