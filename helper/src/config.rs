@@ -5,6 +5,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::sync::LazyLock;
 
+use crate::cover_action::{self, CoverAction};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
@@ -147,6 +148,8 @@ pub(crate) struct Config {
     pub key_name: String,
     pub connect_timeout_sec: i32,
     pub command_timeout_sec: i32,
+    pub cover_left_action: Option<CoverAction>,
+    pub cover_right_action: Option<CoverAction>,
     /// Whether the current VIN's key has completed NFC pairing.
     /// `Unpaired` is the serde default; older schema versions that predate
     /// this field are migrated by `Core::new`.
@@ -163,6 +166,8 @@ impl Default for Config {
             key_name: "harbour-electric-eel".to_string(),
             connect_timeout_sec: 20,
             command_timeout_sec: 5,
+            cover_left_action: None,
+            cover_right_action: None,
             vin_state: VinState::Unpaired,
         }
     }
@@ -208,6 +213,10 @@ impl<'de> Deserialize<'de> for Config {
             key_name: String,
             connect_timeout_sec: i32,
             command_timeout_sec: i32,
+            #[serde(default, deserialize_with = "cover_action::deserialize_optional")]
+            cover_left_action: Option<CoverAction>,
+            #[serde(default, deserialize_with = "cover_action::deserialize_optional")]
+            cover_right_action: Option<CoverAction>,
             #[serde(default, deserialize_with = "present_optional")]
             vin_state: EnrollmentField<VinState>,
             #[serde(default, deserialize_with = "present_optional")]
@@ -234,6 +243,8 @@ impl<'de> Deserialize<'de> for Config {
             key_name: raw.key_name,
             connect_timeout_sec: raw.connect_timeout_sec,
             command_timeout_sec: raw.command_timeout_sec,
+            cover_left_action: raw.cover_left_action,
+            cover_right_action: raw.cover_right_action,
             vin_state,
         })
     }
@@ -257,9 +268,13 @@ impl Config {
                 // A future schema may change required fields or enum values.
                 // Treat it as unsupported, not corrupt: defaulting would allow
                 // this build's next save to overwrite a perfectly valid file.
-                let version = serde_json::from_slice::<serde_json::Value>(&data)
+                #[derive(Deserialize)]
+                struct VersionHeader {
+                    version: Option<u64>,
+                }
+                let version = serde_json::from_slice::<VersionHeader>(&data)
                     .ok()
-                    .and_then(|json| json.get("version").and_then(serde_json::Value::as_u64));
+                    .and_then(|header| header.version);
                 if version
                     .is_some_and(|version| version > u64::from(u8::from(ConfigVersion::CURRENT)))
                 {
@@ -767,8 +782,13 @@ mod tests {
             connect_timeout_sec: 20,
             command_timeout_sec: 5,
             vin_state: VinState::Paired,
+            cover_left_action: Some(CoverAction::FlashLights),
+            cover_right_action: Some(CoverAction::Unlock),
         };
         cfg.save(&path).expect("save");
+        let restored = Config::load(&path).unwrap();
+        assert_eq!(restored.cover_left_action, cfg.cover_left_action);
+        assert_eq!(restored.cover_right_action, cfg.cover_right_action);
 
         let data = fs::read_to_string(&path).expect("config file not written");
         assert!(!data.is_empty(), "config file is empty");
@@ -962,6 +982,78 @@ mod tests {
         assert_eq!(cfg.vin_state, VinState::Paired);
 
         fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn invalid_cover_preferences_do_not_discard_vehicle_config() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        for invalid in [
+            "null",
+            r#""unknown-action""#,
+            r#""""#,
+            "true",
+            "42",
+            "-3",
+            "1.5",
+            r#"["honk",{"nested":[1,2]}]"#,
+            r#"{"action":"honk","nested":[null,false]}"#,
+        ] {
+            for (left, right) in [(invalid, r#""honk""#), (r#""unlock""#, invalid)] {
+                let json = format!(
+                    r#"{{"cover_left_action":{left},"cover_right_action":{right},"vin":"5YJ3E1EA0PF000000","key_name":"phone","connect_timeout_sec":20,"command_timeout_sec":5,"vin_state":"paired"}}"#
+                );
+                fs::write(&path, json).unwrap();
+                let cfg = Config::load(&path).unwrap();
+                assert_eq!(cfg.vin, "5YJ3E1EA0PF000000");
+                assert_eq!(cfg.vin_state, VinState::Paired);
+                assert_eq!(cfg.version, ConfigVersion::CURRENT);
+                assert_eq!(
+                    cfg.cover_left_action,
+                    if left == invalid {
+                        None
+                    } else {
+                        Some(CoverAction::Unlock)
+                    }
+                );
+                assert_eq!(
+                    cfg.cover_right_action,
+                    if right == invalid {
+                        None
+                    } else {
+                        Some(CoverAction::Honk)
+                    }
+                );
+                assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+            }
+        }
+        // Escaped JSON strings still map to the exact enum variant.
+        let cfg: Config = serde_json::from_str(
+            r#"{"vin":"","key_name":"phone","connect_timeout_sec":20,"command_timeout_sec":5,"cover_left_action":"trunk-\u006fpen"}"#,
+        ).unwrap();
+        assert_eq!(cfg.cover_left_action, Some(CoverAction::TrunkOpen));
+        assert_eq!(cfg.cover_right_action, None);
+    }
+
+    #[test]
+    fn newer_incompatible_config_is_preserved_without_a_corrupt_backup() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        // Newer schemas may replace fields we currently require, or use a
+        // version number beyond the u8 accepted by ConfigVersion.
+        for version in [99_u64, 256, u64::MAX] {
+            let original = format!(
+                r#"{{"version":{version},"vin":{{"new":"representation"}},"future":[null,{{"keep":true}}]}}"#
+            );
+            fs::write(&path, &original).unwrap();
+            let error = Config::load(&path).unwrap_err();
+            assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+            assert!(error
+                .to_string()
+                .contains("unsupported newer config schema"));
+            assert_eq!(fs::read_to_string(&path).unwrap(), original);
+            assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+        }
     }
 
     #[test]

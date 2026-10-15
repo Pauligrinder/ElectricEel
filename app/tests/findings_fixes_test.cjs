@@ -56,7 +56,7 @@ test("settings preserves blurred dirty fields and an unknown model sentinel", ()
     const vinField = { text: "edited VIN", activeFocus: false };
     const keyNameField = { text: "edited name", activeFocus: false };
     const modelField = { currentIndex: 0 };
-    const context = vm.createContext({ page, vinField, keyNameField, modelField, connectTimeoutSlider: {}, commandTimeoutSlider: {}, vin: "old VIN", model: "future-model", keyName: "old name", connectTimeoutSec: 20, commandTimeoutSec: 5, hasKey: true, VState: { modelIndex: () => -1 }, qsTr: (s) => s });
+    const context = vm.createContext({ page, vinField, keyNameField, modelField, connectTimeoutSlider: {}, commandTimeoutSlider: {}, coverLeftField: {}, coverRightField: {}, coverLeftAction: "trunk-open", coverRightAction: "frunk-open", CoverActions: { indexOf: (_, fallback) => fallback }, vin: "old VIN", model: "future-model", keyName: "old name", connectTimeoutSec: 20, commandTimeoutSec: 5, hasKey: true, VState: { modelIndex: () => -1 }, qsTr: (s) => s });
     runHandler(qml, "onConfigLoaded", context);
     assert.equal(vinField.text, "edited VIN");
     assert.equal(keyNameField.text, "edited name");

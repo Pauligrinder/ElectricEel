@@ -44,7 +44,8 @@ public slots:
     void generateKey(bool force);
     void pair();
     void setConfig(const QString &vin, const QString &model, const QString &keyName,
-                   int connectTimeoutSec, int commandTimeoutSec);
+                   int connectTimeoutSec, int commandTimeoutSec,
+                   const QString &coverLeftAction, const QString &coverRightAction);
     void refreshConfig();
     void logPowerState(const QString &state);
     void exportAutomagicFlows();
@@ -59,7 +60,8 @@ signals:
     void configLoadError(const QString &message);
     void configLoaded(const QString &vin, const QString &model, const QString &keyName,
                       int connectTimeoutSec, int commandTimeoutSec,
-                      bool hasKey, const QString &publicKeyPem);
+                      bool hasKey, const QString &publicKeyPem,
+                      const QString &coverLeftAction, const QString &coverRightAction);
     void helperAvailableChanged();
     void helperVersionChanged();
     void phoneKeyStatusChanged();

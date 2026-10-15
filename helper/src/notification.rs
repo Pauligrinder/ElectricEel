@@ -73,6 +73,8 @@ pub(crate) enum Notification {
         command_timeout_sec: i32,
         has_key: bool,
         pem: String,
+        cover_left_action: crate::cover_action::CoverAction,
+        cover_right_action: crate::cover_action::CoverAction,
     },
     DestinationPreviewed {
         request_id: String,

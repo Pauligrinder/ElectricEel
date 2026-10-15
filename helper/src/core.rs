@@ -27,6 +27,7 @@ use wait_timeout::ChildExt;
 
 use crate::commands::{is_known_command, is_pin_command};
 use crate::config::{Config, ConfigVersion, VinState};
+use crate::cover_action::CoverAction;
 use crate::error::{HelperError, OperationError};
 use crate::session_client::{SessionClient, SessionEvent};
 use crate::share::{parse_shared_text, Destination};
@@ -934,6 +935,26 @@ impl Core {
         connect_timeout_sec: i32,
         command_timeout_sec: i32,
     ) -> Result<(), OperationError> {
+        self.set_config_with_cover_actions(
+            vin,
+            model,
+            key_name,
+            connect_timeout_sec,
+            command_timeout_sec,
+            None,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn set_config_with_cover_actions(
+        &self,
+        vin: &str,
+        model: &str,
+        key_name: &str,
+        connect_timeout_sec: i32,
+        command_timeout_sec: i32,
+        cover_actions: Option<(Option<CoverAction>, Option<CoverAction>)>,
+    ) -> Result<(), OperationError> {
         crate::config::validate_config(
             vin,
             model,
@@ -957,6 +978,10 @@ impl Core {
         candidate.key_name = key_name.trim().to_string();
         candidate.connect_timeout_sec = connect_timeout_sec;
         candidate.command_timeout_sec = command_timeout_sec;
+        if let Some((left, right)) = cover_actions {
+            candidate.cover_left_action = left;
+            candidate.cover_right_action = right;
+        }
         if vin_changed {
             candidate.vin_state = VinState::Unpaired;
         }
@@ -1103,6 +1128,18 @@ impl Core {
             command_timeout_sec,
             has_key,
             pub_key,
+        )
+    }
+
+    #[cfg(feature = "runtime")]
+    pub(crate) fn cover_actions(&self) -> (CoverAction, CoverAction) {
+        let cfg = self
+            .cfg
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        (
+            cfg.cover_left_action.unwrap_or(CoverAction::TrunkOpen),
+            cfg.cover_right_action.unwrap_or(CoverAction::FrunkOpen),
         )
     }
 }

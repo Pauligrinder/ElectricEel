@@ -18,6 +18,7 @@ pub mod child;
 pub mod commands;
 pub mod config;
 pub mod core;
+mod cover_action;
 pub mod error;
 pub mod ffi;
 pub mod keylog;

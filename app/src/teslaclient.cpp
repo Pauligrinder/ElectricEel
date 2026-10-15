@@ -94,7 +94,9 @@ void TeslaClient::deliverNotification(const QByteArray &json)
         emit configLoaded(event.value("vin").toString(), event.value("model").toString(),
                           event.value("key_name").toString(), event.value("connect_timeout_sec").toInt(),
                           event.value("command_timeout_sec").toInt(), event.value("has_key").toBool(),
-                          event.value("pem").toString());
+                          event.value("pem").toString(),
+                          event.value("cover_left_action").toString(),
+                          event.value("cover_right_action").toString());
     } else if (type == "destination_previewed") {
         emit destinationPreviewed(id, ok, event.value("kind").toString(),
                                   event.value("value1").toString(), event.value("value2").toString(), error);
@@ -157,10 +159,12 @@ void TeslaClient::generateKey(bool force) { submit({{"op", "generate_key"}, {"fo
 void TeslaClient::pair() { submit({{"op", "pair"}}); }
 
 void TeslaClient::setConfig(const QString &vin, const QString &model, const QString &keyName,
-                            int connectTimeoutSec, int commandTimeoutSec)
+                            int connectTimeoutSec, int commandTimeoutSec,
+                            const QString &coverLeftAction, const QString &coverRightAction)
 {
     submit({{"op", "set_config"}, {"vin", vin}, {"model", model}, {"key_name", keyName},
-            {"connect_timeout_sec", connectTimeoutSec}, {"command_timeout_sec", commandTimeoutSec}});
+            {"connect_timeout_sec", connectTimeoutSec}, {"command_timeout_sec", commandTimeoutSec},
+            {"cover_left_action", coverLeftAction}, {"cover_right_action", coverRightAction}});
 }
 
 void TeslaClient::refreshConfig() { submit({{"op", "get_config"}}); }

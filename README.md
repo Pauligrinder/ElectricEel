@@ -18,6 +18,7 @@ phone talks to the car directly over Bluetooth Low Energy.
   the car.
 - Interface in 39 languages; untranslated locales fall back to English
   (see `docs/translations.md`).
+- Two configurable cover quick actions, with rear and front trunk as defaults.
 
 ## Requirements
 
@@ -49,6 +50,10 @@ devel-su pkcon install-local /tmp/harbour-electric-eel-*.aarch64.rpm
 To navigate somewhere: pull down → **Send Destination**, paste an
 address, coordinates or a map link, preview it, and send. The car must
 be in Bluetooth range.
+
+To change the quick buttons in the open-apps grid: **Settings → Cover actions**,
+choose the left and right actions, then **Save**. Choices are rear trunk, front
+trunk, lock, unlock, flash lights, and horn.
 
 ## Documentation
 

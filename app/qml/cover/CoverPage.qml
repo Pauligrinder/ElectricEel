@@ -2,6 +2,7 @@ import QtQuick 2.6
 import Sailfish.Silica 1.0
 import "../js/VehicleState.js" as VState
 import "../js/PhoneKeyState.js" as PhoneKey
+import "../js/CoverActions.js" as CoverActions
 
 CoverBackground {
     id: cover
@@ -14,6 +15,8 @@ CoverBackground {
     property int requestSeq: 0
     property string pendingCmd: ""
     property string configError: ""
+    property string leftAction: "trunk-open"
+    property string rightAction: "frunk-open"
 
     readonly property bool isPaired: cover.hasKey && cover.vin.length > 0
 
@@ -51,6 +54,8 @@ CoverBackground {
             cover.vin = vin
             cover.model = model
             cover.hasKey = hasKey
+            cover.leftAction = CoverActions.action(coverLeftAction, 0).id
+            cover.rightAction = CoverActions.action(coverRightAction, 1).id
         }
         onConfigLoadError: cover.configError = message
         onCommandFinished: {
@@ -64,6 +69,20 @@ CoverBackground {
                 cover.commandBusy = false
                 cover.pendingCmd = ""
             }
+        }
+    }
+
+    CoverActionList {
+        enabled: cover.canCommand && !cover.commandBusy
+
+        CoverAction {
+            iconSource: Qt.resolvedUrl(CoverActions.action(cover.leftAction, 0).icon)
+            onTriggered: cover.runCoverCommand(cover.leftAction)
+        }
+
+        CoverAction {
+            iconSource: Qt.resolvedUrl(CoverActions.action(cover.rightAction, 1).icon)
+            onTriggered: cover.runCoverCommand(cover.rightAction)
         }
     }
 
@@ -89,6 +108,8 @@ CoverBackground {
     Column {
         anchors.fill: parent
         anchors.margins: Theme.paddingMedium
+        // Leave room for the native cover actions drawn over the cover.
+        anchors.bottomMargin: Theme.paddingMedium + (cover.canCommand ? cover.coverActionArea.height : 0)
         spacing: Theme.paddingSmall
         z: 1
 
@@ -146,8 +167,8 @@ CoverBackground {
 
         Item {
             width: parent.width
-            height: Math.max(0, parent.height - statusSlot.height - actionRow.height - configErrorLabel.height
-                    - parent.spacing * ((actionRow.visible ? 2 : 1) + (configErrorLabel.visible ? 1 : 0)))
+            height: Math.max(0, parent.height - statusSlot.height - configErrorLabel.height
+                    - parent.spacing * (1 + (configErrorLabel.visible ? 1 : 0)))
 
             Image {
                 id: carImage
@@ -166,80 +187,6 @@ CoverBackground {
                 fillMode: Image.PreserveAspectFit
                 source: "image://theme/icon-size-large?file:///usr/share/icons/hicolor/128x128/apps/harbour-electric-eel.png"
                 visible: !cover.isPaired
-            }
-        }
-
-        Row {
-            id: actionRow
-            width: parent.width
-            visible: cover.canCommand
-            height: visible ? Theme.iconSizeMedium : 0
-            spacing: 0
-
-            // IconButton + the 1200–1440px trunk/frunk SVGs overflow the
-            // cover (native image size, stacked). HighlightImage + sourceSize
-            // keeps a compact three-across row.
-            Item {
-                width: actionRow.width / 3
-                height: actionRow.height
-                enabled: cover.canCommand && !cover.commandBusy
-                opacity: enabled ? 1.0 : Theme.opacityLow
-
-                HighlightImage {
-                    anchors.centerIn: parent
-                    width: Theme.iconSizeSmall
-                    height: Theme.iconSizeSmall
-                    sourceSize: Qt.size(width, height)
-                    source: Qt.resolvedUrl("../../img/icons/lock.svg")
-                    color: Theme.primaryColor
-                }
-
-                MouseArea {
-                    anchors.fill: parent
-                    onClicked: cover.runCoverCommand("lock")
-                }
-            }
-
-            Item {
-                width: actionRow.width / 3
-                height: actionRow.height
-                enabled: cover.canCommand && !cover.commandBusy
-                opacity: enabled ? 1.0 : Theme.opacityLow
-
-                HighlightImage {
-                    anchors.centerIn: parent
-                    width: Theme.iconSizeSmall
-                    height: Theme.iconSizeSmall
-                    sourceSize: Qt.size(width, height)
-                    source: Qt.resolvedUrl("../../img/icons/trunk.svg")
-                    color: Theme.primaryColor
-                }
-
-                MouseArea {
-                    anchors.fill: parent
-                    onClicked: cover.runCoverCommand("trunk-open")
-                }
-            }
-
-            Item {
-                width: actionRow.width / 3
-                height: actionRow.height
-                enabled: cover.canCommand && !cover.commandBusy
-                opacity: enabled ? 1.0 : Theme.opacityLow
-
-                HighlightImage {
-                    anchors.centerIn: parent
-                    width: Theme.iconSizeSmall
-                    height: Theme.iconSizeSmall
-                    sourceSize: Qt.size(width, height)
-                    source: Qt.resolvedUrl("../../img/icons/frunk.svg")
-                    color: Theme.primaryColor
-                }
-
-                MouseArea {
-                    anchors.fill: parent
-                    onClicked: cover.runCoverCommand("frunk-open")
-                }
             }
         }
     }

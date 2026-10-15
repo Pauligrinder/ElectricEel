@@ -1,6 +1,7 @@
 import QtQuick 2.6
 import Sailfish.Silica 1.0
 import "../js/VehicleState.js" as VState
+import "../js/CoverActions.js" as CoverActions
 
 Page {
     id: page
@@ -27,6 +28,8 @@ Page {
     property bool keyNameDirty: false
     property bool connectTimeoutDirty: false
     property bool commandTimeoutDirty: false
+    property bool coverLeftDirty: false
+    property bool coverRightDirty: false
 
     Connections {
         target: teslaClient
@@ -44,6 +47,10 @@ Page {
                 connectTimeoutSlider.value = connectTimeoutSec
             if (!page.commandTimeoutDirty && !commandTimeoutSlider.activeFocus)
                 commandTimeoutSlider.value = commandTimeoutSec
+            if (!page.coverLeftDirty && !coverLeftField.activeFocus)
+                coverLeftField.currentIndex = CoverActions.indexOf(coverLeftAction, 0)
+            if (!page.coverRightDirty && !coverRightField.activeFocus)
+                coverRightField.currentIndex = CoverActions.indexOf(coverRightAction, 1)
             page.loadingConfig = false
             page.configReady = true
             page.configLoading = false
@@ -195,6 +202,44 @@ Page {
                 }
             }
 
+            SectionHeader { text: qsTr("Cover actions") }
+
+            ComboBox {
+                id: coverLeftField
+                width: parent.width
+                label: qsTr("Left action")
+                currentIndex: 0
+                enabled: page.configReady
+                onCurrentIndexChanged: {
+                    if (!page.loadingConfig && page.configReady)
+                        page.coverLeftDirty = true
+                }
+                menu: ContextMenu {
+                    Repeater {
+                        model: CoverActions.ACTIONS
+                        MenuItem { text: modelData.title }
+                    }
+                }
+            }
+
+            ComboBox {
+                id: coverRightField
+                width: parent.width
+                label: qsTr("Right action")
+                currentIndex: 1
+                enabled: page.configReady
+                onCurrentIndexChanged: {
+                    if (!page.loadingConfig && page.configReady)
+                        page.coverRightDirty = true
+                }
+                menu: ContextMenu {
+                    Repeater {
+                        model: CoverActions.ACTIONS
+                        MenuItem { text: modelData.title }
+                    }
+                }
+            }
+
             SectionHeader { text: qsTr("Automagic") }
 
             Label {
@@ -236,7 +281,9 @@ Page {
                 enabled: page.configReady
                 onClicked: teslaClient.setConfig(vinField.text, modelField.currentIndex < 0 ? page.savedModel : VState.MODELS[modelField.currentIndex].id,
                                                   keyNameField.text,
-                                                  connectTimeoutSlider.value, commandTimeoutSlider.value)
+                                                  connectTimeoutSlider.value, commandTimeoutSlider.value,
+                                                  CoverActions.ACTIONS[coverLeftField.currentIndex].id,
+                                                  CoverActions.ACTIONS[coverRightField.currentIndex].id)
             }
 
             Button {

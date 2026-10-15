@@ -5,6 +5,7 @@ use crate::{
     tesla_ble::{self, Domain, Operation, Session, Status},
 };
 use p256::elliptic_curve::sec1::ToEncodedPoint;
+use serde::Deserialize;
 use std::{
     collections::VecDeque,
     path::{Path, PathBuf},
@@ -15,6 +16,28 @@ use std::{
     thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
+
+#[derive(Deserialize)]
+struct BodyControllerState {
+    #[serde(default, rename = "userPresence")]
+    user_presence: UserPresence,
+}
+
+#[derive(Debug, Default, PartialEq, Eq, Deserialize)]
+enum UserPresence {
+    #[default]
+    #[serde(rename = "VEHICLE_USER_PRESENCE_UNKNOWN")]
+    Unknown,
+    #[serde(rename = "VEHICLE_USER_PRESENCE_NOT_PRESENT")]
+    NotPresent,
+    #[serde(rename = "VEHICLE_USER_PRESENCE_PRESENT")]
+    Present,
+}
+
+fn user_present(payload: &[u8]) -> bool {
+    serde_json::from_slice::<BodyControllerState>(payload)
+        .is_ok_and(|state| state.user_presence == UserPresence::Present)
+}
 
 fn seconds(value: i32) -> Duration {
     Duration::from_secs(u64::try_from(value.max(1)).unwrap_or(1))
@@ -717,12 +740,7 @@ fn controller(
             {
                 match execute(session, Operation::BodyControllerState, command) {
                     Ok(result) if result.status == Status::Ok => {
-                        let value: serde_json::Value =
-                            serde_json::from_slice(&result.payload).unwrap_or_default();
-                        present = value
-                            .get("userPresence")
-                            .and_then(serde_json::Value::as_str)
-                            == Some("VEHICLE_USER_PRESENCE_PRESENT");
+                        present = user_present(&result.payload);
                         status_at = Some(Instant::now());
                         if connected_at.is_none() {
                             connected_at = Some(Instant::now());
@@ -815,6 +833,50 @@ fn maintenance(inner: &Arc<Inner>, session: &Arc<Session>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn presence_payload_validates_protocol_enum_and_decodes_escapes() {
+        let plain =
+            br#"{"userPresence":"VEHICLE_USER_PRESENCE_PRESENT","ignored":{"nested":[1,true]}}"#;
+        assert!(user_present(plain));
+
+        let escaped = br#"{"userPresence":"VEHICLE_USER_PRESENCE_\u0050RESENT"}"#;
+        assert!(user_present(escaped));
+
+        for (name, expected) in [
+            ("VEHICLE_USER_PRESENCE_UNKNOWN", UserPresence::Unknown),
+            (
+                "VEHICLE_USER_PRESENCE_NOT_PRESENT",
+                UserPresence::NotPresent,
+            ),
+            ("VEHICLE_USER_PRESENCE_PRESENT", UserPresence::Present),
+        ] {
+            let payload = format!(r#"{{"userPresence":"{name}"}}"#);
+            let state: BodyControllerState = serde_json::from_str(&payload).unwrap();
+            assert_eq!(state.user_presence, expected);
+        }
+        assert!(
+            serde_json::from_str::<BodyControllerState>(r#"{"userPresence":"UNKNOWN"}"#).is_err()
+        );
+    }
+
+    #[test]
+    fn absent_or_invalid_presence_is_not_present() {
+        for payload in [
+            "{}",
+            r#"{"userPresence":null}"#,
+            r#"{"userPresence":42}"#,
+            r#"{"userPresence":{"unexpected":true}}"#,
+            r#"{"userPresence":"VEHICLE_USER_PRESENCE_NOT_PRESENT"}"#,
+            r#"{"userPresence":"VEHICLE_USER_PRESENCE_UNKNOWN"}"#,
+            r#"{"userPresence":"UNKNOWN"}"#,
+            r#"{"userPresence":"VEHICLE_USER_PRESENCE_PRESENT","broken":}"#,
+            "null",
+            "[]",
+        ] {
+            assert!(!user_present(payload.as_bytes()), "{payload}");
+        }
+    }
 
     #[test]
     fn terminal_state_is_not_lost_in_an_observation_storm() {

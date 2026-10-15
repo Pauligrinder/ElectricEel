@@ -117,6 +117,8 @@ pub(crate) enum Request {
         key_name: String,
         connect_timeout_sec: i32,
         command_timeout_sec: i32,
+        cover_left_action: Option<crate::cover_action::CoverAction>,
+        cover_right_action: Option<crate::cover_action::CoverAction>,
     },
     GetConfig,
     ExportAutomagic {
@@ -708,16 +710,22 @@ fn dispatch(core: &Core, request: Request, sink: &Notifications, phone: &mut Pho
             key_name,
             connect_timeout_sec,
             command_timeout_sec,
+            cover_left_action,
+            cover_right_action,
         } => {
-            let result = core.set_config(
+            let result = core.set_config_with_cover_actions(
                 &vin,
                 &model,
                 &key_name,
                 connect_timeout_sec,
                 command_timeout_sec,
+                Some((cover_left_action, cover_right_action)),
             );
             let ok = result.is_ok();
             let error = result.err().map_or_else(String::new, |e| e.to_string());
+            if ok {
+                dispatch(core, Request::GetConfig, sink, phone);
+            }
             sink.send(&Notification::ConfigSaved { ok, error });
             if ok {
                 phone.start(core, sink);
@@ -726,6 +734,7 @@ fn dispatch(core: &Core, request: Request, sink: &Notifications, phone: &mut Pho
         Request::GetConfig => {
             let (vin, model, key_name, connect_timeout_sec, command_timeout_sec, has_key, pem) =
                 core.get_config();
+            let (cover_left_action, cover_right_action) = core.cover_actions();
             sink.send(&Notification::ConfigLoaded {
                 vin,
                 model,
@@ -734,6 +743,8 @@ fn dispatch(core: &Core, request: Request, sink: &Notifications, phone: &mut Pho
                 command_timeout_sec,
                 has_key,
                 pem,
+                cover_left_action,
+                cover_right_action,
             });
         }
         Request::PreviewDestination { request_id, text } => {
@@ -1044,6 +1055,44 @@ mod tests {
         detach.join().unwrap();
         drop(context);
         sink.send(&Notification::Initialized { ok: true });
+    }
+
+    #[test]
+    fn cover_preferences_default_save_publish_and_survive_restart() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = dir.path().to_string_lossy().into_owned();
+        for first_start in [true, false] {
+            let runtime = Runtime::new(Core::new(state.clone(), state.clone(), None).unwrap());
+            let (sender, receiver) = mpsc::channel::<Value>();
+            let mut sender = Box::new(sender);
+            unsafe { runtime.observe(Some(notification), std::ptr::addr_of_mut!(*sender).cast()) };
+            assert!(runtime.submit(r#"{"op":"get_config"}"#));
+            let loaded = receive(&receiver, "config_loaded", Duration::from_secs(2));
+            assert_eq!(
+                loaded["cover_left_action"],
+                if first_start {
+                    "trunk-open"
+                } else {
+                    "flash-lights"
+                }
+            );
+            assert_eq!(
+                loaded["cover_right_action"],
+                if first_start { "frunk-open" } else { "honk" }
+            );
+            if first_start {
+                assert!(runtime.submit(r#"{"op":"set_config","vin":"","model":"","key_name":"phone","connect_timeout_sec":20,"command_timeout_sec":5,"cover_left_action":"flash-lights","cover_right_action":"honk"}"#));
+                // Saving pushes the new config to the cover without a UI poll.
+                let updated = receive(&receiver, "config_loaded", Duration::from_secs(2));
+                assert_eq!(updated["cover_left_action"], "flash-lights");
+                assert_eq!(updated["cover_right_action"], "honk");
+                assert_eq!(
+                    receive(&receiver, "config_saved", Duration::from_secs(2))["ok"],
+                    true
+                );
+            }
+            drop(runtime);
+        }
     }
 
     #[test]
