@@ -24,6 +24,9 @@ type reviewHandshakeConnector struct {
 	inbox   chan []byte
 	mu      sync.Mutex
 	domains []protocol.Domain
+	entered chan struct{}
+	release chan struct{}
+	once    sync.Once
 }
 
 func (c *reviewHandshakeConnector) Receive() <-chan []byte { return c.inbox }
@@ -34,7 +37,15 @@ func (c *reviewHandshakeConnector) PreferredAuthMethod() connector.AuthMethod {
 }
 func (c *reviewHandshakeConnector) RetryInterval() time.Duration  { return time.Millisecond }
 func (c *reviewHandshakeConnector) AllowedLatency() time.Duration { return time.Second }
-func (c *reviewHandshakeConnector) Send(_ context.Context, data []byte) error {
+func (c *reviewHandshakeConnector) Send(ctx context.Context, data []byte) error {
+	if c.entered != nil {
+		c.once.Do(func() { close(c.entered) })
+		select {
+		case <-c.release:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 	var message universal.RoutableMessage
 	if err := proto.Unmarshal(data, &message); err != nil {
 		return err
@@ -43,6 +54,56 @@ func (c *reviewHandshakeConnector) Send(_ context.Context, data []byte) error {
 	c.domains = append(c.domains, message.GetToDestination().GetDomain())
 	c.mu.Unlock()
 	return errors.New("test vehicle rejects handshake")
+}
+
+func TestAuditHandshakeDoesNotBlockPresenceState(t *testing.T) {
+	link := &reviewHandshakeConnector{
+		inbox: make(chan []byte), entered: make(chan struct{}), release: make(chan struct{}),
+	}
+	defer close(link.release)
+	scalar := make([]byte, 32)
+	scalar[31] = 1
+	car, err := vehicle.NewVehicle(link, protocol.UnmarshalECDHPrivateKey(scalar), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := car.Connect(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer car.Disconnect()
+	s := &session{car: car, conn: link}
+	done := make(chan struct{})
+	go func() {
+		s.mu.Lock()
+		_ = s.ensureConnectedLocked(ctx, "state", nil)
+		s.mu.Unlock()
+		close(done)
+	}()
+	select {
+	case <-link.entered:
+	case <-ctx.Done():
+		t.Fatal("handshake did not start")
+	}
+	stopped := make(chan struct{})
+	go func() {
+		s.mu.Lock()
+		s.stopPresenceLocked()
+		s.mu.Unlock()
+		close(stopped)
+	}()
+	select {
+	case <-stopped:
+	case <-time.After(250 * time.Millisecond):
+		t.Error("handshake blocked presence state lock")
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Error("handshake did not cancel")
+	}
 }
 
 func TestProductionReviewReusedLinkAuthenticatesInfotainmentCommands(t *testing.T) {
@@ -68,7 +129,9 @@ func TestProductionReviewReusedLinkAuthenticatesInfotainmentCommands(t *testing.
 			defer car.Disconnect()
 			s := &session{car: car, conn: link}
 			// Infotainment has not been authenticated, as on a presence-only link.
+			s.mu.Lock()
 			_ = s.ensureConnectedLocked(ctx, command, nil)
+			s.mu.Unlock()
 			link.mu.Lock()
 			defer link.mu.Unlock()
 			for _, domain := range link.domains {

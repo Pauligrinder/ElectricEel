@@ -20,8 +20,6 @@ Page {
     property var statusBeforeToggle: null
     property string statusStage: ""
     property string statusRequestId: ""
-    property int statusSeq: 0
-    property string statusInstance: Date.now() + ":" + Math.random()
     // Set from stdErr when a status leg fails. Climate/charge/closures go
     // through Infotainment and fail on a sleeping vehicle; lock/unlock and
     // body-controller-state use VCSEC and still work then (see
@@ -71,8 +69,7 @@ Page {
 
     function runStatus(stage, command, args, refresh) {
         page.statusStage = stage
-        page.statusSeq++
-        page.statusRequestId = "status:" + stage + "#" + page.statusSeq + "@" + page.statusInstance + ":" + page.vin
+        page.statusRequestId = teslaClient.newRequestId("status:" + stage, page.vin)
         teslaClient.runCommand(page.statusRequestId, command, args, refresh || false)
     }
 
@@ -169,8 +166,6 @@ Page {
         onCommandFinished: {
             if (requestId !== page.statusRequestId || page.statusStage.length === 0)
                 return
-            if (ok)
-                page.statusError = ""
             if (page.statusStage === "body") {
                 if (ok)
                     page.vehicleStatus = VState.mergeBodyControllerState(page.vehicleStatus, stdOut)

@@ -29,9 +29,6 @@ pub(crate) fn public_bytes(path: &Path) -> Result<Vec<u8>, String> {
     if let Ok(key) = PublicKey::from_public_key_pem(text) {
         return Ok(key.to_encoded_point(false).as_bytes().to_vec());
     }
-    if let Ok(key) = load(path) {
-        return Ok(key.public_key().to_encoded_point(false).as_bytes().to_vec());
-    }
     let text = text.trim();
     if text.len() == 130 && text.is_ascii() {
         let bytes: Result<Vec<u8>, _> = (0..130)
@@ -94,5 +91,20 @@ mod tests {
         std::fs::write(&private, "corrupt").unwrap();
         assert!(generate(&private, &public, false).is_err());
         assert_eq!(std::fs::read_to_string(private).unwrap(), "corrupt");
+    }
+    #[test]
+    fn audit_private_key_path_must_not_be_accepted_as_public() {
+        // public_bytes() falls back to load(private) and derives the public
+        // half, so a caller passing the private path (pair/add-key) succeeds
+        // instead of failing fast with "invalid public key", masking a file
+        // swap. A private PEM must be rejected here.
+        let dir = tempfile::tempdir().unwrap();
+        let private = dir.path().join("private.pem");
+        let public = dir.path().join("public.pem");
+        generate(&private, &public, false).unwrap();
+        assert!(
+            public_bytes(&private).is_err(),
+            "public_bytes(private.pem) succeeded; a private key path must not satisfy a public-key load"
+        );
     }
 }

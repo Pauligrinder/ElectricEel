@@ -35,6 +35,7 @@ public:
     bool automagicExportBusy() const { return m_automagicExportBusy; }
 
 public slots:
+    QString newRequestId(const QString &prefix, const QString &vin = QString()) const;
     // requestId is caller-chosen and echoed back on commandFinished/
     // commandError so QML can match replies to the triggering control.
     void runCommand(const QString &requestId, const QString &cmd, const QVariantList &args,

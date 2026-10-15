@@ -29,6 +29,25 @@ func newTestConnection(bus *fakeBluez) *Connection {
 	}
 }
 
+func TestAuditRXBackpressureRetiresStream(t *testing.T) {
+	c := newTestConnection(newFakeBluez())
+	for i := 0; i < cap(c.inbox); i++ {
+		c.inbox <- []byte{0}
+	}
+	c.rx([]byte{0, 1, 42})
+	if c.RXBackpressure() != 1 {
+		t.Fatalf("backpressure count = %d", c.RXBackpressure())
+	}
+	select {
+	case <-c.Dropped():
+	default:
+		t.Fatal("saturated RX stream was not retired")
+	}
+	if err := c.Send(context.Background(), []byte{1}); !errors.Is(err, protocol.ErrNotConnected) {
+		t.Fatalf("retired stream accepted another send: %v", err)
+	}
+}
+
 func TestConnectFromScanResult(t *testing.T) {
 	bus := newFakeBluez()
 	vin := "5YJ3E1EA0PF000000"

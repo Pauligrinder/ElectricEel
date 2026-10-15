@@ -82,14 +82,14 @@ type heartbeatFrame struct {
 // is a multiple of this (see Rust SessionClient::frame_timeout).
 const heartbeatInterval = 10 * time.Second
 
-// session owns the (possibly absent) live vehicle connection. All access is
-// serialized by mu - the caller (the in-process Rust core, via its own
-// ble_sem) never issues concurrent commands, and this process only ever has
-// one goroutine
-// (the stdin loop) calling dispatch, but idleTimer's callback runs on its
-// own goroutine and must take mu too.
+// session owns the live vehicle connection. mu protects state, never slow
+// connect/handshake/RPC work. In-flight operations use a link snapshot and
+// validate its generation before publishing results.
 type session struct {
-	mu sync.Mutex
+	mu             sync.Mutex
+	connecting     bool
+	connectCancel  context.CancelFunc
+	linkGeneration uint64
 
 	vin            string
 	keyFile        string
@@ -151,6 +151,7 @@ type session struct {
 	// heartbeats forever while the heartbeat ticker keeps proving "alive".
 	parentConn    net.Conn
 	parentFailed  atomic.Bool
+	parentMu      sync.Mutex // protects parentContext/parentCancel; encoder uses writeMu
 	parentContext context.Context
 	parentCancel  context.CancelFunc
 }
@@ -158,6 +159,8 @@ type session struct {
 // Requests and presence belong to the parent transport's lifetime. Tests and
 // standalone dispatch calls without a parent still use a background context.
 func (s *session) requestContext() context.Context {
+	s.parentMu.Lock()
+	defer s.parentMu.Unlock()
 	if s.parentContext != nil {
 		return s.parentContext
 	}
@@ -168,6 +171,10 @@ func (s *session) requestContext() context.Context {
 // the phone's BLE radio) can go back to sleep. Safe to call when already
 // torn down. Caller holds mu.
 func (s *session) teardownLocked() {
+	s.linkGeneration++
+	if s.connectCancel != nil {
+		s.connectCancel()
+	}
 	s.idleGeneration++
 	if s.idleTimer != nil {
 		s.idleTimer.Stop()
@@ -264,6 +271,16 @@ func sessionDomains(cmd string) []protocol.Domain {
 // reset presenceStep back to "away" and immediately re-triggered arrival).
 // Every other caller passes nil (nothing to reuse). Caller holds mu.
 func (s *session) ensureConnectedLocked(ctx context.Context, cmd string, target *bluez.ScanResult) error {
+	if s.connecting {
+		return fmt.Errorf("vehicle connection already in progress; retry shortly")
+	}
+	// State locks no longer pin the link during I/O. Retire the idle callback
+	// explicitly so it cannot disconnect a command that is still in flight.
+	s.idleGeneration++
+	if s.idleTimer != nil {
+		s.idleTimer.Stop()
+		s.idleTimer = nil
+	}
 	if s.car != nil {
 		if !commandsWithoutSession[cmd] {
 			s.ensureAuthTapLocked(s.requestContext())
@@ -272,7 +289,14 @@ func (s *session) ensureConnectedLocked(ctx context.Context, cmd string, target 
 			// missing authentication when presence only established VCSEC.
 			if len(domains) > 0 {
 				keylog("connect", "StartSession additional domains=%v", domains)
-				if err := s.car.StartSession(ctx, domains); err != nil {
+				car := s.car
+				s.mu.Unlock()
+				err := car.StartSession(ctx, domains)
+				s.mu.Lock()
+				if s.car != car {
+					return protocol.ErrNotConnected
+				}
+				if err != nil {
 					keylog("connect", "StartSession additional failed: %v", err)
 					s.teardownLocked()
 					return err
@@ -290,27 +314,41 @@ func (s *session) ensureConnectedLocked(ctx context.Context, cmd string, target 
 		return fmt.Errorf("vehicle not nearby; wait for phone key to connect and retry")
 	}
 
-	skey, err := protocol.LoadPrivateKey(s.keyFile)
+	if s.bleBackend == "bluez" {
+		if err := s.ensureBluezLocked(); err != nil {
+			return err
+		}
+	}
+	bz, watcher := s.bluez, s.watcher
+	keyFile, adapterID, vin, backend := s.keyFile, s.adapterID, s.vin, s.bleBackend
+	generation := s.linkGeneration
+	connCtx, cancel := context.WithTimeout(ctx, s.connectTimeout)
+	s.connecting = true
+	s.connectCancel = cancel
+	// Every return below restores the caller's lock ownership. Teardown can
+	// cancel the attempt, but another connect cannot race its cleanup.
+	s.mu.Unlock()
+	defer func() {
+		cancel()
+		s.mu.Lock()
+		s.connecting = false
+		s.connectCancel = nil
+	}()
+	skey, err := protocol.LoadPrivateKey(keyFile)
 	if err != nil {
 		return fmt.Errorf("load private key: %w", err)
 	}
 
-	connCtx, cancel := context.WithTimeout(ctx, s.connectTimeout)
-	defer cancel()
-
-	keylog("connect", "begin cmd=%q target=%v timeout=%s", cmd, target != nil, s.connectTimeout)
+	keylog("connect", "begin cmd=%q target=%v", cmd, target != nil)
 
 	var conn connector.Connector
-	if s.bleBackend == "bluez" {
+	if backend == "bluez" {
 		// org.bluez D-Bus transport: the radio stays owned by the OS
 		// Bluetooth stack, so other connections (e.g. a soundbar) survive.
-		if err := s.ensureBluezLocked(); err != nil {
-			return err
+		if watcher != nil {
+			watcher.Pause(connCtx)
 		}
-		if s.watcher != nil {
-			s.watcher.Pause(connCtx)
-		}
-		conn, err = s.bluez.Connect(connCtx, s.adapterID, s.vin, target)
+		conn, err = bz.Connect(connCtx, adapterID, vin, target)
 		if err != nil {
 			keylog("connect", "GATT failed: %v", err)
 			return err
@@ -320,10 +358,10 @@ func (s *session) ensureConnectedLocked(ctx context.Context, cmd string, target 
 		// InitAdapterWithID - which brings the controller down and binds an
 		// exclusive HCI user channel (see docs/limitations.md). This is exactly
 		// the behavior the bluez backend exists to avoid.
-		if err := ble.InitAdapterWithID(s.adapterID); err != nil {
+		if err := ble.InitAdapterWithID(adapterID); err != nil {
 			return err
 		}
-		conn, err = ble.NewConnection(connCtx, s.vin)
+		conn, err = ble.NewConnection(connCtx, vin)
 		if err != nil {
 			return err
 		}
@@ -343,23 +381,53 @@ func (s *session) ensureConnectedLocked(ctx context.Context, cmd string, target 
 	// The vehicle can send AuthenticationRequest during the handshake; if
 	// the observer is only attached afterwards, that first handle-pull is
 	// dropped and unlock appears to need a dashboard refresh.
+	s.mu.Lock()
+	if s.linkGeneration != generation || connCtx.Err() != nil {
+		s.mu.Unlock()
+		car.Disconnect()
+		conn.Close()
+		return protocol.ErrNotConnected
+	}
 	s.car = car
 	s.conn = conn
 	if !commandsWithoutSession[cmd] {
 		s.ensureAuthTapLocked(s.requestContext())
+	}
+	s.mu.Unlock()
+	if !commandsWithoutSession[cmd] {
 		domains := sessionDomains(cmd)
 		keylog("connect", "StartSession domains=%v", domains)
 		if err := car.StartSession(connCtx, domains); err != nil {
-			s.teardownLocked()
+			s.mu.Lock()
+			if s.car == car {
+				s.teardownLocked()
+			}
+			s.mu.Unlock()
 			keylog("connect", "StartSession failed: %v", err)
 			return err
 		}
 	}
-	if s.bleBackend == "bluez" {
+	s.mu.Lock()
+	if s.car != car || s.linkGeneration != generation || connCtx.Err() != nil {
+		if s.car == car {
+			s.teardownLocked()
+		}
+		s.mu.Unlock()
+		return protocol.ErrNotConnected
+	}
+	if backend == "bluez" {
 		s.enableTrustedLocked()
+	}
+	if s.car != car || connCtx.Err() != nil {
+		if s.car == car {
+			s.teardownLocked()
+		}
+		s.mu.Unlock()
+		return protocol.ErrNotConnected
 	}
 	keylog("connect", "ready cmd=%q", cmd)
 	s.connectedAt = time.Now()
+	s.mu.Unlock()
 	return nil
 }
 
@@ -374,6 +442,8 @@ func (s *session) enableTrustedLocked() {
 	if !ok || bzConn == nil {
 		return
 	}
+	s.mu.Unlock()
+	defer s.mu.Lock()
 	if err := bzConn.SetTrusted(true); err != nil {
 		keylog("link", "SetTrusted failed: %v", err)
 	}
@@ -515,7 +585,13 @@ func (s *session) primeVCSECLocked(ctx context.Context) {
 		return
 	}
 	s.lastUserPresence = vcsec.UserPresence_E_VEHICLE_USER_PRESENCE_UNKNOWN
-	status, err := s.car.BodyControllerState(ctx)
+	car := s.car
+	s.mu.Unlock()
+	status, err := car.BodyControllerState(ctx)
+	s.mu.Lock()
+	if s.car != car {
+		return
+	}
 	if err != nil {
 		keylog("auth", "VCSEC prime failed: %v", err)
 		if sessionDroppedError(err) {
@@ -1391,9 +1467,15 @@ func (s *session) dispatch(req request) response {
 
 	args := append([]string{req.Cmd}, req.Args...)
 	var execErr error
+	car := s.car
+	s.mu.Unlock()
 	stdout, stderr := captureOutput(cmdCtx, func(ctx context.Context) {
-		execErr = execute(ctx, nil, s.car, args)
+		execErr = execute(ctx, nil, car, args)
 	})
+	s.mu.Lock()
+	if s.car != car {
+		return response{ID: req.ID, Stdout: stdout, Stderr: "connection changed during command; success uncertain", ExitCode: 1}
+	}
 
 	if commandsWithoutSession[req.Cmd] {
 		if execErr == nil {

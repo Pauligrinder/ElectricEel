@@ -100,12 +100,9 @@ test("NavigationPage scopes preview/send correlation to the VIN", () => {
     assert.match(page.pendingSendId, /VIN-A/, `pendingSendId ${JSON.stringify(page.pendingSendId)} carries no VIN`);
 });
 
-test("FirstPage does not let a first-leg error mask later fresh telemetry", () => {
-    // Bug: body failure sets statusError; closures/climate/charge only set
-    // `else if (statusError.length === 0)` and successes never clear. Chain
-    // body-fail + three later successes still shows "Status unavailable"
-    // despite fresh battery/climate readings (label prioritises statusError).
-    // Desired: any successful leg clears a stale error (or per-leg errors).
+test("FirstPage merges later fresh telemetry while preserving a failed leg warning", () => {
+    // A partially successful cycle still renders its new telemetry, but must
+    // retain the failed-leg warning (AUDIT-1) until the next refresh cycle.
     const requests = [];
     const context = vm.createContext({ qsTr: (s) => s, console });
     vm.runInContext(
@@ -144,7 +141,7 @@ test("FirstPage does not let a first-leg error mask later fresh telemetry", () =
         runHandler(firstPageSource, "onCommandFinished", context);
     }
     assert.equal(context.page.vehicleStatus.batteryLevel, 80);
-    assert.equal(context.page.statusError, "", `stale first-leg error ${JSON.stringify(context.page.statusError)} masks fresh telemetry`);
+    assert.equal(context.page.statusError, "transient VCSEC timeout");
 });
 
 test("FirstPage hard toggle failure re-fetches instead of leaving a stale icon", () => {

@@ -35,8 +35,8 @@ fn named(text: &str, names: &[(&str, u64)]) -> Result<Value, String> {
 }
 fn minutes(text: &str) -> Result<u64, String> {
     let (hour, minute) = text.split_once(':').ok_or("expected HH:MM")?;
-    let hour: u64 = hour.parse().map_err(|_| "invalid hour")?;
-    let minute: u64 = minute.parse().map_err(|_| "invalid minute")?;
+    let hour: u64 = hour.trim().parse().map_err(|_| "invalid hour")?;
+    let minute: u64 = minute.trim().parse().map_err(|_| "invalid minute")?;
     if hour > 23 || minute > 59 {
         return Err("invalid time".into());
     }
@@ -48,9 +48,9 @@ fn days(text: &str) -> Result<u64, String> {
         mask |= match day.trim().to_ascii_lowercase().as_str() {
             "sun" | "sunday" => 1,
             "mon" | "monday" => 2,
-            "tues" | "tuesday" => 4,
+            "tue" | "tues" | "tuesday" => 4,
             "wed" | "wednesday" => 8,
-            "thurs" | "thursday" => 16,
+            "thu" | "thur" | "thurs" | "thursday" => 16,
             "fri" | "friday" => 32,
             "sat" | "saturday" => 64,
             "all" => 127,
@@ -129,7 +129,8 @@ pub(crate) fn parse(cmd: &str, args: &[String]) -> Result<Operation, String> {
         }
         "software-update-start" => {
             arity(args, 1, 1)?;
-            let text = args[0].trim();
+            let text = args[0].trim().to_ascii_lowercase();
+            let text = text.as_str();
             let (text, multiplier) = if let Some(t) = text.strip_suffix('h') {
                 (t, 3600.0)
             } else if let Some(t) = text.strip_suffix('m') {
@@ -368,5 +369,36 @@ mod tests {
                 "navigate {args:?} must be rejected before BLE"
             );
         }
+    }
+    #[test]
+    fn audit_software_update_accepts_uppercase_duration_units() {
+        // Core::validate_arg_ranges lowercases the unit (1H/10M/10S pass),
+        // but parse() strips only lowercase 'h'/'m'/'s', so a validated
+        // "1H" fails here with "invalid delay". The two stages must agree;
+        // durations are case-insensitive (Go's ParseDuration forms aside).
+        for arg in ["1H", "10M", "10S", "0H", "5M"] {
+            assert!(
+                parse("software-update-start", &[arg.to_string()]).is_ok(),
+                "software-update-start {arg:?} passed validation but parse rejects it"
+            );
+        }
+        assert!(parse("software-update-start", &["10H".to_string()]).is_err());
+    }
+    #[test]
+    fn audit_schedule_time_trims_surrounding_whitespace() {
+        // minutes() parses hour/minute without trimming, unlike days() which
+        // trims each element. A pasted "22:00 " or " 22:00-06:00 " fails with
+        // "invalid minute/hour" instead of scheduling. Whitespace from
+        // copy-paste must be tolerated.
+        let args = ["weekdays", "22:00-06:00 ", "48.85", "2.29"].map(str::to_string);
+        assert!(
+            parse("charging-schedule-add", &args).is_ok(),
+            "trailing space in TIME must be trimmed, not rejected"
+        );
+        let args = ["weekdays", " 22:00", "48.85", "2.29"].map(str::to_string);
+        assert!(
+            parse("precondition-schedule-add", &args).is_ok(),
+            "leading space in TIME must be trimmed, not rejected"
+        );
     }
 }

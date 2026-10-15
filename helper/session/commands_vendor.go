@@ -12,7 +12,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"os"
 	"sort"
 	"strconv"
@@ -37,10 +36,13 @@ var (
 		"MON":       2,
 		"MONDAY":    2,
 		"TUES":      4,
+		"TUE":       4,
 		"TUESDAY":   4,
 		"WED":       8,
 		"WEDNESDAY": 8,
 		"THURS":     16,
+		"THU":       16,
+		"THUR":      16,
 		"THURSDAY":  16,
 		"FRI":       32,
 		"FRIDAY":    32,
@@ -100,36 +102,27 @@ func GetCategory(nameStr string) (vehicle.StateCategory, error) {
 }
 
 func GetDegree(degStr string) (float32, error) {
-	return GetLongitude(degStr)
+	return GetLatitude(degStr)
 }
 
 // GetLatitude validates a latitude in [-90, 90]. GetDegree is kept for
 // backward compatibility but cannot validate both axes with one range;
 // new code must use GetLatitude for LATITUDE and GetLongitude for LONGITUDE.
 func GetLatitude(latStr string) (float32, error) {
-	deg, err := strconv.ParseFloat(strings.TrimSpace(latStr), 32)
-	if err != nil {
-		return 0.0, err
-	}
-	if math.IsNaN(deg) || math.IsInf(deg, 0) {
-		return 0.0, errors.New("latitude must be a finite number in the range [-90, 90]")
-	}
-	if !phoneprotocol.ValidCoordinate(deg, 90) {
-		return 0.0, errors.New("latitude must be in the range [-90, 90]")
-	}
-	return float32(deg), nil
+	return parseCoordinate(latStr, "latitude", 90)
 }
 
 func GetLongitude(lonStr string) (float32, error) {
-	deg, err := strconv.ParseFloat(strings.TrimSpace(lonStr), 32)
+	return parseCoordinate(lonStr, "longitude", 180)
+}
+
+func parseCoordinate(text, axis string, limit float64) (float32, error) {
+	deg, err := strconv.ParseFloat(strings.TrimSpace(text), 64)
 	if err != nil {
 		return 0.0, err
 	}
-	if math.IsNaN(deg) || math.IsInf(deg, 0) {
-		return 0.0, errors.New("longitude must be a finite number in the range [-180, 180]")
-	}
-	if !phoneprotocol.ValidCoordinate(deg, 180) {
-		return 0.0, errors.New("longitude must be in the range [-180, 180]")
+	if !phoneprotocol.ValidCoordinate(deg, limit) {
+		return 0.0, fmt.Errorf("%s must be a finite number in the range [-%g, %g]", axis, limit, limit)
 	}
 	return float32(deg), nil
 }
@@ -151,11 +144,11 @@ func MinutesAfterMidnight(hoursAndMinutes string) (int32, error) {
 	if len(components) != 2 {
 		return 0, fmt.Errorf("%w: expected HH:MM", ErrInvalidTime)
 	}
-	hours, err := strconv.Atoi(components[0])
+	hours, err := strconv.Atoi(strings.TrimSpace(components[0]))
 	if err != nil {
 		return 0, fmt.Errorf("%w: %s", ErrInvalidTime, err)
 	}
-	minutes, err := strconv.Atoi(components[1])
+	minutes, err := strconv.Atoi(strings.TrimSpace(components[1]))
 	if err != nil {
 		return 0, fmt.Errorf("%w: %s", ErrInvalidTime, err)
 	}

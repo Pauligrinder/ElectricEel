@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/godbus/dbus"
@@ -62,9 +63,14 @@ type Connection struct {
 
 	// RX reassembly state. Touched only by the rxLoop goroutine (the single
 	// writer), so it needs no lock of its own.
-	rxBuf  []byte
-	lastRx time.Time
+	rxBuf          []byte
+	lastRx         time.Time
+	rxBackpressure atomic.Uint64
 }
+
+// RXBackpressure counts full-inbox incidents; a saturated stream is retired
+// rather than silently losing a response and leaving commands ambiguous.
+func (c *Connection) RXBackpressure() uint64 { return c.rxBackpressure.Load() }
 
 // SetInboundObserver registers (or clears, with nil) a tap on inbound
 // datagrams. The observer receives a private copy of each reassembled
@@ -383,7 +389,10 @@ func (c *Connection) flush() bool {
 	select {
 	case c.inbox <- buf:
 	default:
-		// Consumer behind; drop rather than block the RX loop.
+		c.rxBackpressure.Add(1)
+		c.notifyDropped()
+		c.rxBuf = nil
+		return false
 	}
 	c.rxBuf = c.rxBuf[2+msgLength:]
 	return true

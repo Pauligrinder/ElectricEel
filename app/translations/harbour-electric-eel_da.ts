@@ -3,18 +3,18 @@
   <context>
     <name>ArgumentDialog</name>
     <message>
-      <location filename="../qml/pages/ArgumentDialog.qml" line="81" />
+      <location filename="../qml/pages/ArgumentDialog.qml" line="83" />
       <source>Run</source>
       <translation>Kør</translation>
     </message>
     <message>
-      <location filename="../qml/pages/ArgumentDialog.qml" line="149" />
-      <location filename="../qml/pages/ArgumentDialog.qml" line="230" />
+      <location filename="../qml/pages/ArgumentDialog.qml" line="151" />
+      <location filename="../qml/pages/ArgumentDialog.qml" line="232" />
       <source> (optional)</source>
       <translation> (valgfri)</translation>
     </message>
     <message>
-      <location filename="../qml/pages/ArgumentDialog.qml" line="153" />
+      <location filename="../qml/pages/ArgumentDialog.qml" line="155" />
       <source>(not set)</source>
       <translation>(ikke angivet)</translation>
     </message>
@@ -22,57 +22,57 @@
   <context>
     <name>CategoryPage</name>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="51" />
+      <location filename="../qml/pages/CategoryPage.qml" line="47" />
       <source>%1 • %2°C inside</source>
       <translation>%1 • %2 °C inde</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="52" />
+      <location filename="../qml/pages/CategoryPage.qml" line="48" />
       <source>Climate on</source>
       <translation>Klima til</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="52" />
+      <location filename="../qml/pages/CategoryPage.qml" line="48" />
       <source>Climate off</source>
       <translation>Klima fra</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="58" />
+      <location filename="../qml/pages/CategoryPage.qml" line="54" />
       <source>%1% battery%2</source>
       <translation>%1 % batteri%2</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="61" />
+      <location filename="../qml/pages/CategoryPage.qml" line="57" />
       <source> • Charging</source>
       <translation> • Oplader</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="66" />
+      <location filename="../qml/pages/CategoryPage.qml" line="62" />
       <source>Doors locked</source>
       <translation>Døre låst</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="66" />
+      <location filename="../qml/pages/CategoryPage.qml" line="62" />
       <source>Doors unlocked</source>
       <translation>Døre ulåst</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="93" />
+      <location filename="../qml/pages/CategoryPage.qml" line="89" />
       <source>OK</source>
       <translation>OK</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="93" />
+      <location filename="../qml/pages/CategoryPage.qml" line="89" />
       <source>exit code %1</source>
       <translation>exitkode %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="175" />
+      <location filename="../qml/pages/CategoryPage.qml" line="170" />
       <source>Retry</source>
-      <translation type="unfinished" />
+      <translation>Prøv igen</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="213" />
+      <location filename="../qml/pages/CategoryPage.qml" line="208" />
       <source>Running %1...</source>
       <translation>Kører %1...</translation>
     </message>
@@ -421,119 +421,152 @@
     </message>
   </context>
   <context>
+    <name>CoverActions</name>
+    <message>
+      <location filename="../qml/js/CoverActions.js" line="6" />
+      <source>Open rear trunk</source>
+      <translation>Åbn bagklap</translation>
+    </message>
+    <message>
+      <location filename="../qml/js/CoverActions.js" line="7" />
+      <source>Open front trunk</source>
+      <translation>Åbn frunk</translation>
+    </message>
+    <message>
+      <location filename="../qml/js/CoverActions.js" line="8" />
+      <source>Lock</source>
+      <translation>Lås</translation>
+    </message>
+    <message>
+      <location filename="../qml/js/CoverActions.js" line="9" />
+      <source>Unlock</source>
+      <translation>Lås op</translation>
+    </message>
+    <message>
+      <location filename="../qml/js/CoverActions.js" line="10" />
+      <source>Flash lights</source>
+      <translation>Blink med forlygterne</translation>
+    </message>
+    <message>
+      <location filename="../qml/js/CoverActions.js" line="11" />
+      <source>Honk horn</source>
+      <translation>Dyt</translation>
+    </message>
+  </context>
+  <context>
     <name>CoverPage</name>
     <message>
-      <location filename="../qml/cover/CoverPage.qml" line="102" />
+      <location filename="../qml/cover/CoverPage.qml" line="121" />
       <source>Retry</source>
-      <translation type="unfinished" />
+      <translation>Prøv igen</translation>
     </message>
   </context>
   <context>
     <name>FirstPage</name>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="287" />
+      <location filename="../qml/pages/FirstPage.qml" line="282" />
       <source>The control core failed to start. Reinstall the app, then pull down to refresh.</source>
       <translation>Styringskernen kunne ikke starte. Geninstaller appen og træk ned for at opdatere.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="289" />
+      <location filename="../qml/pages/FirstPage.qml" line="284" />
       <source>The control core is too old to report its version. Reinstall the app (%1), then pull down to refresh.</source>
       <translation>Styringskernen er for gammel til at rapportere sin version. Geninstaller appen (%1) og træk ned for at opdatere.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="290" />
+      <location filename="../qml/pages/FirstPage.qml" line="285" />
       <source>Version mismatch: app %1, core %2. Reinstall the app, then pull down to refresh.</source>
       <translation>Versionskonflikt: app %1, kerne %2. Geninstaller appen og træk ned for at opdatere.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="65" />
-      <location filename="../qml/pages/FirstPage.qml" line="308" />
+      <location filename="../qml/pages/FirstPage.qml" line="63" />
+      <location filename="../qml/pages/FirstPage.qml" line="303" />
       <source>No VIN configured</source>
       <translation>Ingen VIN konfigureret</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="57" />
+      <location filename="../qml/pages/FirstPage.qml" line="55" />
       <source>Control helper unavailable</source>
-      <translation type="unfinished" />
+      <translation>Styringstjenesten er ikke tilgængelig</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="61" />
+      <location filename="../qml/pages/FirstPage.qml" line="59" />
       <source>No key: generate and pair a key first</source>
-      <translation type="unfinished" />
+      <translation>Ingen nøgle: Opret og par først en nøgle</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="312" />
+      <location filename="../qml/pages/FirstPage.qml" line="307" />
       <source>Key ready</source>
       <translation>Nøgle klar</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="312" />
+      <location filename="../qml/pages/FirstPage.qml" line="307" />
       <source>No key - tap for Settings / Pairing</source>
       <translation>Ingen nøgle - tryk for Indstillinger / Parring</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="367" />
+      <location filename="../qml/pages/FirstPage.qml" line="362" />
       <source> • charging</source>
       <translation> • oplader</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="376" />
+      <location filename="../qml/pages/FirstPage.qml" line="371" />
       <source>• %1°C</source>
       <translation>• %1 °C</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="401" />
+      <location filename="../qml/pages/FirstPage.qml" line="396" />
       <source>Updating...</source>
       <translation>Opdaterer...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="403" />
+      <location filename="../qml/pages/FirstPage.qml" line="398" />
       <source>Status unavailable (%1). Vehicle may be asleep - try Wake Vehicle (Attention), then Refresh Status.</source>
       <translation>Status ikke tilgængelig (%1). Køretøjet sover måske - prøv Væk køretøjet (Opmærksomhed) og derefter Opdater status.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="405" />
+      <location filename="../qml/pages/FirstPage.qml" line="400" />
       <source>Pull down to refresh status</source>
       <translation>Træk ned for at opdatere status</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="407" />
+      <location filename="../qml/pages/FirstPage.qml" line="402" />
       <source>Updated just now</source>
       <translation>Opdateret lige nu</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="408" />
+      <location filename="../qml/pages/FirstPage.qml" line="403" />
       <source>Updated %1m ago</source>
       <translation>Opdateret for %1 min siden</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="501" />
+      <location filename="../qml/pages/FirstPage.qml" line="496" />
       <source>Categories</source>
       <translation>Kategorier</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="551" />
+      <location filename="../qml/pages/FirstPage.qml" line="546" />
       <source>Send Destination</source>
       <translation>Send destination</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="555" />
+      <location filename="../qml/pages/FirstPage.qml" line="550" />
       <source>Pair Vehicle</source>
       <translation>Par køretøj</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="559" />
+      <location filename="../qml/pages/FirstPage.qml" line="554" />
       <source>Settings</source>
       <translation>Indstillinger</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="563" />
-      <location filename="../qml/pages/SettingsPage.qml" line="190" />
+      <location filename="../qml/pages/FirstPage.qml" line="558" />
+      <location filename="../qml/pages/SettingsPage.qml" line="199" />
       <source>Refresh</source>
       <translation>Opdater</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="567" />
+      <location filename="../qml/pages/FirstPage.qml" line="562" />
       <source>Refresh Status</source>
       <translation>Opdater status</translation>
     </message>
@@ -541,82 +574,82 @@
   <context>
     <name>NavigationPage</name>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="54" />
+      <location filename="../qml/pages/NavigationPage.qml" line="53" />
       <source>Paste or type a destination first.</source>
       <translation>Indsæt eller skriv først en destination.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="58" />
+      <location filename="../qml/pages/NavigationPage.qml" line="57" />
       <source>Checking...</source>
       <translation>Kontrollerer...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="69" />
+      <location filename="../qml/pages/NavigationPage.qml" line="67" />
       <source>Nothing to send.</source>
       <translation>Intet at sende.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="108" />
+      <location filename="../qml/pages/NavigationPage.qml" line="105" />
       <source>Cannot use this: %1</source>
       <translation>Kan ikke bruges: %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="112" />
+      <location filename="../qml/pages/NavigationPage.qml" line="109" />
       <source>Coordinates %1, %2 — navigation will start there.</source>
       <translation>Koordinater %1, %2 — navigationen starter der.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="115" />
+      <location filename="../qml/pages/NavigationPage.qml" line="112" />
       <source>Address "%1" — the car will look it up.</source>
       <translation>Adresse ”%1” — bilen slår den op.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="122" />
+      <location filename="../qml/pages/NavigationPage.qml" line="119" />
       <source>Send failed: %1</source>
       <translation>Afsendelse mislykkedes: %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="122" />
+      <location filename="../qml/pages/NavigationPage.qml" line="119" />
       <source>OK</source>
-      <translation type="unfinished" />
+      <translation>OK</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="142" />
+      <location filename="../qml/pages/NavigationPage.qml" line="139" />
       <source>Car Navigation</source>
       <translation>Bilnavigation</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="155" />
+      <location filename="../qml/pages/NavigationPage.qml" line="152" />
       <source>Retry</source>
-      <translation type="unfinished" />
+      <translation>Prøv igen</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="162" />
+      <location filename="../qml/pages/NavigationPage.qml" line="159" />
       <source>Destination</source>
       <translation>Destination</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="163" />
+      <location filename="../qml/pages/NavigationPage.qml" line="160" />
       <source>Paste address, coordinates, or map link</source>
       <translation>Indsæt adresse, koordinater eller kortlink</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="171" />
+      <location filename="../qml/pages/NavigationPage.qml" line="168" />
       <source>Preview</source>
       <translation>Forhåndsvisning</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="189" />
+      <location filename="../qml/pages/NavigationPage.qml" line="186" />
       <source>Send to Car</source>
       <translation>Send til bilen</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="211" />
+      <location filename="../qml/pages/NavigationPage.qml" line="208" />
       <source>Notes</source>
       <translation>Noter</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="220" />
+      <location filename="../qml/pages/NavigationPage.qml" line="217" />
       <source>This uses Bluetooth, like lock/unlock — the car must be in range, no internet needed on either side. Coordinates are sent exactly; addresses and links are looked up by the car itself, so unusual spellings may resolve differently than on your phone. From Android apps: copy the address or link, then paste it above.</source>
       <translation>Bruger Bluetooth, som lås/lås op — bilen skal være inden for rækkevidde, intet internet nødvendigt. Koordinater sendes nøjagtigt; adresser og links slår bilen selv op, så usædvanlige stavemåder kan tolkes anderledes end på telefonen. Fra Android-apps: kopiér adressen eller linket og indsæt ovenfor.</translation>
     </message>
@@ -644,62 +677,62 @@
       <translation>Parring mislykkedes: %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="45" />
+      <location filename="../qml/pages/PairingPage.qml" line="47" />
       <source>No keys listed</source>
-      <translation type="unfinished" />
+      <translation>Ingen nøgler angivet</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="85" />
+      <location filename="../qml/pages/PairingPage.qml" line="87" />
       <source>Pairing &amp; Keys</source>
       <translation>Parring &amp; nøgler</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="98" />
+      <location filename="../qml/pages/PairingPage.qml" line="100" />
       <source>Retry</source>
-      <translation type="unfinished" />
+      <translation>Prøv igen</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="107" />
+      <location filename="../qml/pages/PairingPage.qml" line="109" />
       <source>Set the VIN in Settings first. Then generate a key, then pair it with the car over BLE - you'll need to be next to the vehicle and tap the NFC card on the center console to approve.</source>
       <translation>Indstil først VIN i Indstillinger. Opret derefter en nøgle og par den med bilen via BLE - stå ved køretøjet og hold NFC-kortet mod midterkonsollen for at godkende.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="119" />
+      <location filename="../qml/pages/PairingPage.qml" line="121" />
       <source>Phone key starting...</source>
       <translation>Telefonnøgle starter...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="147" />
+      <location filename="../qml/pages/PairingPage.qml" line="149" />
       <source>Generating...</source>
       <translation>Genererer...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="147" />
+      <location filename="../qml/pages/PairingPage.qml" line="149" />
       <source>Generate Key</source>
       <translation>Generer nøgle</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="173" />
+      <location filename="../qml/pages/PairingPage.qml" line="175" />
       <source>Waiting for NFC tap...</source>
       <translation>Venter på NFC-tryk...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="173" />
+      <location filename="../qml/pages/PairingPage.qml" line="175" />
       <source>Pair with Vehicle</source>
       <translation>Par køretøj</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="179" />
+      <location filename="../qml/pages/PairingPage.qml" line="181" />
       <source>Requesting pairing over BLE - approve on the car's touchscreen / NFC card now.</source>
       <translation>BLE-parring anmodet - godkend på touchskærmen / NFC-kortet nu.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="199" />
+      <location filename="../qml/pages/PairingPage.qml" line="201" />
       <source>Enrolled Keys</source>
       <translation>Registrerede nøgler</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="203" />
+      <location filename="../qml/pages/PairingPage.qml" line="205" />
       <source>List Enrolled Keys</source>
       <translation>Vis registrerede nøgler</translation>
     </message>
@@ -707,148 +740,163 @@
   <context>
     <name>SettingsPage</name>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="9" />
+      <location filename="../qml/pages/SettingsPage.qml" line="10" />
       <source>Loading current configuration...</source>
       <translation>Indlæser konfiguration...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="50" />
+      <location filename="../qml/pages/SettingsPage.qml" line="58" />
       <source>Key on file</source>
       <translation>Nøgle findes</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="50" />
+      <location filename="../qml/pages/SettingsPage.qml" line="58" />
       <source>No key yet - use Pair Vehicle from the main menu</source>
       <translation>Ingen nøgle endnu - brug Par køretøj i hovedmenuen</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="58" />
+      <location filename="../qml/pages/SettingsPage.qml" line="66" />
       <source>Saved</source>
       <translation>Gemt</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="58" />
+      <location filename="../qml/pages/SettingsPage.qml" line="66" />
       <source>Save failed: %1</source>
       <translation>Lagring mislykkedes: %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="62" />
+      <location filename="../qml/pages/SettingsPage.qml" line="70" />
       <source>Exported to %1. In Automagic, use States → Import to select this folder, then Reload Daemon.</source>
-      <translation type="unfinished" />
+      <translation>Eksporteret til %1. Brug States → Import i Automagic til at vælge denne mappe og derefter Reload Daemon.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="63" />
+      <location filename="../qml/pages/SettingsPage.qml" line="71" />
       <source>Automagic export failed: %1</source>
-      <translation type="unfinished" />
+      <translation>Automagic-eksport mislykkedes: %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="78" />
+      <location filename="../qml/pages/SettingsPage.qml" line="86" />
       <source>Settings</source>
       <translation>Indstillinger</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="102" />
+      <location filename="../qml/pages/SettingsPage.qml" line="110" />
       <source>Vehicle VIN</source>
       <translation>Køretøjets VIN</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="107" />
+      <location filename="../qml/pages/SettingsPage.qml" line="115" />
       <source>17-character VIN</source>
       <translation>17-tegns VIN</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="132" />
+      <location filename="../qml/pages/SettingsPage.qml" line="141" />
       <source>Front-page car model</source>
       <translation>Bilmodel på forsiden</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="133" />
+      <location filename="../qml/pages/SettingsPage.qml" line="142" />
       <source>Auto selects the model from the VIN</source>
       <translation>Auto vælger modellen ud fra VIN</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="149" />
+      <location filename="../qml/pages/SettingsPage.qml" line="158" />
       <source>Key name</source>
       <translation>Nøglenavn</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="150" />
+      <location filename="../qml/pages/SettingsPage.qml" line="159" />
       <source>harbour-electric-eel</source>
       <translation>harbour-electric-eel</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="160" />
+      <location filename="../qml/pages/SettingsPage.qml" line="169" />
       <source>Connect timeout</source>
       <translation>Forbindelsestimeout</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="167" />
-      <location filename="../qml/pages/SettingsPage.qml" line="181" />
+      <location filename="../qml/pages/SettingsPage.qml" line="176" />
+      <location filename="../qml/pages/SettingsPage.qml" line="190" />
       <source>%1 s</source>
-      <translation type="unfinished" />
+      <translation>%1 s</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="177" />
+      <location filename="../qml/pages/SettingsPage.qml" line="186" />
       <source>Command timeout</source>
       <translation>Kommandotimeout</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="198" />
-      <source>Automagic</source>
-      <translation type="unfinished" />
-    </message>
-    <message>
       <location filename="../qml/pages/SettingsPage.qml" line="207" />
-      <source>Export hotspot flows to Documents, then import them in Automagic. Automagic turns the hotspot on for presence_inside and off for presence_away_confirmed. ElectricEel emits the latter 3 minutes after presence_far unless presence_inside arrives first; repeated presence_far events do not restart the timer. ElectricEel must stay running.</source>
-      <translation type="unfinished" />
+      <source>Cover actions</source>
+      <translation>Coverhandlinger</translation>
     </message>
     <message>
       <location filename="../qml/pages/SettingsPage.qml" line="212" />
+      <source>Left action</source>
+      <translation>Venstre handling</translation>
+    </message>
+    <message>
+      <location filename="../qml/pages/SettingsPage.qml" line="230" />
+      <source>Right action</source>
+      <translation>Højre handling</translation>
+    </message>
+    <message>
+      <location filename="../qml/pages/SettingsPage.qml" line="245" />
+      <source>Automagic</source>
+      <translation>Automagic</translation>
+    </message>
+    <message>
+      <location filename="../qml/pages/SettingsPage.qml" line="254" />
+      <source>Export hotspot flows to Documents, then import them in Automagic. Automagic turns the hotspot on for presence_inside and off for presence_away_confirmed. ElectricEel emits the latter 3 minutes after presence_far unless presence_inside arrives first; repeated presence_far events do not restart the timer. ElectricEel must stay running.</source>
+      <translation>Eksportér hotspotforløb til Dokumenter, og importér dem derefter i Automagic. Automagic tænder hotspottet ved presence_inside og slukker det ved presence_away_confirmed. ElectricEel udsender sidstnævnte hændelse 3 minutter efter presence_far, medmindre presence_inside kommer først; gentagne presence_far-hændelser genstarter ikke timeren. ElectricEel skal fortsat køre.</translation>
+    </message>
+    <message>
+      <location filename="../qml/pages/SettingsPage.qml" line="259" />
       <source>Export Automagic flows</source>
-      <translation type="unfinished" />
+      <translation>Eksportér Automagic-forløb</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="215" />
+      <location filename="../qml/pages/SettingsPage.qml" line="262" />
       <source>Exporting Automagic flows...</source>
-      <translation type="unfinished" />
+      <translation>Eksporterer Automagic-forløb...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="227" />
+      <location filename="../qml/pages/SettingsPage.qml" line="274" />
       <source>If you used Add Automagic flows in an earlier version, disable its old hotspot flows before importing this preset. Automagic lets you resolve matching IDs during import. Extra triggers are included for your own flows, such as launching an app.</source>
-      <translation type="unfinished" />
+      <translation>Hvis du brugte Tilføj Automagic-forløb i en tidligere version, skal du deaktivere de gamle hotspotforløb, før du importerer denne forudindstilling. Automagic lader dig løse konflikter mellem ens ID'er under importen. Der medfølger ekstra udløsere til dine egne forløb, f.eks. til at starte en app.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="232" />
+      <location filename="../qml/pages/SettingsPage.qml" line="279" />
       <source>Save</source>
       <translation>Gem</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="244" />
+      <location filename="../qml/pages/SettingsPage.qml" line="293" />
       <source>Pairing &amp; Keys</source>
       <translation>Parring &amp; nøgler</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="248" />
+      <location filename="../qml/pages/SettingsPage.qml" line="297" />
       <source>About</source>
       <translation>Om</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="262" />
+      <location filename="../qml/pages/SettingsPage.qml" line="311" />
       <source>App: ElectricEel %1   |   core: %2</source>
       <translation>App: ElectricEel %1   |   kerne: %2</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="266" />
+      <location filename="../qml/pages/SettingsPage.qml" line="315" />
       <source>(too old / unknown)</source>
       <translation>(for gammel / ukendt)</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="279" />
+      <location filename="../qml/pages/SettingsPage.qml" line="328" />
       <source>The control core is too old to report a version - reinstall the app.</source>
       <translation>Styringskernen er for gammel til at rapportere en version - geninstaller appen.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="280" />
+      <location filename="../qml/pages/SettingsPage.qml" line="329" />
       <source>Version mismatch: core %1 vs app %2 - reinstall the app.</source>
       <translation>Versionskonflikt: kerne %1 vs app %2 - geninstaller appen.</translation>
     </message>

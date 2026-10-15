@@ -36,6 +36,8 @@ Page {
         onPaired: {
             page.pairing = false
             page.pairStatus = ok ? (qsTr("Paired.") + "\n" + output) : qsTr("Pairing failed: %1").arg(errorMessage)
+            if (ok)
+                teslaClient.refreshConfig()
         }
         onCommandFinished: {
             if (requestId !== page.pendingListKeysId)
@@ -206,7 +208,7 @@ Page {
                     if (page.pendingListKeysId.length > 0)
                         return
                     page.keysListOutput = ""
-                    page.pendingListKeysId = "list-keys#" + Date.now() + "-" + Math.floor(Math.random() * 1000000)
+                    page.pendingListKeysId = teslaClient.newRequestId("list-keys", page.vin)
                     teslaClient.runCommand(page.pendingListKeysId, "list-keys", [])
                 }
             }

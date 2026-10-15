@@ -8,6 +8,7 @@
 #include <QLocale>
 #include <QStringList>
 #include <QStandardPaths>
+#include <QUuid>
 
 extern "C" {
 #include "electriceelcore.h"
@@ -27,6 +28,12 @@ TeslaClient::~TeslaClient()
     // Rust guarantees no callback can use this QObject after detachment returns.
     // Qt discards queued deliveries automatically when the QObject is destroyed.
     runtime_observe(m_runtime, nullptr, nullptr);
+}
+
+QString TeslaClient::newRequestId(const QString &prefix, const QString &vin) const
+{
+    return prefix + QStringLiteral("#") + QUuid::createUuid().toString(QUuid::WithoutBraces)
+        + QStringLiteral(":") + vin;
 }
 
 void TeslaClient::notification(void *context, const char *json)

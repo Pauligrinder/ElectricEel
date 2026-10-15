@@ -31,7 +31,12 @@ where
         }
 
         fn visit_str<E: de::Error>(self, value: &str) -> Result<Self::Value, E> {
-            Ok(CoverAction::from_str(value).ok())
+            if let Ok(action) = CoverAction::from_str(value) {
+                Ok(Some(action))
+            } else {
+                eprintln!("electric-eel: invalid cover action {value:?}; using configured default");
+                Ok(None)
+            }
         }
 
         fn visit_unit<E: de::Error>(self) -> Result<Self::Value, E> {

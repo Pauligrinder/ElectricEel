@@ -526,6 +526,8 @@ impl Core {
         .map(str::to_string);
 
         // Configuration changes and presence stop must not wait for NFC approval.
+        let paired_public_key =
+            crate::keys::public_bytes(&pubkey_path).map_err(HelperError::SessionUnavailable)?;
         drop(gate);
 
         eprintln!("Core: pair()");
@@ -570,6 +572,13 @@ impl Core {
                 return Err(HelperError::SessionUnavailable(
                     "configuration changed during pairing; refusing to mark another VIN paired"
                         .into(),
+                ));
+            }
+            if crate::keys::public_bytes(&pubkey_path).map_err(HelperError::SessionUnavailable)?
+                != paired_public_key
+            {
+                return Err(HelperError::SessionUnavailable(
+                    "key changed during pairing; refusing to mark an unenrolled key paired".into(),
                 ));
             }
             let mut candidate = cfg.clone();

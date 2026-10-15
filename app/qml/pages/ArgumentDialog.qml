@@ -67,9 +67,11 @@ Dialog {
     // step 0.5 -> 1 decimal, step 1e-6 -> 6 decimals. The old
     // `step < 1 ? 1 : 0` showed 48.9 for a 48.8584 send.
     function sliderDecimals(step) {
-        if (!step)
+        if (!step || !isFinite(step))
             return 0
-        return Math.max(0, Math.ceil(-Math.log(step) / Math.LN10))
+        var parts = String(step).toLowerCase().split("e")
+        var fraction = (parts[0].split(".")[1] || "").length
+        return Math.max(0, fraction - (parts.length > 1 ? Number(parts[1]) : 0))
     }
 
     canAccept: dialog.formValid

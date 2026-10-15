@@ -22,10 +22,6 @@ Page {
     property string pendingLabel: ""
     property string lastResult: ""
     property bool lastOk: true
-    // Monotonic per-page sequence so concurrent pages never share a requestId:
-    // using the bare command id collided when two CategoryPages ran the same
-    // command and both consumed one reply.
-    property int requestSeq: 0
 
     // Commands gated by status (see CommandCatalog's visibleWhen): only the
     // toggle action matching the current vehicle state is listed, so the page
@@ -102,11 +98,10 @@ Page {
     }
 
     function execute(commandDef, argValues) {
-        page.requestSeq++
-        page.pendingCmd = commandDef.id + "#" + page.requestSeq + "@" + Date.now() + ":" + Math.random() + ":" + page.vin
+        page.pendingCmd = teslaClient.newRequestId(commandDef.id, page.vin)
         page.pendingLabel = commandDef.label
         page.lastResult = ""
-        teslaClient.runCommand(page.pendingCmd, commandDef.id, argValues || [])
+        teslaClient.runCommand(page.pendingCmd, commandDef.id, argValues || [], true)
     }
 
     Component.onCompleted: teslaClient.refreshConfig()

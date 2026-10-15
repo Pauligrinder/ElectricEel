@@ -53,8 +53,11 @@ func (s *session) encodeWithDeadline(v interface{}) error {
 		// Do not take s.mu here: presence emits frames while holding it.
 		// Closing the transport wakes Scanner and lets serveConn own teardown.
 		s.parentFailed.Store(true)
-		if s.parentCancel != nil {
-			s.parentCancel() // Interrupt BLE work even if dispatch is still running.
+		s.parentMu.Lock()
+		cancel := s.parentCancel
+		s.parentMu.Unlock()
+		if cancel != nil {
+			cancel() // Interrupt BLE work even if dispatch is still running.
 		}
 		if s.parentConn != nil {
 			_ = s.parentConn.Close()
@@ -96,11 +99,17 @@ func (s *session) heartbeatLoop(done <-chan struct{}) {
 func (s *session) serveConn(conn net.Conn) {
 	defer conn.Close()
 	defer s.shutdown()
-	s.parentContext, s.parentCancel = context.WithCancel(context.Background())
-	defer s.parentCancel()
+	parentContext, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s.parentMu.Lock()
+	s.parentContext, s.parentCancel = parentContext, cancel
+	s.parentMu.Unlock()
+	s.writeMu.Lock()
 	s.parentConn = conn
 	s.enc = json.NewEncoder(conn)
-	if err := s.encodeWithDeadline(helloFrame{Type: "hello", Version: protocolVersion, BLEBackend: s.bleBackend}); err != nil {
+	err := s.encodeWithDeadline(helloFrame{Type: "hello", Version: protocolVersion, BLEBackend: s.bleBackend})
+	s.writeMu.Unlock()
+	if err != nil {
 		keylog("session", "hello write failed: %v", err)
 		return
 	}

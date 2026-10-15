@@ -12,7 +12,6 @@ CoverBackground {
     property string model: ""
     property bool hasKey: false
     property bool commandBusy: false
-    property int requestSeq: 0
     property string pendingCmd: ""
     property string configError: ""
     property string leftAction: "trunk-open"
@@ -33,8 +32,7 @@ CoverBackground {
         if (!cover.canCommand || cover.commandBusy)
             return
         cover.commandBusy = true
-        cover.requestSeq = (cover.requestSeq || 0) + 1
-        cover.pendingCmd = "cover:" + cmd + "#" + cover.requestSeq + "@" + Date.now() + ":" + Math.random() + ":" + cover.vin
+        cover.pendingCmd = teslaClient.newRequestId("cover:" + cmd, cover.vin)
         teslaClient.runCommand(cover.pendingCmd, cmd, [])
     }
 

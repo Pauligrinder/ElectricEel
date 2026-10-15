@@ -3,18 +3,18 @@
   <context>
     <name>ArgumentDialog</name>
     <message>
-      <location filename="../qml/pages/ArgumentDialog.qml" line="81" />
+      <location filename="../qml/pages/ArgumentDialog.qml" line="83" />
       <source>Run</source>
       <translation>运行</translation>
     </message>
     <message>
-      <location filename="../qml/pages/ArgumentDialog.qml" line="149" />
-      <location filename="../qml/pages/ArgumentDialog.qml" line="230" />
+      <location filename="../qml/pages/ArgumentDialog.qml" line="151" />
+      <location filename="../qml/pages/ArgumentDialog.qml" line="232" />
       <source> (optional)</source>
       <translation>（可选）</translation>
     </message>
     <message>
-      <location filename="../qml/pages/ArgumentDialog.qml" line="153" />
+      <location filename="../qml/pages/ArgumentDialog.qml" line="155" />
       <source>(not set)</source>
       <translation>（未设置）</translation>
     </message>
@@ -22,57 +22,57 @@
   <context>
     <name>CategoryPage</name>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="51" />
+      <location filename="../qml/pages/CategoryPage.qml" line="47" />
       <source>%1 • %2°C inside</source>
       <translation>%1 • 内部%2°C</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="52" />
+      <location filename="../qml/pages/CategoryPage.qml" line="48" />
       <source>Climate on</source>
       <translation>空调开</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="52" />
+      <location filename="../qml/pages/CategoryPage.qml" line="48" />
       <source>Climate off</source>
       <translation>空调关</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="58" />
+      <location filename="../qml/pages/CategoryPage.qml" line="54" />
       <source>%1% battery%2</source>
       <translation>%1% 电量%2</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="61" />
+      <location filename="../qml/pages/CategoryPage.qml" line="57" />
       <source> • Charging</source>
       <translation> • 充电中</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="66" />
+      <location filename="../qml/pages/CategoryPage.qml" line="62" />
       <source>Doors locked</source>
       <translation>车门已锁</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="66" />
+      <location filename="../qml/pages/CategoryPage.qml" line="62" />
       <source>Doors unlocked</source>
       <translation>车门未锁</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="93" />
+      <location filename="../qml/pages/CategoryPage.qml" line="89" />
       <source>OK</source>
       <translation>OK</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="93" />
+      <location filename="../qml/pages/CategoryPage.qml" line="89" />
       <source>exit code %1</source>
       <translation>退出码 %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="175" />
+      <location filename="../qml/pages/CategoryPage.qml" line="170" />
       <source>Retry</source>
-      <translation type="unfinished" />
+      <translation>重试</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="213" />
+      <location filename="../qml/pages/CategoryPage.qml" line="208" />
       <source>Running %1...</source>
       <translation>正在运行 %1...</translation>
     </message>
@@ -421,119 +421,152 @@
     </message>
   </context>
   <context>
+    <name>CoverActions</name>
+    <message>
+      <location filename="../qml/js/CoverActions.js" line="6" />
+      <source>Open rear trunk</source>
+      <translation>打开后备箱</translation>
+    </message>
+    <message>
+      <location filename="../qml/js/CoverActions.js" line="7" />
+      <source>Open front trunk</source>
+      <translation>打开前备箱</translation>
+    </message>
+    <message>
+      <location filename="../qml/js/CoverActions.js" line="8" />
+      <source>Lock</source>
+      <translation>锁定</translation>
+    </message>
+    <message>
+      <location filename="../qml/js/CoverActions.js" line="9" />
+      <source>Unlock</source>
+      <translation>解锁</translation>
+    </message>
+    <message>
+      <location filename="../qml/js/CoverActions.js" line="10" />
+      <source>Flash lights</source>
+      <translation>闪灯</translation>
+    </message>
+    <message>
+      <location filename="../qml/js/CoverActions.js" line="11" />
+      <source>Honk horn</source>
+      <translation>喇叭</translation>
+    </message>
+  </context>
+  <context>
     <name>CoverPage</name>
     <message>
-      <location filename="../qml/cover/CoverPage.qml" line="102" />
+      <location filename="../qml/cover/CoverPage.qml" line="121" />
       <source>Retry</source>
-      <translation type="unfinished" />
+      <translation>重试</translation>
     </message>
   </context>
   <context>
     <name>FirstPage</name>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="287" />
+      <location filename="../qml/pages/FirstPage.qml" line="282" />
       <source>The control core failed to start. Reinstall the app, then pull down to refresh.</source>
       <translation>控制核心启动失败。请重装应用，然后下拉刷新。</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="289" />
+      <location filename="../qml/pages/FirstPage.qml" line="284" />
       <source>The control core is too old to report its version. Reinstall the app (%1), then pull down to refresh.</source>
       <translation>控制核心太旧，无法报告版本。请重装应用（%1），然后下拉刷新。</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="290" />
+      <location filename="../qml/pages/FirstPage.qml" line="285" />
       <source>Version mismatch: app %1, core %2. Reinstall the app, then pull down to refresh.</source>
       <translation>版本不匹配：应用 %1，核心 %2。请重装应用，然后下拉刷新。</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="65" />
-      <location filename="../qml/pages/FirstPage.qml" line="308" />
+      <location filename="../qml/pages/FirstPage.qml" line="63" />
+      <location filename="../qml/pages/FirstPage.qml" line="303" />
       <source>No VIN configured</source>
       <translation>未配置 VIN</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="57" />
+      <location filename="../qml/pages/FirstPage.qml" line="55" />
       <source>Control helper unavailable</source>
-      <translation type="unfinished" />
+      <translation>控制服务不可用</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="61" />
+      <location filename="../qml/pages/FirstPage.qml" line="59" />
       <source>No key: generate and pair a key first</source>
-      <translation type="unfinished" />
+      <translation>没有密钥：请先生成并配对密钥</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="312" />
+      <location filename="../qml/pages/FirstPage.qml" line="307" />
       <source>Key ready</source>
       <translation>钥匙就绪</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="312" />
+      <location filename="../qml/pages/FirstPage.qml" line="307" />
       <source>No key - tap for Settings / Pairing</source>
       <translation>无钥匙 - 点击进入设置 / 配对</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="367" />
+      <location filename="../qml/pages/FirstPage.qml" line="362" />
       <source> • charging</source>
       <translation> • 充电中</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="376" />
+      <location filename="../qml/pages/FirstPage.qml" line="371" />
       <source>• %1°C</source>
       <translation>• %1 °C</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="401" />
+      <location filename="../qml/pages/FirstPage.qml" line="396" />
       <source>Updating...</source>
       <translation>更新中...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="403" />
+      <location filename="../qml/pages/FirstPage.qml" line="398" />
       <source>Status unavailable (%1). Vehicle may be asleep - try Wake Vehicle (Attention), then Refresh Status.</source>
       <translation>状态不可用（%1）。车辆可能在休眠 - 试试唤醒车辆（注意），然后刷新状态。</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="405" />
+      <location filename="../qml/pages/FirstPage.qml" line="400" />
       <source>Pull down to refresh status</source>
       <translation>下拉刷新状态</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="407" />
+      <location filename="../qml/pages/FirstPage.qml" line="402" />
       <source>Updated just now</source>
       <translation>刚刚更新</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="408" />
+      <location filename="../qml/pages/FirstPage.qml" line="403" />
       <source>Updated %1m ago</source>
       <translation>%1 分钟前更新</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="501" />
+      <location filename="../qml/pages/FirstPage.qml" line="496" />
       <source>Categories</source>
       <translation>分类</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="551" />
+      <location filename="../qml/pages/FirstPage.qml" line="546" />
       <source>Send Destination</source>
       <translation>发送目的地</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="555" />
+      <location filename="../qml/pages/FirstPage.qml" line="550" />
       <source>Pair Vehicle</source>
       <translation>配对车辆</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="559" />
+      <location filename="../qml/pages/FirstPage.qml" line="554" />
       <source>Settings</source>
       <translation>设置</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="563" />
-      <location filename="../qml/pages/SettingsPage.qml" line="190" />
+      <location filename="../qml/pages/FirstPage.qml" line="558" />
+      <location filename="../qml/pages/SettingsPage.qml" line="199" />
       <source>Refresh</source>
       <translation>刷新</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="567" />
+      <location filename="../qml/pages/FirstPage.qml" line="562" />
       <source>Refresh Status</source>
       <translation>刷新状态</translation>
     </message>
@@ -541,82 +574,82 @@
   <context>
     <name>NavigationPage</name>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="54" />
+      <location filename="../qml/pages/NavigationPage.qml" line="53" />
       <source>Paste or type a destination first.</source>
       <translation>请先粘贴或输入目的地。</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="58" />
+      <location filename="../qml/pages/NavigationPage.qml" line="57" />
       <source>Checking...</source>
       <translation>检查中...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="69" />
+      <location filename="../qml/pages/NavigationPage.qml" line="67" />
       <source>Nothing to send.</source>
       <translation>没有要发送的内容。</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="108" />
+      <location filename="../qml/pages/NavigationPage.qml" line="105" />
       <source>Cannot use this: %1</source>
       <translation>无法使用：%1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="112" />
+      <location filename="../qml/pages/NavigationPage.qml" line="109" />
       <source>Coordinates %1, %2 — navigation will start there.</source>
       <translation>坐标 %1, %2 — 导航将在那里开始。</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="115" />
+      <location filename="../qml/pages/NavigationPage.qml" line="112" />
       <source>Address "%1" — the car will look it up.</source>
       <translation>地址“%1” — 车辆会自动查找。</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="122" />
+      <location filename="../qml/pages/NavigationPage.qml" line="119" />
       <source>Send failed: %1</source>
       <translation>发送失败：%1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="122" />
+      <location filename="../qml/pages/NavigationPage.qml" line="119" />
       <source>OK</source>
-      <translation type="unfinished" />
+      <translation>OK</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="142" />
+      <location filename="../qml/pages/NavigationPage.qml" line="139" />
       <source>Car Navigation</source>
       <translation>车辆导航</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="155" />
+      <location filename="../qml/pages/NavigationPage.qml" line="152" />
       <source>Retry</source>
-      <translation type="unfinished" />
+      <translation>重试</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="162" />
+      <location filename="../qml/pages/NavigationPage.qml" line="159" />
       <source>Destination</source>
       <translation>目的地</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="163" />
+      <location filename="../qml/pages/NavigationPage.qml" line="160" />
       <source>Paste address, coordinates, or map link</source>
       <translation>粘贴地址、坐标或地图链接</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="171" />
+      <location filename="../qml/pages/NavigationPage.qml" line="168" />
       <source>Preview</source>
       <translation>预览</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="189" />
+      <location filename="../qml/pages/NavigationPage.qml" line="186" />
       <source>Send to Car</source>
       <translation>发送到车辆</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="211" />
+      <location filename="../qml/pages/NavigationPage.qml" line="208" />
       <source>Notes</source>
       <translation>说明</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="220" />
+      <location filename="../qml/pages/NavigationPage.qml" line="217" />
       <source>This uses Bluetooth, like lock/unlock — the car must be in range, no internet needed on either side. Coordinates are sent exactly; addresses and links are looked up by the car itself, so unusual spellings may resolve differently than on your phone. From Android apps: copy the address or link, then paste it above.</source>
       <translation>像锁定/解锁一样使用蓝牙 — 车辆必须在范围内，双方都不需要互联网。坐标精确发送；地址和链接由车辆自行查找，因此生僻拼写可能与手机解析不同。从 Android 应用：复制地址或链接后粘贴到上方。</translation>
     </message>
@@ -644,62 +677,62 @@
       <translation>配对失败：%1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="45" />
+      <location filename="../qml/pages/PairingPage.qml" line="47" />
       <source>No keys listed</source>
-      <translation type="unfinished" />
+      <translation>密钥列表为空</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="85" />
+      <location filename="../qml/pages/PairingPage.qml" line="87" />
       <source>Pairing &amp; Keys</source>
       <translation>配对与钥匙</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="98" />
+      <location filename="../qml/pages/PairingPage.qml" line="100" />
       <source>Retry</source>
-      <translation type="unfinished" />
+      <translation>重试</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="107" />
+      <location filename="../qml/pages/PairingPage.qml" line="109" />
       <source>Set the VIN in Settings first. Then generate a key, then pair it with the car over BLE - you'll need to be next to the vehicle and tap the NFC card on the center console to approve.</source>
       <translation>请先在设置中填入 VIN。然后生成钥匙并通过 BLE 与车辆配对 - 站在车辆旁边，将 NFC 卡贴到中控台确认。</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="119" />
+      <location filename="../qml/pages/PairingPage.qml" line="121" />
       <source>Phone key starting...</source>
       <translation>手机钥匙启动中...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="147" />
+      <location filename="../qml/pages/PairingPage.qml" line="149" />
       <source>Generating...</source>
       <translation>生成中...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="147" />
+      <location filename="../qml/pages/PairingPage.qml" line="149" />
       <source>Generate Key</source>
       <translation>生成钥匙</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="173" />
+      <location filename="../qml/pages/PairingPage.qml" line="175" />
       <source>Waiting for NFC tap...</source>
       <translation>等待 NFC 触碰...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="173" />
+      <location filename="../qml/pages/PairingPage.qml" line="175" />
       <source>Pair with Vehicle</source>
       <translation>配对车辆</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="179" />
+      <location filename="../qml/pages/PairingPage.qml" line="181" />
       <source>Requesting pairing over BLE - approve on the car's touchscreen / NFC card now.</source>
       <translation>已请求 BLE 配对 - 请立即在触摸屏 / NFC 卡上确认。</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="199" />
+      <location filename="../qml/pages/PairingPage.qml" line="201" />
       <source>Enrolled Keys</source>
       <translation>已注册钥匙</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="203" />
+      <location filename="../qml/pages/PairingPage.qml" line="205" />
       <source>List Enrolled Keys</source>
       <translation>列出已注册钥匙</translation>
     </message>
@@ -707,148 +740,163 @@
   <context>
     <name>SettingsPage</name>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="9" />
+      <location filename="../qml/pages/SettingsPage.qml" line="10" />
       <source>Loading current configuration...</source>
       <translation>正在加载配置...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="50" />
+      <location filename="../qml/pages/SettingsPage.qml" line="58" />
       <source>Key on file</source>
       <translation>已有钥匙</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="50" />
+      <location filename="../qml/pages/SettingsPage.qml" line="58" />
       <source>No key yet - use Pair Vehicle from the main menu</source>
       <translation>暂无钥匙 - 请在主菜单使用配对车辆</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="58" />
+      <location filename="../qml/pages/SettingsPage.qml" line="66" />
       <source>Saved</source>
       <translation>已保存</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="58" />
+      <location filename="../qml/pages/SettingsPage.qml" line="66" />
       <source>Save failed: %1</source>
       <translation>保存失败：%1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="62" />
+      <location filename="../qml/pages/SettingsPage.qml" line="70" />
       <source>Exported to %1. In Automagic, use States → Import to select this folder, then Reload Daemon.</source>
-      <translation type="unfinished" />
+      <translation>已导出到 %1。在 Automagic 中使用 States → Import 选择此文件夹，然后使用 Reload Daemon。</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="63" />
+      <location filename="../qml/pages/SettingsPage.qml" line="71" />
       <source>Automagic export failed: %1</source>
-      <translation type="unfinished" />
+      <translation>Automagic 导出失败：%1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="78" />
+      <location filename="../qml/pages/SettingsPage.qml" line="86" />
       <source>Settings</source>
       <translation>设置</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="102" />
+      <location filename="../qml/pages/SettingsPage.qml" line="110" />
       <source>Vehicle VIN</source>
       <translation>车辆 VIN</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="107" />
+      <location filename="../qml/pages/SettingsPage.qml" line="115" />
       <source>17-character VIN</source>
       <translation>17 位 VIN</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="132" />
+      <location filename="../qml/pages/SettingsPage.qml" line="141" />
       <source>Front-page car model</source>
       <translation>首页车型</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="133" />
+      <location filename="../qml/pages/SettingsPage.qml" line="142" />
       <source>Auto selects the model from the VIN</source>
       <translation>按 VIN 自动选择车型</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="149" />
+      <location filename="../qml/pages/SettingsPage.qml" line="158" />
       <source>Key name</source>
       <translation>钥匙名称</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="150" />
+      <location filename="../qml/pages/SettingsPage.qml" line="159" />
       <source>harbour-electric-eel</source>
       <translation>harbour-electric-eel</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="160" />
+      <location filename="../qml/pages/SettingsPage.qml" line="169" />
       <source>Connect timeout</source>
       <translation>连接超时</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="167" />
-      <location filename="../qml/pages/SettingsPage.qml" line="181" />
+      <location filename="../qml/pages/SettingsPage.qml" line="176" />
+      <location filename="../qml/pages/SettingsPage.qml" line="190" />
       <source>%1 s</source>
-      <translation type="unfinished" />
+      <translation>%1 秒</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="177" />
+      <location filename="../qml/pages/SettingsPage.qml" line="186" />
       <source>Command timeout</source>
       <translation>命令超时</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="198" />
-      <source>Automagic</source>
-      <translation type="unfinished" />
-    </message>
-    <message>
       <location filename="../qml/pages/SettingsPage.qml" line="207" />
-      <source>Export hotspot flows to Documents, then import them in Automagic. Automagic turns the hotspot on for presence_inside and off for presence_away_confirmed. ElectricEel emits the latter 3 minutes after presence_far unless presence_inside arrives first; repeated presence_far events do not restart the timer. ElectricEel must stay running.</source>
-      <translation type="unfinished" />
+      <source>Cover actions</source>
+      <translation>封面操作</translation>
     </message>
     <message>
       <location filename="../qml/pages/SettingsPage.qml" line="212" />
+      <source>Left action</source>
+      <translation>左侧操作</translation>
+    </message>
+    <message>
+      <location filename="../qml/pages/SettingsPage.qml" line="230" />
+      <source>Right action</source>
+      <translation>右侧操作</translation>
+    </message>
+    <message>
+      <location filename="../qml/pages/SettingsPage.qml" line="245" />
+      <source>Automagic</source>
+      <translation>Automagic</translation>
+    </message>
+    <message>
+      <location filename="../qml/pages/SettingsPage.qml" line="254" />
+      <source>Export hotspot flows to Documents, then import them in Automagic. Automagic turns the hotspot on for presence_inside and off for presence_away_confirmed. ElectricEel emits the latter 3 minutes after presence_far unless presence_inside arrives first; repeated presence_far events do not restart the timer. ElectricEel must stay running.</source>
+      <translation>将热点流程导出到文档，然后导入 Automagic。Automagic 在收到 presence_inside 时开启热点，在收到 presence_away_confirmed 时关闭热点。ElectricEel 会在 presence_far 之后 3 分钟发出后一个事件，除非先收到 presence_inside；重复的 presence_far 事件不会重启计时器。ElectricEel 必须保持运行。</translation>
+    </message>
+    <message>
+      <location filename="../qml/pages/SettingsPage.qml" line="259" />
       <source>Export Automagic flows</source>
-      <translation type="unfinished" />
+      <translation>导出 Automagic 流程</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="215" />
+      <location filename="../qml/pages/SettingsPage.qml" line="262" />
       <source>Exporting Automagic flows...</source>
-      <translation type="unfinished" />
+      <translation>正在导出 Automagic 流程...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="227" />
+      <location filename="../qml/pages/SettingsPage.qml" line="274" />
       <source>If you used Add Automagic flows in an earlier version, disable its old hotspot flows before importing this preset. Automagic lets you resolve matching IDs during import. Extra triggers are included for your own flows, such as launching an app.</source>
-      <translation type="unfinished" />
+      <translation>如果您在旧版本中使用过“添加 Automagic 流程”，请在导入此预设前停用旧的热点流程。Automagic 允许您在导入时解决相同 ID 的冲突。还包含可供您自定义流程使用的额外触发器，例如启动应用。</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="232" />
+      <location filename="../qml/pages/SettingsPage.qml" line="279" />
       <source>Save</source>
       <translation>保存</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="244" />
+      <location filename="../qml/pages/SettingsPage.qml" line="293" />
       <source>Pairing &amp; Keys</source>
       <translation>配对与钥匙</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="248" />
+      <location filename="../qml/pages/SettingsPage.qml" line="297" />
       <source>About</source>
       <translation>关于</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="262" />
+      <location filename="../qml/pages/SettingsPage.qml" line="311" />
       <source>App: ElectricEel %1   |   core: %2</source>
       <translation>应用：ElectricEel %1   |   核心：%2</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="266" />
+      <location filename="../qml/pages/SettingsPage.qml" line="315" />
       <source>(too old / unknown)</source>
       <translation>（太旧 / 未知）</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="279" />
+      <location filename="../qml/pages/SettingsPage.qml" line="328" />
       <source>The control core is too old to report a version - reinstall the app.</source>
       <translation>控制核心太旧，无法报告版本 - 请重装应用。</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="280" />
+      <location filename="../qml/pages/SettingsPage.qml" line="329" />
       <source>Version mismatch: core %1 vs app %2 - reinstall the app.</source>
       <translation>不匹配：核心 %1 vs 应用 %2 - 请重装应用。</translation>
     </message>

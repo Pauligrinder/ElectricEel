@@ -3,18 +3,18 @@
   <context>
     <name>ArgumentDialog</name>
     <message>
-      <location filename="../qml/pages/ArgumentDialog.qml" line="81" />
+      <location filename="../qml/pages/ArgumentDialog.qml" line="83" />
       <source>Run</source>
       <translation>అమలు చేయి</translation>
     </message>
     <message>
-      <location filename="../qml/pages/ArgumentDialog.qml" line="149" />
-      <location filename="../qml/pages/ArgumentDialog.qml" line="230" />
+      <location filename="../qml/pages/ArgumentDialog.qml" line="151" />
+      <location filename="../qml/pages/ArgumentDialog.qml" line="232" />
       <source> (optional)</source>
       <translation> (ఐచ్ఛికం)</translation>
     </message>
     <message>
-      <location filename="../qml/pages/ArgumentDialog.qml" line="153" />
+      <location filename="../qml/pages/ArgumentDialog.qml" line="155" />
       <source>(not set)</source>
       <translation>(సెట్ చేయలేదు)</translation>
     </message>
@@ -22,57 +22,57 @@
   <context>
     <name>CategoryPage</name>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="51" />
+      <location filename="../qml/pages/CategoryPage.qml" line="47" />
       <source>%1 • %2°C inside</source>
       <translation>%1 • లోపల %2 °C</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="52" />
+      <location filename="../qml/pages/CategoryPage.qml" line="48" />
       <source>Climate on</source>
       <translation>వాతావరణం ఆన్</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="52" />
+      <location filename="../qml/pages/CategoryPage.qml" line="48" />
       <source>Climate off</source>
       <translation>వాతావరణం ఆఫ్</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="58" />
+      <location filename="../qml/pages/CategoryPage.qml" line="54" />
       <source>%1% battery%2</source>
       <translation>%1% బ్యాటరీ%2</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="61" />
+      <location filename="../qml/pages/CategoryPage.qml" line="57" />
       <source> • Charging</source>
       <translation> • ఛార్జ్ అవుతోంది</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="66" />
+      <location filename="../qml/pages/CategoryPage.qml" line="62" />
       <source>Doors locked</source>
       <translation>తలుపులు లాక్</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="66" />
+      <location filename="../qml/pages/CategoryPage.qml" line="62" />
       <source>Doors unlocked</source>
       <translation>తలుపులు అన్‌లాక్</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="93" />
+      <location filename="../qml/pages/CategoryPage.qml" line="89" />
       <source>OK</source>
       <translation>సరే</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="93" />
+      <location filename="../qml/pages/CategoryPage.qml" line="89" />
       <source>exit code %1</source>
       <translation>నిష్క్రమణ కోడ్ %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="175" />
+      <location filename="../qml/pages/CategoryPage.qml" line="170" />
       <source>Retry</source>
-      <translation type="unfinished" />
+      <translation>మళ్లీ ప్రయత్నించండి</translation>
     </message>
     <message>
-      <location filename="../qml/pages/CategoryPage.qml" line="213" />
+      <location filename="../qml/pages/CategoryPage.qml" line="208" />
       <source>Running %1...</source>
       <translation>%1 నడుస్తోంది...</translation>
     </message>
@@ -421,119 +421,152 @@
     </message>
   </context>
   <context>
+    <name>CoverActions</name>
+    <message>
+      <location filename="../qml/js/CoverActions.js" line="6" />
+      <source>Open rear trunk</source>
+      <translation>వెనుక డిక్కీ తెరువు</translation>
+    </message>
+    <message>
+      <location filename="../qml/js/CoverActions.js" line="7" />
+      <source>Open front trunk</source>
+      <translation>ముందు డిక్కీ తెరువు</translation>
+    </message>
+    <message>
+      <location filename="../qml/js/CoverActions.js" line="8" />
+      <source>Lock</source>
+      <translation>లాక్ చేయి</translation>
+    </message>
+    <message>
+      <location filename="../qml/js/CoverActions.js" line="9" />
+      <source>Unlock</source>
+      <translation>అన్‌లాక్ చేయి</translation>
+    </message>
+    <message>
+      <location filename="../qml/js/CoverActions.js" line="10" />
+      <source>Flash lights</source>
+      <translation>లైట్ల ఫ్లాష్</translation>
+    </message>
+    <message>
+      <location filename="../qml/js/CoverActions.js" line="11" />
+      <source>Honk horn</source>
+      <translation>హారన్</translation>
+    </message>
+  </context>
+  <context>
     <name>CoverPage</name>
     <message>
-      <location filename="../qml/cover/CoverPage.qml" line="102" />
+      <location filename="../qml/cover/CoverPage.qml" line="121" />
       <source>Retry</source>
-      <translation type="unfinished" />
+      <translation>మళ్లీ ప్రయత్నించండి</translation>
     </message>
   </context>
   <context>
     <name>FirstPage</name>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="287" />
+      <location filename="../qml/pages/FirstPage.qml" line="282" />
       <source>The control core failed to start. Reinstall the app, then pull down to refresh.</source>
       <translation>కంట్రోల్ కోర్ ప్రారంభం కాలేదు. యాప్‌ను మళ్లీ ఇన్‌స్టాల్ చేసి, రిఫ్రెష్ కోసం కిందికి లాగండి.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="289" />
+      <location filename="../qml/pages/FirstPage.qml" line="284" />
       <source>The control core is too old to report its version. Reinstall the app (%1), then pull down to refresh.</source>
       <translation>కంట్రోల్ కోర్ వెర్షన్ చెప్పడానికి చాలా పాతది. యాప్‌ను (%1) మళ్లీ ఇన్‌స్టాల్ చేసి, రిఫ్రెష్ కోసం కిందికి లాగండి.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="290" />
+      <location filename="../qml/pages/FirstPage.qml" line="285" />
       <source>Version mismatch: app %1, core %2. Reinstall the app, then pull down to refresh.</source>
       <translation>వెర్షన్ సరిపోలలేదు: యాప్ %1, కోర్ %2. యాప్‌ను మళ్లీ ఇన్‌స్టాల్ చేసి, రిఫ్రెష్ కోసం కిందికి లాగండి.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="65" />
-      <location filename="../qml/pages/FirstPage.qml" line="308" />
+      <location filename="../qml/pages/FirstPage.qml" line="63" />
+      <location filename="../qml/pages/FirstPage.qml" line="303" />
       <source>No VIN configured</source>
       <translation>VIN కాన్ఫిగర్ చేయలేదు</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="57" />
+      <location filename="../qml/pages/FirstPage.qml" line="55" />
       <source>Control helper unavailable</source>
-      <translation type="unfinished" />
+      <translation>నియంత్రణ సేవ అందుబాటులో లేదు</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="61" />
+      <location filename="../qml/pages/FirstPage.qml" line="59" />
       <source>No key: generate and pair a key first</source>
-      <translation type="unfinished" />
+      <translation>కీ లేదు: ముందుగా కీని సృష్టించి జత చేయండి</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="312" />
+      <location filename="../qml/pages/FirstPage.qml" line="307" />
       <source>Key ready</source>
       <translation>కీ సిద్ధం</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="312" />
+      <location filename="../qml/pages/FirstPage.qml" line="307" />
       <source>No key - tap for Settings / Pairing</source>
       <translation>కీ లేదు - సెట్టింగ్‌లు / జత చేయడం కోసం నొక్కండి</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="367" />
+      <location filename="../qml/pages/FirstPage.qml" line="362" />
       <source> • charging</source>
       <translation> • ఛార్జ్ అవుతోంది</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="376" />
+      <location filename="../qml/pages/FirstPage.qml" line="371" />
       <source>• %1°C</source>
       <translation>• %1 °C</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="401" />
+      <location filename="../qml/pages/FirstPage.qml" line="396" />
       <source>Updating...</source>
       <translation>నవీకరిస్తోంది...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="403" />
+      <location filename="../qml/pages/FirstPage.qml" line="398" />
       <source>Status unavailable (%1). Vehicle may be asleep - try Wake Vehicle (Attention), then Refresh Status.</source>
       <translation>స్థితి అందుబాటులో లేదు (%1). వాహనం నిద్రపోతూ ఉండవచ్చు - వాహనాన్ని మేల్కొలపు (శ్రద్ధ) ప్రయత్నించి, ఆపై స్థితిని రిఫ్రెష్ చేయండి.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="405" />
+      <location filename="../qml/pages/FirstPage.qml" line="400" />
       <source>Pull down to refresh status</source>
       <translation>స్థితిని రిఫ్రెష్ చేయడానికి కిందికి లాగండి</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="407" />
+      <location filename="../qml/pages/FirstPage.qml" line="402" />
       <source>Updated just now</source>
       <translation>ఇప్పుడే నవీకరించబడింది</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="408" />
+      <location filename="../qml/pages/FirstPage.qml" line="403" />
       <source>Updated %1m ago</source>
       <translation>%1 నిమి క్రితం నవీకరించబడింది</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="501" />
+      <location filename="../qml/pages/FirstPage.qml" line="496" />
       <source>Categories</source>
       <translation>వర్గాలు</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="551" />
+      <location filename="../qml/pages/FirstPage.qml" line="546" />
       <source>Send Destination</source>
       <translation>గమ్యం పంపు</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="555" />
+      <location filename="../qml/pages/FirstPage.qml" line="550" />
       <source>Pair Vehicle</source>
       <translation>వాహనాన్ని జత చేయి</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="559" />
+      <location filename="../qml/pages/FirstPage.qml" line="554" />
       <source>Settings</source>
       <translation>సెట్టింగ్‌లు</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="563" />
-      <location filename="../qml/pages/SettingsPage.qml" line="190" />
+      <location filename="../qml/pages/FirstPage.qml" line="558" />
+      <location filename="../qml/pages/SettingsPage.qml" line="199" />
       <source>Refresh</source>
       <translation>రిఫ్రెష్</translation>
     </message>
     <message>
-      <location filename="../qml/pages/FirstPage.qml" line="567" />
+      <location filename="../qml/pages/FirstPage.qml" line="562" />
       <source>Refresh Status</source>
       <translation>స్థితి రిఫ్రెష్ చేయి</translation>
     </message>
@@ -541,82 +574,82 @@
   <context>
     <name>NavigationPage</name>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="54" />
+      <location filename="../qml/pages/NavigationPage.qml" line="53" />
       <source>Paste or type a destination first.</source>
       <translation>ముందుగా గమ్యాన్ని అతికించండి లేదా టైప్ చేయండి.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="58" />
+      <location filename="../qml/pages/NavigationPage.qml" line="57" />
       <source>Checking...</source>
       <translation>తనిఖీ చేస్తోంది...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="69" />
+      <location filename="../qml/pages/NavigationPage.qml" line="67" />
       <source>Nothing to send.</source>
       <translation>పంపడానికి ఏమీ లేదు.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="108" />
+      <location filename="../qml/pages/NavigationPage.qml" line="105" />
       <source>Cannot use this: %1</source>
       <translation>దీన్ని వాడలేము: %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="112" />
+      <location filename="../qml/pages/NavigationPage.qml" line="109" />
       <source>Coordinates %1, %2 — navigation will start there.</source>
       <translation>నిరూపకాలు %1, %2 — నావిగేషన్ అక్కడ ప్రారంభమవుతుంది.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="115" />
+      <location filename="../qml/pages/NavigationPage.qml" line="112" />
       <source>Address "%1" — the car will look it up.</source>
       <translation>చిరునామా “%1” — కారు స్వయంగా వెతుకుతుంది.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="122" />
+      <location filename="../qml/pages/NavigationPage.qml" line="119" />
       <source>Send failed: %1</source>
       <translation>పంపడం విఫలమైంది: %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="122" />
+      <location filename="../qml/pages/NavigationPage.qml" line="119" />
       <source>OK</source>
-      <translation type="unfinished" />
+      <translation>సరే</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="142" />
+      <location filename="../qml/pages/NavigationPage.qml" line="139" />
       <source>Car Navigation</source>
       <translation>కారు నావిగేషన్</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="155" />
+      <location filename="../qml/pages/NavigationPage.qml" line="152" />
       <source>Retry</source>
-      <translation type="unfinished" />
+      <translation>మళ్లీ ప్రయత్నించండి</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="162" />
+      <location filename="../qml/pages/NavigationPage.qml" line="159" />
       <source>Destination</source>
       <translation>గమ్యం</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="163" />
+      <location filename="../qml/pages/NavigationPage.qml" line="160" />
       <source>Paste address, coordinates, or map link</source>
       <translation>చిరునామా, నిరూపకాలు లేదా మ్యాప్ లింక్ అతికించండి</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="171" />
+      <location filename="../qml/pages/NavigationPage.qml" line="168" />
       <source>Preview</source>
       <translation>ముందస్తు చూపు</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="189" />
+      <location filename="../qml/pages/NavigationPage.qml" line="186" />
       <source>Send to Car</source>
       <translation>కారుకు పంపు</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="211" />
+      <location filename="../qml/pages/NavigationPage.qml" line="208" />
       <source>Notes</source>
       <translation>గమనికలు</translation>
     </message>
     <message>
-      <location filename="../qml/pages/NavigationPage.qml" line="220" />
+      <location filename="../qml/pages/NavigationPage.qml" line="217" />
       <source>This uses Bluetooth, like lock/unlock — the car must be in range, no internet needed on either side. Coordinates are sent exactly; addresses and links are looked up by the car itself, so unusual spellings may resolve differently than on your phone. From Android apps: copy the address or link, then paste it above.</source>
       <translation>లాక్/అన్‌లాక్ లాగే బ్లూటూత్ వాడుతుంది — కారు పరిధిలో ఉండాలి, ఇంటర్నెట్ అవసరం లేదు. నిరూపకాలు ఖచ్చితంగా పంపబడతాయి; చిరునామాలు, లింకులను కారు స్వయంగా వెతుకుతుంది, కాబట్టి అసాధారణ అక్షరక్రమం ఫోన్‌కు భిన్నంగా అర్థం కావచ్చు. Android యాప్‌ల నుండి: చిరునామా లేదా లింక్ కాపీ చేసి పైన అతికించండి.</translation>
     </message>
@@ -644,62 +677,62 @@
       <translation>జత చేయడం విఫలమైంది: %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="45" />
+      <location filename="../qml/pages/PairingPage.qml" line="47" />
       <source>No keys listed</source>
-      <translation type="unfinished" />
+      <translation>జాబితాలో కీలు లేవు</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="85" />
+      <location filename="../qml/pages/PairingPage.qml" line="87" />
       <source>Pairing &amp; Keys</source>
       <translation>జత చేయడం &amp; కీలు</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="98" />
+      <location filename="../qml/pages/PairingPage.qml" line="100" />
       <source>Retry</source>
-      <translation type="unfinished" />
+      <translation>మళ్లీ ప్రయత్నించండి</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="107" />
+      <location filename="../qml/pages/PairingPage.qml" line="109" />
       <source>Set the VIN in Settings first. Then generate a key, then pair it with the car over BLE - you'll need to be next to the vehicle and tap the NFC card on the center console to approve.</source>
       <translation>ముందుగా సెట్టింగ్‌లలో VIN సెట్ చేయండి. తర్వాత కీ సృష్టించి BLE ద్వారా కారుతో జత చేయండి – వాహనం పక్కన నిలబడి ఆమోదం కోసం NFC కార్డును సెంటర్ కన్సోల్‌పై తాకండి.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="119" />
+      <location filename="../qml/pages/PairingPage.qml" line="121" />
       <source>Phone key starting...</source>
       <translation>ఫోన్ కీ ప్రారంభమవుతోంది...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="147" />
+      <location filename="../qml/pages/PairingPage.qml" line="149" />
       <source>Generating...</source>
       <translation>సృష్టిస్తోంది...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="147" />
+      <location filename="../qml/pages/PairingPage.qml" line="149" />
       <source>Generate Key</source>
       <translation>కీ సృష్టించు</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="173" />
+      <location filename="../qml/pages/PairingPage.qml" line="175" />
       <source>Waiting for NFC tap...</source>
       <translation>NFC తాకిడి కోసం వేచి ఉంది...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="173" />
+      <location filename="../qml/pages/PairingPage.qml" line="175" />
       <source>Pair with Vehicle</source>
       <translation>వాహనాన్ని జత చేయి</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="179" />
+      <location filename="../qml/pages/PairingPage.qml" line="181" />
       <source>Requesting pairing over BLE - approve on the car's touchscreen / NFC card now.</source>
       <translation>BLE జత అభ్యర్థించబడింది – టచ్‌స్క్రీన్ / NFC కార్డుపై ఇప్పుడే ఆమోదించండి.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="199" />
+      <location filename="../qml/pages/PairingPage.qml" line="201" />
       <source>Enrolled Keys</source>
       <translation>నమోదిత కీలు</translation>
     </message>
     <message>
-      <location filename="../qml/pages/PairingPage.qml" line="203" />
+      <location filename="../qml/pages/PairingPage.qml" line="205" />
       <source>List Enrolled Keys</source>
       <translation>నమోదిత కీల జాబితా</translation>
     </message>
@@ -707,148 +740,163 @@
   <context>
     <name>SettingsPage</name>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="9" />
+      <location filename="../qml/pages/SettingsPage.qml" line="10" />
       <source>Loading current configuration...</source>
       <translation>కాన్ఫిగరేషన్ లోడ్ అవుతోంది...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="50" />
+      <location filename="../qml/pages/SettingsPage.qml" line="58" />
       <source>Key on file</source>
       <translation>కీ ఉంది</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="50" />
+      <location filename="../qml/pages/SettingsPage.qml" line="58" />
       <source>No key yet - use Pair Vehicle from the main menu</source>
       <translation>ఇంకా కీ లేదు – ప్రధాన మెనూలో వాహనాన్ని జత చేయి వాడండి</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="58" />
+      <location filename="../qml/pages/SettingsPage.qml" line="66" />
       <source>Saved</source>
       <translation>సేవ్ అయింది</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="58" />
+      <location filename="../qml/pages/SettingsPage.qml" line="66" />
       <source>Save failed: %1</source>
       <translation>సేవ్ విఫలమైంది: %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="62" />
+      <location filename="../qml/pages/SettingsPage.qml" line="70" />
       <source>Exported to %1. In Automagic, use States → Import to select this folder, then Reload Daemon.</source>
-      <translation type="unfinished" />
+      <translation>%1 కు ఎగుమతి చేయబడింది. Automagic లో ఈ ఫోల్డర్‌ను ఎంచుకోవడానికి States → Import వాడండి, తర్వాత Reload Daemon ఎంచుకోండి.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="63" />
+      <location filename="../qml/pages/SettingsPage.qml" line="71" />
       <source>Automagic export failed: %1</source>
-      <translation type="unfinished" />
+      <translation>Automagic ఎగుమతి విఫలమైంది: %1</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="78" />
+      <location filename="../qml/pages/SettingsPage.qml" line="86" />
       <source>Settings</source>
       <translation>సెట్టింగ్‌లు</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="102" />
+      <location filename="../qml/pages/SettingsPage.qml" line="110" />
       <source>Vehicle VIN</source>
       <translation>వాహన VIN</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="107" />
+      <location filename="../qml/pages/SettingsPage.qml" line="115" />
       <source>17-character VIN</source>
       <translation>17-అక్షరాల VIN</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="132" />
+      <location filename="../qml/pages/SettingsPage.qml" line="141" />
       <source>Front-page car model</source>
       <translation>మొదటి పేజీలో కారు మోడల్</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="133" />
+      <location filename="../qml/pages/SettingsPage.qml" line="142" />
       <source>Auto selects the model from the VIN</source>
       <translation>VIN నుండి మోడల్‌ను ఆటో ఎంచుకుంటుంది</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="149" />
+      <location filename="../qml/pages/SettingsPage.qml" line="158" />
       <source>Key name</source>
       <translation>కీ పేరు</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="150" />
+      <location filename="../qml/pages/SettingsPage.qml" line="159" />
       <source>harbour-electric-eel</source>
       <translation>harbour-electric-eel</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="160" />
+      <location filename="../qml/pages/SettingsPage.qml" line="169" />
       <source>Connect timeout</source>
       <translation>కనెక్ట్ గడువు</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="167" />
-      <location filename="../qml/pages/SettingsPage.qml" line="181" />
+      <location filename="../qml/pages/SettingsPage.qml" line="176" />
+      <location filename="../qml/pages/SettingsPage.qml" line="190" />
       <source>%1 s</source>
-      <translation type="unfinished" />
+      <translation>%1 సెకన్లు</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="177" />
+      <location filename="../qml/pages/SettingsPage.qml" line="186" />
       <source>Command timeout</source>
       <translation>ఆదేశ గడువు</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="198" />
-      <source>Automagic</source>
-      <translation type="unfinished" />
-    </message>
-    <message>
       <location filename="../qml/pages/SettingsPage.qml" line="207" />
-      <source>Export hotspot flows to Documents, then import them in Automagic. Automagic turns the hotspot on for presence_inside and off for presence_away_confirmed. ElectricEel emits the latter 3 minutes after presence_far unless presence_inside arrives first; repeated presence_far events do not restart the timer. ElectricEel must stay running.</source>
-      <translation type="unfinished" />
+      <source>Cover actions</source>
+      <translation>కవర్ చర్యలు</translation>
     </message>
     <message>
       <location filename="../qml/pages/SettingsPage.qml" line="212" />
+      <source>Left action</source>
+      <translation>ఎడమ చర్య</translation>
+    </message>
+    <message>
+      <location filename="../qml/pages/SettingsPage.qml" line="230" />
+      <source>Right action</source>
+      <translation>కుడి చర్య</translation>
+    </message>
+    <message>
+      <location filename="../qml/pages/SettingsPage.qml" line="245" />
+      <source>Automagic</source>
+      <translation>Automagic</translation>
+    </message>
+    <message>
+      <location filename="../qml/pages/SettingsPage.qml" line="254" />
+      <source>Export hotspot flows to Documents, then import them in Automagic. Automagic turns the hotspot on for presence_inside and off for presence_away_confirmed. ElectricEel emits the latter 3 minutes after presence_far unless presence_inside arrives first; repeated presence_far events do not restart the timer. ElectricEel must stay running.</source>
+      <translation>హాట్‌స్పాట్ ఫ్లోలను పత్రాలకు ఎగుమతి చేసి, తర్వాత Automagic లో దిగుమతి చేయండి. presence_inside వచ్చినప్పుడు Automagic హాట్‌స్పాట్‌ను ఆన్ చేస్తుంది, presence_away_confirmed వచ్చినప్పుడు ఆఫ్ చేస్తుంది. presence_inside ముందుగా రాకపోతే ElectricEel, presence_far తర్వాత 3 నిమిషాలకు రెండవ ఈవెంట్‌ను పంపుతుంది; పునరావృత presence_far ఈవెంట్‌లు టైమర్‌ను మళ్లీ ప్రారంభించవు. ElectricEel నడుస్తూనే ఉండాలి.</translation>
+    </message>
+    <message>
+      <location filename="../qml/pages/SettingsPage.qml" line="259" />
       <source>Export Automagic flows</source>
-      <translation type="unfinished" />
+      <translation>Automagic ఫ్లోలను ఎగుమతి చేయండి</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="215" />
+      <location filename="../qml/pages/SettingsPage.qml" line="262" />
       <source>Exporting Automagic flows...</source>
-      <translation type="unfinished" />
+      <translation>Automagic ఫ్లోలు ఎగుమతి అవుతున్నాయి...</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="227" />
+      <location filename="../qml/pages/SettingsPage.qml" line="274" />
       <source>If you used Add Automagic flows in an earlier version, disable its old hotspot flows before importing this preset. Automagic lets you resolve matching IDs during import. Extra triggers are included for your own flows, such as launching an app.</source>
-      <translation type="unfinished" />
+      <translation>మునుపటి సంస్కరణలో Automagic ఫ్లోలను జోడించు వాడి ఉంటే, ఈ ప్రీసెట్‌ను దిగుమతి చేసే ముందు దాని పాత హాట్‌స్పాట్ ఫ్లోలను నిలిపివేయండి. దిగుమతి సమయంలో ఒకే ID ల మధ్య వైరుధ్యాలను పరిష్కరించడానికి Automagic వీలు కల్పిస్తుంది. యాప్‌ను ప్రారంభించడం వంటి మీ స్వంత ఫ్లోల కోసం అదనపు ట్రిగ్గర్‌లు కూడా ఉన్నాయి.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="232" />
+      <location filename="../qml/pages/SettingsPage.qml" line="279" />
       <source>Save</source>
       <translation>సేవ్ చేయి</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="244" />
+      <location filename="../qml/pages/SettingsPage.qml" line="293" />
       <source>Pairing &amp; Keys</source>
       <translation>జత చేయడం &amp; కీలు</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="248" />
+      <location filename="../qml/pages/SettingsPage.qml" line="297" />
       <source>About</source>
       <translation>గురించి</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="262" />
+      <location filename="../qml/pages/SettingsPage.qml" line="311" />
       <source>App: ElectricEel %1   |   core: %2</source>
       <translation>యాప్: ElectricEel %1   |   కోర్: %2</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="266" />
+      <location filename="../qml/pages/SettingsPage.qml" line="315" />
       <source>(too old / unknown)</source>
       <translation>(చాలా పాతది / తెలియదు)</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="279" />
+      <location filename="../qml/pages/SettingsPage.qml" line="328" />
       <source>The control core is too old to report a version - reinstall the app.</source>
       <translation>కంట్రోల్ కోర్ వెర్షన్ చెప్పడానికి చాలా పాతది – యాప్‌ను మళ్లీ ఇన్‌స్టాల్ చేయండి.</translation>
     </message>
     <message>
-      <location filename="../qml/pages/SettingsPage.qml" line="280" />
+      <location filename="../qml/pages/SettingsPage.qml" line="329" />
       <source>Version mismatch: core %1 vs app %2 - reinstall the app.</source>
       <translation>సరిపోలలేదు: కోర్ %1 vs యాప్ %2 – యాప్‌ను మళ్లీ ఇన్‌స్టాల్ చేయండి.</translation>
     </message>

@@ -25,6 +25,7 @@ Page {
     property string savedModel: ""
     property bool vinDirty: false
     property bool modelDirty: false
+    property bool guessingModel: false
     property bool keyNameDirty: false
     property bool connectTimeoutDirty: false
     property bool commandTimeoutDirty: false
@@ -123,8 +124,9 @@ Page {
                     if (page.loadingConfig || (!activeFocus && !page.configReady))
                         return
                     page.vinDirty = true
-                    page.modelDirty = true
+                    page.guessingModel = true
                     modelField.currentIndex = VState.modelIndex(VState.guessModel(text))
+                    page.guessingModel = false
                 }
             }
 
@@ -139,7 +141,7 @@ Page {
                 label: qsTr("Front-page car model")
                 description: qsTr("Auto selects the model from the VIN")
                 onCurrentIndexChanged: {
-                    if (!page.loadingConfig && page.configReady)
+                    if (!page.loadingConfig && !page.guessingModel && page.configReady)
                         page.modelDirty = true
                 }
                 menu: ContextMenu {

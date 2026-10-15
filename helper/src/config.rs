@@ -448,6 +448,10 @@ fn backup_corrupt_config(path: &Path, data: &[u8]) {
 /// file in place (so a newer-schema file is never destroyed), which means
 /// every boot would otherwise add another `config.corrupt-*.json`.
 fn prune_corrupt_backups(path: &Path) {
+    let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+        return;
+    };
+    let prefix = format!("{stem}.corrupt-");
     let Some(parent) = path.parent() else { return };
     let Ok(entries) = std::fs::read_dir(parent) else {
         return;
@@ -456,7 +460,7 @@ fn prune_corrupt_backups(path: &Path) {
         .filter_map(|e| e.ok().map(|e| e.path()))
         .filter(|p| {
             let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            name.starts_with("config.corrupt-")
+            name.starts_with(&prefix)
                 && p.extension()
                     .is_some_and(|e| e.eq_ignore_ascii_case("json"))
         })
@@ -465,7 +469,7 @@ fn prune_corrupt_backups(path: &Path) {
     backups.sort_by_key(|p| {
         let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
         let mut fields = name
-            .trim_start_matches("config.corrupt-")
+            .trim_start_matches(prefix.as_str())
             .trim_end_matches(".json")
             .split('-');
         let secs = fields
@@ -1116,5 +1120,31 @@ mod tests {
             remaining.iter().any(|n| n.contains("-104-")),
             "newest (104ns) must be kept, kept {remaining:?}"
         );
+    }
+
+    #[test]
+    fn audit_custom_config_backup_retention_is_scoped_to_its_stem() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("vehicle.settings.json");
+        let unrelated = dir.path().join("config.corrupt-1-0-1.json");
+        std::fs::write(&unrelated, "other config").unwrap();
+        for stamp in 1..=7 {
+            std::fs::write(
+                dir.path()
+                    .join(format!("vehicle.settings.corrupt-{stamp}-0-1.json")),
+                "bad",
+            )
+            .unwrap();
+        }
+        super::prune_corrupt_backups(&path);
+        assert!(unrelated.exists());
+        for stamp in 1..=7 {
+            assert_eq!(
+                dir.path()
+                    .join(format!("vehicle.settings.corrupt-{stamp}-0-1.json"))
+                    .exists(),
+                stamp > 2
+            );
+        }
     }
 }

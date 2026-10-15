@@ -194,10 +194,14 @@ function mergeBodyControllerState(status, jsonText) {
     try {
         var obj = JSON.parse(jsonText) || {}
         var lock = obj.vehicleLockState || ""
-        if (lock === "VEHICLELOCKSTATE_LOCKED" || lock === "VEHICLELOCKSTATE_INTERNAL_LOCKED")
+        var hasReading = false
+        if (lock === "VEHICLELOCKSTATE_LOCKED" || lock === "VEHICLELOCKSTATE_INTERNAL_LOCKED") {
             s.locked = true
-        else if (lock === "VEHICLELOCKSTATE_UNLOCKED" || lock === "VEHICLELOCKSTATE_SELECTIVE_UNLOCKED")
+            hasReading = true
+        } else if (lock === "VEHICLELOCKSTATE_UNLOCKED" || lock === "VEHICLELOCKSTATE_SELECTIVE_UNLOCKED") {
             s.locked = false
+            hasReading = true
+        }
         // Only touch closure fields when the payload actually carries them:
         // a lock-only reply must preserve the previous door/trunk reading
         // instead of clearing it to closed. An empty object carries no door
@@ -211,15 +215,15 @@ function mergeBodyControllerState(status, jsonText) {
                 if (knownKeys[i] in c) { hasKnown = true; break }
             }
             if (hasKnown) {
+                hasReading = true
                 s.doorsOpen = closureIsOpen(c.frontDriverDoor) || closureIsOpen(c.frontPassengerDoor)
                     || closureIsOpen(c.rearDriverDoor) || closureIsOpen(c.rearPassengerDoor)
                 s.trunkFrontOpen = closureIsOpen(c.frontTrunk)
                 s.trunkRearOpen = closureIsOpen(c.rearTrunk)
             }
-            // else: no door keys present — preserve previous door/trunk
-            // readings, but still fall through to bump updatedAt since the
-            // lock readout above may be fresh.
         }
+        if (!hasReading)
+            return s
         markUpdated(s, "body")
     } catch (e) {
         console.log("VehicleState: body-controller-state parse failed:", e, jsonText)

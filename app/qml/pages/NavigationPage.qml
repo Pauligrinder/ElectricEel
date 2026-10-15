@@ -30,7 +30,6 @@ Page {
     property string resultText: ""
     // Per-page request ids so two NavigationPages on the stack never consume
     // each other's replies (fixed "nav:preview"/"nav:send" collided).
-    property int navSeq: 0
     property string pendingPreviewId: ""
     property string pendingSendId: ""
 
@@ -56,8 +55,7 @@ Page {
         }
         page.previewing = true
         page.previewText = qsTr("Checking...")
-        page.navSeq++
-        page.pendingPreviewId = "nav:preview#" + page.navSeq + "@" + Date.now() + ":" + Math.random() + ":" + page.vin
+        page.pendingPreviewId = teslaClient.newRequestId("nav:preview", page.vin)
         teslaClient.previewDestination(page.pendingPreviewId, destField.text)
     }
 
@@ -71,8 +69,7 @@ Page {
         }
         page.sending = true
         page.resultText = ""
-        page.navSeq++
-        page.pendingSendId = "nav:send#" + page.navSeq + "@" + Date.now() + ":" + Math.random() + ":" + page.vin
+        page.pendingSendId = teslaClient.newRequestId("nav:send", page.vin)
         teslaClient.shareDestination(page.pendingSendId, text)
     }
 

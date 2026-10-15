@@ -45,7 +45,7 @@ test("toggleLock with unknown state must display the unlock it sends", () => {
         page: { vehicleStatus: { locked: null }, statusStage: "", statusSeq: 0,
             statusInstance: "test", statusRequestId: "", vin: "VIN" },
         VState: { clone: (s) => ({ ...s }) },
-        teslaClient: { runCommand: function (id, cmd) { this.last = cmd; } },
+        teslaClient: { newRequestId: () => "status#test:VIN", runCommand: function (id, cmd) { this.last = cmd; } },
     });
     vm.runInContext(`${extractFunction(firstPageSource, "runStatus")}\n${setOptimistic}\n${optimistic}\n${toggleLock}`, context);
     vm.runInContext("toggleLock()", context);

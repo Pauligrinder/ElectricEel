@@ -88,18 +88,23 @@ func (s *session) dispatchNavigate(req request) response {
 	if s.car == nil {
 		return response{ID: req.ID, OK: false, Stderr: "navigate: session lost\n", ExitCode: 1}
 	}
-
+	car := s.car
+	s.mu.Unlock()
+	var err error
 	if isGPS {
 		// Order 0 (unknown/default): matches Teslemetry's tested BLE
 		// behavior — the car replaces the trip.
-		if err := s.car.NavigateToGPS(cmdCtx, lat, lon, 0); err != nil {
-			return response{ID: req.ID, OK: false, Stderr: "navigate: " + err.Error() + "\n", ExitCode: 1}
-		}
+		err = car.NavigateToGPS(cmdCtx, lat, lon, 0)
 	} else {
-		if err := s.car.NavigateToDestination(cmdCtx, text); err != nil {
-			return response{ID: req.ID, OK: false, Stderr: "navigate: " + err.Error() + "\n", ExitCode: 1}
-		}
+		err = car.NavigateToDestination(cmdCtx, text)
+	}
+	s.mu.Lock()
+	if s.car != car {
+		return response{ID: req.ID, Stderr: "navigate: connection changed; success uncertain\n", ExitCode: 1}
 	}
 	s.resetIdleTimerLocked()
+	if err != nil {
+		return response{ID: req.ID, Stderr: "navigate: " + err.Error() + "\n", ExitCode: 1}
+	}
 	return response{ID: req.ID, OK: true, Stdout: "navigation started\n", ExitCode: 0}
 }
